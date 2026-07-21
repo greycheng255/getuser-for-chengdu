@@ -176,7 +176,12 @@ async def _chat(
     async def _do_request():
         """单次请求逻辑(被 tenacity 包装)"""
         try:
-            timeout_cfg = httpx.Timeout(connect=connect_timeout, read=read_timeout, write=30.0)
+            timeout_cfg = httpx.Timeout(
+                connect=connect_timeout,
+                read=read_timeout,
+                write=30.0,
+                pool=connect_timeout,
+            )
             async with httpx.AsyncClient(timeout=timeout_cfg) as client:
                 r = await client.post(
                     f"{CONFIG['base_url']}/chat/completions",
