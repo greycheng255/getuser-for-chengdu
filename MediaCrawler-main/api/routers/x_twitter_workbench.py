@@ -48,6 +48,10 @@ class BreakdownRequest(BaseModel):
     force_refresh: bool = Field(False, description="是否强制重新生成拆解")
 
 
+class ExplainerVideoRequest(BaseModel):
+    post_id: str = Field(..., description="推文ID")
+
+
 class GenerateCommentsRequest(BaseModel):
     post_id: str = Field(..., description="推文ID")
     count: int = Field(3, ge=1, le=10, description="生成评论数")
@@ -75,6 +79,23 @@ class UpdateMonitoringRequest(BaseModel):
 
 def _ts() -> int:
     return int(time.time())
+
+
+def _stored_list(value: Any) -> List[str]:
+    """兼容数据库 JSON 字符串、历史换行文本和原生列表。"""
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if not value:
+        return []
+    text = str(value).strip()
+    try:
+        import json
+        decoded = json.loads(text)
+        if isinstance(decoded, list):
+            return [str(item).strip() for item in decoded if str(item).strip()]
+    except (TypeError, ValueError):
+        pass
+    return [line.strip() for line in text.splitlines() if line.strip()]
 
 
 async def _get_post_by_id(session: AsyncSession, post_id: str) -> Optional[XTwitterPost]:
@@ -366,6 +387,63 @@ async def generate_breakdown(req: BreakdownRequest):
         "suggested_comments": parsed["suggested_comments"],
         "full_text": parsed["full_text"],
     }
+
+
+@router.post("/explainer-video", dependencies=[Depends(ai_rate_limit())])
+async def generate_explainer_video(req: ExplainerVideoRequest):
+    """使用已保存的视频拆解上下文提交 Seedance 解说视频任务。"""
+    from api.services.explainer_video_client import (
+        AgentVideoError,
+        build_explainer_prompt,
+        normalize_media_urls,
+        submit_explainer_video,
+    )
+
+    async with get_session() as session:
+        post = await _get_post_by_id(session, req.post_id)
+        breakdown_result = await session.execute(
+            select(XTwitterVideoBreakdown).where(
+                XTwitterVideoBreakdown.post_id == req.post_id
+            )
+        )
+        breakdown = breakdown_result.scalar_one_or_none()
+
+    if not post:
+        raise HTTPException(404, f"推文 {req.post_id} 不存在")
+    if not breakdown:
+        raise HTTPException(400, "请先完成视频拆解，再生成解说视频")
+
+    image_urls = normalize_media_urls(getattr(post, "image_urls", None))
+    video_urls = normalize_media_urls(getattr(post, "video_url", None))
+    prompt = build_explainer_prompt(
+        post_content=post.content or "",
+        script=breakdown.script or "",
+        storyboards=_stored_list(breakdown.storyboards),
+        key_points=_stored_list(breakdown.key_points),
+    )
+    try:
+        result = await submit_explainer_video(
+            prompt=prompt,
+            image_urls=image_urls,
+            video_urls=video_urls,
+        )
+    except AgentVideoError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    return {"post_id": req.post_id, **result}
+
+
+@router.get("/explainer-video/{task_id}")
+async def explainer_video_status(task_id: str):
+    """查询 Seedance 解说视频任务进度。"""
+    from api.services.explainer_video_client import (
+        AgentVideoError,
+        get_explainer_video_status,
+    )
+
+    try:
+        return await get_explainer_video_status(task_id)
+    except AgentVideoError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
 
 
 # ==================== 评论生成 ====================

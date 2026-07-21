@@ -11,6 +11,8 @@ import {
   Button,
   Space,
   Typography,
+  Progress,
+  Tag,
   message,
 } from 'antd';
 import {
@@ -19,8 +21,14 @@ import {
   ThunderboltOutlined,
   SendOutlined,
   EditOutlined,
+  DownloadOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons';
-import { xWorkbenchApi, type WorkbenchPost } from '../../api/xWorkbench';
+import {
+  xWorkbenchApi,
+  type ExplainerVideoStatusResp,
+  type WorkbenchPost,
+} from '../../api/xWorkbench';
 
 const { TextArea } = Input;
 const { Text, Paragraph } = Typography;
@@ -44,6 +52,10 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
   const [editComment, setEditComment] = useState('');
   const [sending, setSending] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [videoSubmitting, setVideoSubmitting] = useState(false);
+  const [videoTaskId, setVideoTaskId] = useState('');
+  const [videoModelName, setVideoModelName] = useState('');
+  const [videoState, setVideoState] = useState<ExplainerVideoStatusResp | null>(null);
 
   const doBreakdown = useCallback(async (force = false) => {
     setLoading(true);
@@ -67,7 +79,59 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
     if (open) {
       doBreakdown(false);
     }
-  }, [open]);
+  }, [open, doBreakdown]);
+
+  useEffect(() => {
+    setVideoTaskId('');
+    setVideoModelName('');
+    setVideoState(null);
+  }, [post.post_id]);
+
+  useEffect(() => {
+    if (!videoTaskId) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let consecutiveFailures = 0;
+
+    const poll = async () => {
+      try {
+        const status = await xWorkbenchApi.getExplainerVideoStatus(videoTaskId);
+        if (!active) return;
+        consecutiveFailures = 0;
+        setVideoState(status);
+        if (status.is_final) {
+          setVideoTaskId('');
+          if (status.status === 'error' || !status.result_url) {
+            message.error(`解说视频生成失败: ${status.error || '未返回视频地址'}`);
+          } else {
+            message.success('解说视频生成完成');
+          }
+          return;
+        }
+      } catch (e: any) {
+        if (!active) return;
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 3) {
+          setVideoState((previous) => previous ? {
+            ...previous,
+            status: 'error',
+            is_final: true,
+            error: e?.message || '状态查询失败',
+          } : null);
+          setVideoTaskId('');
+          message.error('解说视频状态查询失败: ' + (e?.message || ''));
+          return;
+        }
+      }
+      if (active) timer = setTimeout(poll, 5000);
+    };
+
+    timer = setTimeout(poll, 1000);
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [videoTaskId]);
 
   const doGenComments = async () => {
     setGenerating(true);
@@ -82,6 +146,35 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
       message.error('生成评论失败: ' + (e?.message || ''));
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const doGenerateVideo = async () => {
+    if (!script.trim() && storyboards.length === 0 && keyPoints.length === 0) {
+      message.warning('请先完成视频拆解');
+      return;
+    }
+    setVideoSubmitting(true);
+    setVideoState(null);
+    try {
+      const result = await xWorkbenchApi.generateExplainerVideo(post.post_id);
+      setVideoModelName(result.model_name);
+      setVideoState({
+        task_id: result.task_id,
+        status: result.status,
+        is_final: false,
+        progress: 5,
+        current_step: 'init',
+        result_url: '',
+        error: '',
+        cost: 0,
+      });
+      setVideoTaskId(result.task_id);
+      message.success(`视频任务已提交：${result.model_name}`);
+    } catch (e: any) {
+      message.error('解说视频提交失败: ' + (e?.message || ''));
+    } finally {
+      setVideoSubmitting(false);
     }
   };
 
@@ -176,6 +269,70 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
             </Card>
           </Col>
         </Row>
+
+        <Card
+          size="small"
+          title="【生成解说视频】"
+          extra={
+            <Button
+              type="primary"
+              size="small"
+              icon={videoSubmitting || videoTaskId ? <LoadingOutlined /> : <VideoCameraOutlined />}
+              loading={videoSubmitting}
+              disabled={Boolean(videoTaskId)}
+              onClick={doGenerateVideo}
+            >
+              {videoTaskId ? '生成中' : '生成视频'}
+            </Button>
+          }
+          style={{ marginBottom: 12 }}
+        >
+          <Alert
+            type="info"
+            showIcon
+            message="使用视频拆解上下文生成 4 秒中文解说预览"
+            description="低成本参数：Mini、480p。检测到图片或视频时使用 Seedance 2.0 参考生，否则使用 Seedance 2.0 首尾帧的文生视频模式。"
+            style={{ marginBottom: videoState ? 12 : 0 }}
+          />
+
+          {videoState && (
+            <Space direction="vertical" style={{ width: '100%' }} size={10}>
+              <Space wrap>
+                <Tag color="purple">{videoModelName || 'Seedance 2.0'}</Tag>
+                <Text type="secondary">任务：{videoState.task_id}</Text>
+              </Space>
+
+              {!videoState.is_final && (
+                <Progress
+                  percent={videoState.progress}
+                  status="active"
+                  format={(percent) => `${percent}% · ${videoState.current_step || '生成中'}`}
+                />
+              )}
+
+              {videoState.error && (
+                <Alert type="error" showIcon message="生成失败" description={videoState.error} />
+              )}
+
+              {videoState.result_url && (
+                <>
+                  <video
+                    src={videoState.result_url}
+                    controls
+                    style={{ width: '100%', maxHeight: 420, borderRadius: 8, background: '#000' }}
+                  />
+                  <Button
+                    icon={<DownloadOutlined />}
+                    href={videoState.result_url}
+                    target="_blank"
+                  >
+                    打开或下载视频
+                  </Button>
+                </>
+              )}
+            </Space>
+          )}
+        </Card>
 
         <Card
           size="small"
