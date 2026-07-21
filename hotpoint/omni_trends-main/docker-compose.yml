@@ -1,0 +1,22 @@
+services:
+  omnitrends:
+    image: ghcr.io/tutoupower/omni_trends:main
+    container_name: omnitrends
+    ports:
+      - '4444:4444'
+    volumes:
+      - omnitrends_data:/usr/app/.data
+    environment:
+      - HOST=0.0.0.0
+      - PORT=4444
+      - NODE_ENV=production
+      - G_CLIENT_ID=
+      - G_CLIENT_SECRET=
+      - JWT_SECRET=
+      - INIT_TABLE=true
+      - ENABLE_CACHE=true
+      - PRODUCTHUNT_API_TOKEN=
+
+volumes:
+  omnitrends_data:
+    name: omnitrends_data

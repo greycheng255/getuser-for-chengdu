@@ -1,0 +1,5 @@
+./MediaCrawler-main/browser_data/*
+./google-chrome-stable_current_amd64.deb
+./nodejs/*
+./node-v22.15.0-linux-x64.tar.xz
+./MediaCrawler-main/webui-new/node_modules/*
