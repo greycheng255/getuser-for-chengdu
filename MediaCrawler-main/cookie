@@ -1,0 +1,59 @@
+architecture	amd64	www.douyin.com	/	会话	17						Medium	
+bd_ticket_guard_client_data	eyJiZC10aWNrZXQtZ3VhcmQtdmVyc2lvbiI6MiwiYmQtdGlja2V0LWd1YXJkLWl0ZXJhdGlvbi12ZXJzaW9uIjoxLCJiZC10aWNrZXQtZ3VhcmQtcmVlLXB1YmxpYy1rZXkiOiJCRDdYaVo0a3diYjJUdEdqME1ydnFzM3J1S0tLZWNqMEJXRjFOcHFpMWVCcnlDNU5GQkg5ZU91bTA5TXV0NE9pSzVLQXZUR0FCMGxZQWdtaHpieDZZalE9IiwiYmQtdGlja2V0LWd1YXJkLXdlYi12ZXJzaW9uIjoyfQ%3D%3D	.douyin.com	/	2026-08-03T23:50:26.903Z	331						Medium	
+bd_ticket_guard_client_data_v2	eyJyZWVfcHVibGljX2tleSI6IkJEN1hpWjRrd2JiMlR0R2owTXJ2cXMzcnVLS0tlY2owQldGMU5wcWkxZUJyeUM1TkZCSDllT3VtMDlNdXQ0T2lLNUtBdlRHQUIwbFlBZ21oemJ4NllqUT0iLCJ0c19zaWduIjoidHMuMi43N2VkODRlZjM1NmI3ODBmMjA0MmM0NzE0NDhhOTlkMDk2ZGMyZmFjMjMyZDRkYzhiNmQ3MzYwYjE2ZmUyNzNmYzRmYmU4N2QyMzE5Y2YwNTMxODYyNGNlZGExNDkxMWNhNDA2ZGVkYmViZWRkYjJlMzBmY2U4ZDRmYTAyNTc1ZCIsInJlcV9jb250ZW50Ijoic2VjX3RzIiwicmVxX3NpZ24iOiJEUm0xa2tCVnVrMm1vYVZoREJTWlY1dVJEQmxjL29BSnZYcG1QWFJFZGFrPSIsInNlY190cyI6IiNlNVhPOG1jREFuVmQyOG9ISjU0TkNEc2tBbml6YkNqaHFvWXZpTkh4V0JyeXVBK2lYTzNJZWtxU3VQeHYifQ%3D%3D	.douyin.com	/	2026-08-03T23:50:30.535Z	582						Medium	
+bd_ticket_guard_client_web_domain	2	.douyin.com	/	2026-08-03T23:50:26.903Z	34						Medium	
+bit_env	2vbbaQEVHLHcLAu_2yQJPWS0jC8gGLKQTBgUXAQL-Ni8GW2Cr1SW57gW_A_f2TeTJV-IkCOjJF1X9L8GIDw14oO7dvo2-H0eFeS-uJHvCPpODTTZ8HpmJPAHtTnGbmVhYVacI3GxFn-Gbo2ooOlU8P38oNJYwmJY8Bqs62jLfvkQkPTlEpltLmX5yvmyfEIiNQt-XyRDgAGcvLp0R_Z4G3p3yBzlxT1C95DLD7Xu5SV-dk_Xh-2u-ygEhiTB1U7mrML4mHmiWdvU3epRQ1kcrfv0JenlYszodKOMFhUFMpsq5OBQh7gEcBUqUKt7vkLIABK79edMUvUsfwzn9UR3ZM_4gP5_a7yCcIHLjr6l75zXU1TstwrcAjB3lmAlHTEPHVYVSFUxWxPoD94fAMY5xLhGwsEcQnsgIR56p7LsGmmborY34oPxzLq1hcW4XyfbeWUx-3G-S7aTG0gSdjccc_astzxdm6AAyLFHI0bPR6nOSkdGQbLIrHfMiKz9dRzo2Kny6U3ci29K-7Chgl6Qf0PHJ41SgO-HO3HFAVa7EWw%3D	.douyin.com	/	2026-06-04T23:54:44.708Z	565						Medium	
+biz_trace_id	4274e738	.douyin.com	/	会话	20						Medium	
+d_ticket	6d373cc8b9b86059e99df776cac74a6c7a582	.douyin.com	/	2027-06-04T23:50:09.544Z	45	✓					Medium	
+device_web_cpu_core	8	www.douyin.com	/	会话	20						Medium	
+device_web_memory_size	16	www.douyin.com	/	会话	24						Medium	
+DiscoverFeedExposedAd	%7B%7D	.douyin.com	/	2026-06-11T23:50:10.198Z	27						Medium	
+download_guide	%221%2F20260605%2F0%22	.douyin.com	/	2026-06-11T23:50:53.555Z	36						Medium	
+dy_sheight	1440	www.douyin.com	/	2026-06-11T23:50:14.000Z	14						Medium	
+dy_swidth	2561	www.douyin.com	/	2026-06-11T23:50:14.000Z	13						Medium	
+enter_pc_once	1	.douyin.com	/	2027-07-09T23:50:10.204Z	14		✓	None			Medium	
+fg_uid	RID20260128195049375E9FFEA0CF4062E2D9	api.feelgood.cn	/	2027-06-04T23:50:28.017Z	43		✓	None			Medium	
+FOLLOW_LIVE_POINT_INFO	%22MS4wLjABAAAA58NwpSUPZOHNM8WfQwjEfAofAbBMW-5nQf3sQLAL4cu5ehYicG2l6xHh34qBvOyh%2F1780675200000%2F0%2F1780617022794%2F0%22	.douyin.com	/	2026-06-11T23:50:22.796Z	144						Medium	
+fpk1	U2FsdGVkX1/KyNzgnI/gcJt4Vanc4Z0xwsTe26i6LiZwbdATlezhVsOXP4cA/wTDNrDRaApY9djaRzx87aX+WA==	www.douyin.com	/	2027-03-04T11:50:44.000Z	92		✓	None			Medium	
+fpk2	940676c3a8a8572fffba9e3881d0fb19	www.douyin.com	/	2027-03-04T11:50:44.000Z	36		✓	None			Medium	
+gulu_source_res	eyJwX2luIjoiMDM5NTkxYTlhNTA5ZWZjZTcyNGNiODBkODlkYjA1MzhiZWI3MTY2MGUxYTI2YWRiY2Q4MjNlYjY3M2Y5NmZjNCJ9	.douyin.com	/	2026-06-04T23:54:44.708Z	115						Medium	
+has_biz_token	false	.douyin.com	/	2026-08-03T23:50:09.546Z	18	✓	✓				Medium	
+home_can_add_dy_2_desktop	%221%22	.douyin.com	/	2026-06-11T23:50:27.457Z	32						Medium	
+is_dash_user	1	.douyin.com	/	2026-06-11T23:50:30.056Z	13						Medium	
+is_staff_user	false	.douyin.com	/	2026-08-03T23:50:09.546Z	18	✓	✓				Medium	
+is_support_rtm_web_ts	1	.douyin.com	/	会话	22						Medium	
+IsDouyinActive	true	.douyin.com	/	2026-06-11T23:50:13.925Z	18						Medium	
+login_time	1780617009634	.douyin.com	/	2027-07-09T23:50:09.634Z	23						Medium	
+msToken	fVkMGQH0RtwL4QtccWGF_QVTCUakfC2bCQFnk7p3J8cMtZIKeYyfLlZATdRN5ur_508DJo105WOVqJOaLx-4wjZpSM96ZZ63rB3qqk-wBt99uwfQyJBk6qDt28t-xT42j44BYyOoEGGpEd-xT6xEuhE_gEgFpkcXb5pAMY9eY8K7JHG1qFvtQAt1	.bytedance.com	/	2026-06-11T23:50:29.342Z	191		✓	
+Medium	
+n_mh	QMgbPDo4xT4x3XCgPbLYc3LvAu3BEj0fo_igeuUHSmg	.douyin.com	/	2026-10-02T23:50:09.544Z	47	✓					Medium	
+odin_tt	4f1423f6eee90cb1d21f2421971a43a07698dd4024ca3bd21e9d6e1c60d685d91de34f5cd48534c9a1c835f16ae3aac49389022ed38171f3874b07396267cbd9	.douyin.com	/	2027-06-04T23:50:27.938Z	135	✓					Medium	
+passport_assist_user	CkGWhksUUAymTHb2PQIubIrECPO3Ss3JGJ5JuEqM15_gzNqEdoHR2xREINEgJZXbMDARwHgn4lgCAABVEB5aTkOrQhpKCjwAAAAAAAAAAAAAUICRjny4aDdz2-XJHR9DBN8bnl9NoCwMvyXwJGYIYrO7XO8qLrsd9f9Aasue2kMiqRsQ16mTDhiJr9ZUIAEiAQM_0AHM	.douyin.com	/	2027-07-09T23:50:09.544Z	220		✓				Medium	
+passport_auth_mix_state	jmgjgtwj0z07pz3pow5s4xw9kuuc3jtdm4ve4uqtvswnesqb	.douyin.com	/	2026-06-04T23:53:44.708Z	71						Medium	
+passport_auth_status	dba55c87d6b88a49813cda66b132638d%2C	.douyin.com	/	2026-07-04T23:50:09.545Z	55	✓					Medium	
+passport_auth_status_ss	dba55c87d6b88a49813cda66b132638d%2C	.douyin.com	/	2026-07-04T23:50:09.545Z	58	✓	✓	None			Medium	
+passport_csrf_token	2df24d5c227a82997d1fc4a6bd3e271e	.douyin.com	/	2026-08-03T23:49:38.894Z	51		✓	None			Medium	
+passport_csrf_token_default	2df24d5c227a82997d1fc4a6bd3e271e	.douyin.com	/	2026-08-03T23:49:38.894Z	59						Medium	
+passport_mfa_token	CjcKRWP4wPPEreYj4jEdWJjFg0MLH%2FSgne3u9wNgYzfo7Yz070K2p5m2wZgjai%2BNEEbFROJCYRa0GkoKPAAAAAAAAAAAAABQgNXUwvYRAV4xzCCDZ1rmdq634Y3S5bMlV1xdCo9%2FQJsGI9292jQ4Q1lBboCD59KrARDXqZMOGPax0WwgAiIBA%2FsToPE%3D	.douyin.com	/	2026-08-03T23:50:09.544Z	216	✓	✓				Medium	
+publish_badge_show_info	%220%2C0%2C0%2C1780617023940%22	.douyin.com	/	2026-06-11T23:50:23.940Z	54						Medium	
+s_v_web_id	verify_mq05d9c1_86LoAXJL_lXMy_4sLl_8jr2_Muok7dUCXGAC	www.douyin.com	/	2026-08-03T23:49:27.000Z	62						Medium	
+sdk_source_info	7e276470716a68645a606960273f276364697660272927676c715a6d6069756077273f276364697660272927666d776a68605a607d71606b766c6a6b5a7666776c7571273f275e58272927666a6b766a69605a696c6061273f27636469766027292762696a6764695a7364776c6467696076273f275e582729277672715a646971273f2763646976602729277f6b5a666475273f2763646976602729276d6a6e5a6b6a716c273f2763646976602729276c6b6f5a7f6367273f27636469766027292771273f2735303d363d3c333433353d3234272927676c715a75776a716a666a69273f2763646976602778	.douyin.com	/	2026-06-04T23:54:44.707Z	487						Medium	
+SEARCH_RESULT_LIST_TYPE	%22single%22	.douyin.com	/	2027-05-09T03:28:28.160Z	35		✓				Medium	
+SEARCH_UN_LOGIN_PV_CURR_DAY	%7B%22date%22%3A1778297311959%2C%22count%22%3A1%7D	.douyin.com	/	2027-06-13T03:28:31.960Z	77						Medium	
+SelfTabRedDotControl	%5B%5D	.douyin.com	/	2027-06-04T23:50:14.368Z	26						Medium	
+session_tlb_tag	sttt%7C15%7CVlx-zeFvl9gyge7Sv34E1v________-2FBgzHJx8px1744HkRwK-UXyV-CYO5Ozf1zut75ZzGqs%3D	.douyin.com	/	2026-08-03T23:50:09.545Z	105	✓	✓	None			Medium	
+sessionid	565c7ecde16f97d83281eed2bf7e04d6	.douyin.com	/	2026-08-03T23:50:09.545Z	41	✓	✓				Medium	
+sessionid_ss	565c7ecde16f97d83281eed2bf7e04d6	.douyin.com	/	2026-08-03T23:50:09.545Z	44	✓	✓	None			Medium	
+sid_guard	565c7ecde16f97d83281eed2bf7e04d6%7C1780617014%7C5184000%7CMon%2C+03-Aug-2026+23%3A50%3A14+GMT	.douyin.com	/	2027-05-30T23:50:09.545Z	102	✓	✓				Medium	
+sid_tt	565c7ecde16f97d83281eed2bf7e04d6	.douyin.com	/	2026-08-03T23:50:09.545Z	38	✓	✓				Medium	
+sid_ucp_v1	1.0.0-KGIwNGRhMjU5NjAyYmNlNmFmYmUxZjFkMGZkMDEwZGEwMzVkOWJlMWIKIQiEjtCzsfSJBxC2nojRBhjvMSAMMPjQxfEFOAJA8QdIBBoCbHEiIDU2NWM3ZWNkZTE2Zjk3ZDgzMjgxZWVkMmJmN2UwNGQ2	.douyin.com	/	2026-08-03T23:50:09.546Z	168	✓	✓				Medium	
+ssid_ucp_v1	1.0.0-KGIwNGRhMjU5NjAyYmNlNmFmYmUxZjFkMGZkMDEwZGEwMzVkOWJlMWIKIQiEjtCzsfSJBxC2nojRBhjvMSAMMPjQxfEFOAJA8QdIBBoCbHEiIDU2NWM3ZWNkZTE2Zjk3ZDgzMjgxZWVkMmJmN2UwNGQ2	.douyin.com	/	2026-08-03T23:50:09.546Z	169	✓	✓	None			Medium	
+strategyABtestKey	%221780616978.11%22	.douyin.com	/	2026-06-11T23:49:38.110Z	36						Medium	
+stream_recommend_feed_params	%22%7B%5C%22cookie_enabled%5C%22%3Atrue%2C%5C%22screen_width%5C%22%3A2561%2C%5C%22screen_height%5C%22%3A1440%2C%5C%22browser_online%5C%22%3Atrue%2C%5C%22cpu_core_num%5C%22%3A8%2C%5C%22device_memory%5C%22%3A16%2C%5C%22downlink%5C%22%3A10%2C%5C%22effective_type%5C%22%3A%5C%224g%5C%22%2C%5C%22round_trip_time%5C%22%3A50%7D%22	.douyin.com	/	2026-06-11T23:50:14.025Z	351						Medium	
+ttwid	1%7C3uFq4Qb_IuvmY_-i68Muk8anEv0Mqywk4GmuPhLQQWs%7C1780617033%7Cf9fd258fd6620f736052c5b2fb2e5413f23aa627645abc6ea24e35670471cd95	.douyin.com	/	2027-06-04T23:50:28.501Z	132	✓	✓	None			Medium	
+ttwid	1%7C1ud1eHKNcadRDTfSqwn5f7YjScgVmt4kCyKust2ujxc%7C1779170160%7Cab7533c799a302ca8bf7ea4c4d41f580e2596fc5be750e94ba635da53f9af530	.bytedance.com	/	2027-05-19T05:55:59.933Z	132	✓	✓	None			Medium	
+uid_tt	e0653f4867419c1bba15f6879459c2a6	.douyin.com	/	2026-08-03T23:50:09.545Z	38	✓	✓				Medium	
+uid_tt_ss	e0653f4867419c1bba15f6879459c2a6	.douyin.com	/	2026-08-03T23:50:09.545Z	41	✓	✓	None			Medium	
+UIFID	4015c499a3bc1f891e3545aff6854b8d6b607a7d41f92affc21a7a75b0f3b1a19e4b260dcac8b32e681e312118c8b18f1266fb6411f2671e71baa0ed8d2f414abf395d43d6dfd2f7f1076058190f807e67f47d89bb0c70e2118d492a18760a20eda7400ee1d8f061a1f283ae95899813913023fb4f69b26ad74ec45f01ec0a40175240fa67b45d584405bc510e03001f5ec22387be25b2305c6891786b2f2c2d4a0d2f38ab5ccf7ce856350275c1367f	.douyin.com	/	2027-03-04T11:51:35.760Z	357		✓	None			Medium	
+UIFID_TEMP	4015c499a3bc1f891e3545aff6854b8d6b607a7d41f92affc21a7a75b0f3b1a19e4b260dcac8b32e681e312118c8b18f1266fb6411f2671e71baa0ed8d2f414a77c6baff30fddd1f426c03981242b87540a100b3a2e58cca505b08ef7b046d889a3c5da2bd07a439188262f35ca5de56	.douyin.com	/	2027-03-04T11:50:22.879Z	234		✓	None			Medium	
+volume_info	%7B%22isMute%22%3Atrue%2C%22isUserMute%22%3Atrue%2C%22volume%22%3A0.5%7D	.douyin.com	/	2027-01-30T12:01:15.033Z	83						Medium	

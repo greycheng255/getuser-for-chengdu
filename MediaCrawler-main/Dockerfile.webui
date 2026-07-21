@@ -1,0 +1,28 @@
+# ====================================
+# MediaCrawler 获客系统 - 前端镜像
+# 多阶段构建: builder + nginx
+# ====================================
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+COPY webui-new/package*.json ./
+RUN npm install --legacy-peer-deps
+
+COPY webui-new/ .
+RUN npm run build
+
+# ====================================
+# Nginx 运行时
+# ====================================
+FROM nginx:alpine AS runtime
+
+# 复制构建产物
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 复制 nginx 配置(可选)
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

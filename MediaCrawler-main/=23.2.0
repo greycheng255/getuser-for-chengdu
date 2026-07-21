@@ -1,0 +1,35 @@
+Defaulting to user installation because normal site-packages is not writeable
+Looking in indexes: http://mirrors.tencentyun.com/pypi/simple
+Collecting pyopenssl
+  Downloading pyopenssl-26.3.0-py3-none-any.whl (56 kB)
+Collecting service_identity
+  Downloading service_identity-26.1.0-py3-none-any.whl (11 kB)
+Collecting cryptography<50,>=49.0.0 (from pyopenssl)
+  Using cached cryptography-49.0.0-cp311-abi3-manylinux_2_34_x86_64.whl (4.7 MB)
+Collecting typing-extensions>=4.9 (from pyopenssl)
+  Using cached typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+Collecting cffi>=2.0.0 (from cryptography<50,>=49.0.0->pyopenssl)
+  Using cached cffi-2.1.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (221 kB)
+Collecting attrs>=19.1.0 (from service_identity)
+  Downloading attrs-26.1.0-py3-none-any.whl (67 kB)
+Collecting pycparser (from cffi>=2.0.0->cryptography<50,>=49.0.0->pyopenssl)
+  Using cached pycparser-3.0-py3-none-any.whl (48 kB)
+Installing collected packages: typing-extensions, pycparser, attrs, cffi, cryptography, service_identity, pyopenssl
+  Attempting uninstall: typing-extensions
+    Found existing installation: typing_extensions 4.16.0
+    Uninstalling typing_extensions-4.16.0:
+      Successfully uninstalled typing_extensions-4.16.0
+  Attempting uninstall: pycparser
+    Found existing installation: pycparser 3.0
+    Uninstalling pycparser-3.0:
+      Successfully uninstalled pycparser-3.0
+  Attempting uninstall: cffi
+    Found existing installation: cffi 2.1.0
+    Uninstalling cffi-2.1.0:
+      Successfully uninstalled cffi-2.1.0
+  Attempting uninstall: cryptography
+    Found existing installation: cryptography 49.0.0
+    Uninstalling cryptography-49.0.0:
+      Successfully uninstalled cryptography-49.0.0
+
+Successfully installed attrs-26.1.0 cffi-2.1.0 cryptography-49.0.0 pycparser-3.0 pyopenssl-26.3.0 service_identity-26.1.0 typing-extensions-4.16.0

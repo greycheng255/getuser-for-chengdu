@@ -1,0 +1,25 @@
+{
+  "link_request": {
+    "friendly": "{nickname} 来啦！链接给你 👇\n\n{product_desc}\n\n{link}\n\n{free_quota_text}有问题随时问我～",
+    "direct": "{product_desc}\n\n{link}\n\n{free_quota_text}"
+  },
+  "product_inquiry": {
+    "friendly": "嗨 {nickname}！看到你在找{product}，我们刚好有解决方案 😊\n\n{product_desc}\n\n{link}\n\n现在注册还有专属优惠，要不要了解一下？",
+    "professional": "您好 {nickname}，\n\n注意到您对{product}感兴趣。我们是{company}，专注于{field}。\n\n{product_desc}\n\n{link}\n\n如有兴趣，可以安排一次免费演示。\n\n联系方式：{contact}"
+  },
+  "price_sensitive": {
+    "friendly": "嗨 {nickname}！理解你想找性价比高的方案 💰\n\n我们目前有{product}，{price_info}\n\n比同类产品便宜{discount}，功能还更全面！\n\n现在注册送{free_quota}次免费调用，够你体验一个月了～\n\n{link}"
+  },
+  "tutorial_request": {
+    "friendly": "嗨 {nickname}！新手入门确实不容易 😅\n\n我们整理了一份《{tutorial_name}》，免费送你！\n\n{tutorial_desc}\n\n需要的话回复\"教程\"就行，我发你～\n\n或者加微信：{wechat} 直接发你"
+  },
+  "cooperation": {
+    "professional": "您好 {nickname}，\n\n看到您提到有{resource_type}，我们的{product}正好可以互补。\n\n{cooperation_desc}\n\n合作模式：\n• 代理分佣：{commission}%\n• 专属支持：1对1客服\n• 定制方案：根据您的资源定制\n\n有兴趣详细聊聊吗？\n\n微信：{wechat}"
+  },
+  "frustration": {
+    "friendly": "嗨 {nickname}！理解你的困扰 😔\n\n{problem}确实是个麻烦事。我们有一款{product}，正好解决了这个问题：\n\n{solution}\n\n✅ 无需国外手机号\n✅ 微信一键登录\n✅ 中文界面，操作简单\n\n现在注册送{free_quota}次免费调用！\n\n{link}"
+  },
+  "general": {
+    "friendly": "嗨 {nickname}！感谢关注 😊\n\n我们是{company}，专注于{field}。\n\n{product_desc}\n\n{link}\n\n感兴趣的话可以点个关注，后续会有更多干货分享！\n\n有问题随时私信我～"
+  }
+}

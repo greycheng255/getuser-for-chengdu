@@ -1,0 +1,102 @@
+# ====================================
+# 告警规则 - MediaCrawler 获客系统
+# ====================================
+groups:
+  # ============== 主机资源告警 ==============
+  - name: host-alerts
+    rules:
+      - alert: HighCpuUsage
+        expr: 100 - (avg by(instance)(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: host
+        annotations:
+          summary: "CPU 使用率过高 ({{ $labels.instance }})"
+          description: "CPU 使用率超过 80% 已持续 5 分钟,当前值: {{ $value }}%"
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal - node_memory_MemAvailable) / node_memory_MemTotal * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: host
+        annotations:
+          summary: "内存使用率过高 ({{ $labels.instance }})"
+          description: "内存使用率超过 85%,当前值: {{ $value }}%"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail{fstype!~"tmpfs|overlay"} / node_filesystem_size{fstype!~"tmpfs|overlay"}) * 100 < 10
+        for: 10m
+        labels:
+          severity: critical
+          service: host
+        annotations:
+          summary: "磁盘空间不足 ({{ $labels.instance }} {{ $labels.mountpoint }})"
+          description: "剩余磁盘空间不足 10%,当前值: {{ $value }}%"
+
+  # ============== 服务可用性告警 ==============
+  - name: service-alerts
+    rules:
+      - alert: BackendDown
+        expr: up{job="backend-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: backend
+        annotations:
+          summary: "后端 API 服务不可用"
+          description: "后端 API 已离线超过 2 分钟,请立即检查"
+
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: database
+        annotations:
+          summary: "PostgreSQL 数据库不可用"
+          description: "数据库已离线超过 2 分钟,获客系统将无法正常工作"
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          service: cache
+        annotations:
+          summary: "Redis 缓存不可用"
+          description: "Redis 已离线超过 5 分钟,系统性能可能下降"
+
+  # ============== 业务指标告警(需后端集成 prometheus_client) ==============
+  - name: business-alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) * 100 > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: backend
+        annotations:
+          summary: "API 错误率过高"
+          description: "5xx 错误率超过 10%,当前值: {{ $value }}%"
+
+      - alert: TaskStuckLongTime
+        expr: mediacrawler_task_running_seconds > 3600
+        for: 5m
+        labels:
+          severity: warning
+          service: backend
+        annotations:
+          summary: "采集任务执行时间过长"
+          description: "任务运行超过 1 小时,可能卡死,任务ID: {{ $labels.task_id }}"
+
+      - alert: AccountPoolLow
+        expr: mediacrawler_account_pool_available < 1
+        for: 10m
+        labels:
+          severity: critical
+          service: backend
+        annotations:
+          summary: "账号池可用账号不足"
+          description: "可用账号数为 0,采集任务将无法执行,请补充账号"
