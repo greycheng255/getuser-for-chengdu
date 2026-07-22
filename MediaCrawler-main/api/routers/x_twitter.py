@@ -681,9 +681,9 @@ async def _do_video_breakdown(post: dict) -> str:
     """执行视频拆解并保存到数据库"""
     import httpx
 
-    api_key = app_config.X_TWITTER_AI_API_KEY
-    base_url = app_config.X_TWITTER_AI_BASE_URL
-    model = app_config.X_TWITTER_AI_MODEL
+    api_key = app_config.ONELLM_API_KEY
+    base_url = app_config.ONELLM_BASE_URL
+    model = app_config.ONELLM_CHAT_MODEL
 
     if not api_key:
         return ""

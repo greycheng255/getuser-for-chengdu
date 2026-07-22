@@ -77,6 +77,7 @@ export interface ExplainerVideoStatusResp {
   progress: number;
   current_step: string;
   result_url: string;
+  result_reference?: string;
   error: string;
   cost: number;
 }

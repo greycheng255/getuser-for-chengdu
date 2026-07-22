@@ -66,16 +66,6 @@ def _now() -> int:
     return int(time.time())
 
 
-def _root_from_agent_url(agent_url: str) -> str:
-    url = agent_url.strip().rstrip("/")
-    marker = "/api/v1/agent"
-    if url.endswith(marker):
-        return url[: -len(marker)]
-    if url.endswith("/agent"):
-        return url[: -len("/agent")].removesuffix("/api/v1")
-    return url
-
-
 def _allow_insecure_http() -> bool:
     """Remote plain HTTP is an explicit development-only escape hatch."""
     return os.getenv("OPENNOTEBOOK_ALLOW_INSECURE_HTTP", "false").strip().lower() in _TRUE_VALUES
@@ -150,10 +140,8 @@ def validate_service_url(name: str, value: str, *, base_url: bool = False) -> st
 def oauth_config() -> dict[str, str]:
     """读取本地 Client 配置；新部署仅需一个 Discovery issuer URL。"""
     issuer_url = os.getenv("OPENNOTEBOOK_URL", "").strip().rstrip("/")
-    agent_url = os.getenv("AGENT_API_URL", "").strip().rstrip("/")
-    fallback_root = _root_from_agent_url(agent_url) if agent_url else ""
-    api_url = os.getenv("OPENNOTEBOOK_API_URL", fallback_root).strip().rstrip("/")
-    public_url = os.getenv("OPENNOTEBOOK_PUBLIC_URL", api_url or fallback_root).strip().rstrip("/")
+    api_url = os.getenv("OPENNOTEBOOK_API_URL", "").strip().rstrip("/")
+    public_url = os.getenv("OPENNOTEBOOK_PUBLIC_URL", api_url).strip().rstrip("/")
     client_id = os.getenv("OPENNOTEBOOK_CLIENT_ID", "").strip()
     client_secret = os.getenv("OPENNOTEBOOK_CLIENT_SECRET", "").strip()
     public_client_value = os.getenv("OPENNOTEBOOK_OAUTH_PUBLIC_CLIENT", "").strip().lower()
@@ -194,8 +182,6 @@ def oauth_config() -> dict[str, str]:
     if issuer_url:
         issuer_url = validate_service_url("OPENNOTEBOOK_URL", issuer_url, base_url=True)
     else:
-        if agent_url:
-            validate_service_url("AGENT_API_URL", agent_url, base_url=True)
         api_url = validate_service_url("OPENNOTEBOOK_API_URL", api_url, base_url=True)
         public_url = validate_service_url("OPENNOTEBOOK_PUBLIC_URL", public_url, base_url=True)
     redirect_uri = validate_service_url("OPENNOTEBOOK_REDIRECT_URI", redirect_uri)
@@ -223,7 +209,6 @@ def oauth_config() -> dict[str, str]:
         ),
         "api_url": api_url,
         "public_url": public_url,
-        "agent_url": agent_url,
         "client_id": client_id,
         "client_secret": client_secret,
         "public_client": "true" if public_client else "false",
@@ -283,9 +268,7 @@ async def oauth_provider_config() -> dict[str, str]:
             "authorization_endpoint": _join_url(cfg["public_url"], "/oauth/authorize"),
             "token_endpoint": _api_endpoint(cfg["api_url"], "/api/v1/oauth/token"),
             "revocation_endpoint": _api_endpoint(cfg["api_url"], "/api/v1/oauth/revoke"),
-            "agent_endpoint": cfg["agent_url"] or _api_endpoint(
-                cfg["api_url"], "/api/v1/agent"
-            ),
+            "agent_endpoint": _api_endpoint(cfg["api_url"], "/api/v1/agent"),
         }
 
     cached = _discovery_cache.get(cfg["issuer"])

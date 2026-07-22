@@ -20,4 +20,5 @@
 
 from .base_config import *
 from .db_config import *
+from .onellm_config import *
 from .x_twitter_config import *

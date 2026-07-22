@@ -2,7 +2,7 @@
 """
 X Twitter 工作台 AI Agent 客户端
 
-调用用户配置的 AI Agent API（OpenAI 兼容格式）完成：
+通过临时接入的 AI6700 Chat Completions API 完成：
 1. 视频拆解（脚本/分镜/关键要点/推荐评论）
 2. 评论生成（基于拆解结果生成可发送的评论）
 3. 自动回复（针对他人回复，生成自然、带表情的回复）
@@ -13,7 +13,6 @@ X Twitter 工作台 AI Agent 客户端
 - 重试次数和初始退避由 workbench_config 控制
 """
 import logging
-import os
 import time
 from typing import Any, Dict, List, Optional
 
@@ -28,19 +27,23 @@ from tenacity import (
 )
 
 from api.utils.workbench_config import workbench_config
+from api.services.ai6700_client import (
+    AI6700BalanceError,
+    ensure_ai6700_balance,
+)
+from config.onellm_config import load_onellm_config
 
 
 logger = logging.getLogger("ai_agent_client")
 
 
 def _load_config() -> Dict[str, str]:
-    """从环境变量加载配置（兼容 .env 已加载的配置）"""
+    """从统一的 ONELLM_* 环境变量加载临时 AI6700 配置。"""
+    settings = load_onellm_config()
     return {
-        "api_key": os.getenv("X_TWITTER_AI_API_KEY", ""),
-        "base_url": os.getenv("X_TWITTER_AI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
-        "model": os.getenv("X_TWITTER_AI_MODEL", "qwen-plus"),
-        "tenant_id": os.getenv("DEFAULT_TENANT_ID", ""),
-        "workspace_id": os.getenv("DEFAULT_WORKSPACE_ID", ""),
+        "api_key": settings.api_key,
+        "base_url": settings.base_url,
+        "model": settings.chat_model,
     }
 
 
@@ -146,7 +149,7 @@ async def _chat(
     - 读取超时: 根据 max_tokens 动态调整(生成越多越慢)
     """
     if not CONFIG["api_key"]:
-        raise _AINonRetryableError("X_TWITTER_AI_API_KEY 未配置")
+        raise _AINonRetryableError("ONELLM_API_KEY 未配置")
     
     if not _check_ai_cooldown():
         raise RuntimeError(f"AI 服务暂时不可用,冷却中({_AI_COOLDOWN_SECONDS}秒后重试)")
@@ -163,9 +166,6 @@ async def _chat(
         "Content-Type": "application/json",
         "Authorization": f"Bearer {CONFIG['api_key']}",
     }
-    if CONFIG["tenant_id"]:
-        headers["X-Tenant-ID"] = CONFIG["tenant_id"]
-
     payload = {
         "model": CONFIG["model"],
         "messages": truncated_messages,
@@ -175,6 +175,11 @@ async def _chat(
 
     async def _do_request():
         """单次请求逻辑(被 tenacity 包装)"""
+        try:
+            await ensure_ai6700_balance()
+        except AI6700BalanceError as e:
+            error_type = _AIRetryableError if e.retryable else _AINonRetryableError
+            raise error_type(str(e)) from e
         try:
             timeout_cfg = httpx.Timeout(
                 connect=connect_timeout,
@@ -423,9 +428,9 @@ async def generate_auto_reply(
 # ==================== 健康检查 ====================
 
 async def health_check() -> Dict[str, Any]:
-    """检查 AI Agent API 是否可用"""
+    """检查 AI6700 Chat Completions API 是否可用。"""
     if not CONFIG["api_key"]:
-        return {"ok": False, "error": "X_TWITTER_AI_API_KEY 未配置"}
+        return {"ok": False, "error": "ONELLM_API_KEY 未配置"}
     try:
         reply = await _chat(
             [

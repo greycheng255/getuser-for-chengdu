@@ -23,18 +23,12 @@ import {
   EditOutlined,
   DownloadOutlined,
   LoadingOutlined,
-  LinkOutlined,
-  DisconnectOutlined,
 } from '@ant-design/icons';
 import {
   xWorkbenchApi,
   type ExplainerVideoStatusResp,
   type WorkbenchPost,
 } from '../../api/xWorkbench';
-import {
-  openNotebookApi,
-  type OpenNotebookConnectionStatus,
-} from '../../api/openNotebook';
 import { shouldClearVideoIntent } from '../../api/videoIntentPolicy.js';
 
 const { TextArea } = Input;
@@ -66,11 +60,6 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
   const [videoTaskId, setVideoTaskId] = useState('');
   const [videoModelName, setVideoModelName] = useState('');
   const [videoState, setVideoState] = useState<ExplainerVideoStatusResp | null>(null);
-  const [connection, setConnection] = useState<OpenNotebookConnectionStatus | null>(null);
-  const [connectionLoading, setConnectionLoading] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const oauthPopupRef = useRef<Window | null>(null);
-  const oauthWatchRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoIntentRef = useRef<{ postId: string; key: string } | null>(null);
 
   const videoIntentStorageKey = (postId: string) =>
@@ -112,20 +101,6 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
     }
   };
 
-  const loadOpenNotebookConnection = useCallback(async (silent = false) => {
-    if (!silent) setConnectionLoading(true);
-    try {
-      const status = await openNotebookApi.status();
-      setConnection(status);
-      return status;
-    } catch (error: any) {
-      if (!silent) message.error(`OpenNotebook 连接状态获取失败: ${apiErrorMessage(error, '未知错误')}`);
-      return null;
-    } finally {
-      if (!silent) setConnectionLoading(false);
-    }
-  }, []);
-
   const doBreakdown = useCallback(async (force = false) => {
     setLoading(true);
     try {
@@ -147,34 +122,8 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
   useEffect(() => {
     if (open) {
       doBreakdown(false);
-      loadOpenNotebookConnection();
     }
-  }, [open, doBreakdown, loadOpenNotebookConnection]);
-
-  useEffect(() => {
-    const onOAuthComplete = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type !== 'opennotebook-oauth-complete') return;
-      if (event.data.result === 'success') {
-        loadOpenNotebookConnection(true).then((status) => {
-          if (status?.connected) message.success('OpenNotebook 连接成功');
-        });
-      } else {
-        message.error('OpenNotebook 授权未完成，请重试');
-      }
-      setConnecting(false);
-      oauthPopupRef.current = null;
-      if (oauthWatchRef.current) {
-        clearInterval(oauthWatchRef.current);
-        oauthWatchRef.current = null;
-      }
-    };
-    window.addEventListener('message', onOAuthComplete);
-    return () => {
-      window.removeEventListener('message', onOAuthComplete);
-      if (oauthWatchRef.current) clearInterval(oauthWatchRef.current);
-    };
-  }, [loadOpenNotebookConnection]);
+  }, [open, doBreakdown]);
 
   useEffect(() => {
     setVideoTaskId('');
@@ -196,8 +145,11 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
         setVideoState(status);
         if (status.is_final) {
           setVideoTaskId('');
-          if (status.status === 'error' || !status.result_url) {
-            message.error(`解说视频生成失败: ${status.error || '未返回视频地址'}`);
+          const failed = Boolean(status.error) || ['error', 'failed', 'canceled', 'cancelled'].includes(status.status);
+          if (failed) {
+            message.error(`解说视频生成失败: ${status.error || status.status}`);
+          } else if (!status.result_url && !status.result_reference) {
+            message.warning('解说视频任务已完成，但 AI6700 未返回可用结果');
           } else {
             message.success('解说视频生成完成');
           }
@@ -205,19 +157,6 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
         }
       } catch (e: any) {
         if (!active) return;
-        const reason = e?.response?.data?.data?.reason;
-        if (e?.response?.status === 409 && typeof reason === 'string' && reason.startsWith('OPENNOTEBOOK_')) {
-          await loadOpenNotebookConnection(true);
-          setVideoState((previous) => previous ? {
-            ...previous,
-            status: 'error',
-            is_final: true,
-            error: apiErrorMessage(e, 'OpenNotebook 授权已失效'),
-          } : null);
-          setVideoTaskId('');
-          message.error('需重新连接 OpenNotebook 后继续查询视频任务');
-          return;
-        }
         consecutiveFailures += 1;
         if (consecutiveFailures >= 3) {
           setVideoState((previous) => previous ? {
@@ -239,7 +178,7 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [videoTaskId, loadOpenNotebookConnection]);
+  }, [videoTaskId]);
 
   const doGenComments = async () => {
     setGenerating(true);
@@ -260,10 +199,6 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
   const doGenerateVideo = async () => {
     if (!script.trim() && storyboards.length === 0 && keyPoints.length === 0) {
       message.warning('请先完成视频拆解');
-      return;
-    }
-    if (!connection?.connected || connection.needs_reauth) {
-      message.warning('请先连接 OpenNotebook');
       return;
     }
     setVideoSubmitting(true);
@@ -298,61 +233,10 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
         // terminal for this intent; a later click is a new paid attempt.
         clearVideoIntent(post.post_id);
       }
-      if (e?.response?.status === 409 && typeof reason === 'string' && reason.startsWith('OPENNOTEBOOK_')) {
-        await loadOpenNotebookConnection(true);
-      }
       message.error('解说视频提交失败: ' + apiErrorMessage(e, '未知错误'));
     } finally {
       setVideoSubmitting(false);
     }
-  };
-
-  const connectOpenNotebook = async () => {
-    setConnecting(true);
-    // 在 await 前同步打开窗口，避免被浏览器当成异步弹窗拦截。
-    const popup = window.open('about:blank', 'opennotebook-oauth', 'width=720,height=820,resizable=yes,scrollbars=yes');
-    oauthPopupRef.current = popup;
-    try {
-      const started = await openNotebookApi.start('/x-workbench');
-      if (popup && !popup.closed) {
-        popup.location.replace(started.authorization_url);
-        popup.focus();
-        oauthWatchRef.current = setInterval(() => {
-          if (!popup.closed) return;
-          if (oauthWatchRef.current) clearInterval(oauthWatchRef.current);
-          oauthWatchRef.current = null;
-          oauthPopupRef.current = null;
-          setConnecting(false);
-          loadOpenNotebookConnection(true);
-        }, 800);
-      } else {
-        window.location.assign(started.authorization_url);
-      }
-    } catch (error: any) {
-      popup?.close();
-      oauthPopupRef.current = null;
-      setConnecting(false);
-      message.error(`无法启动 OpenNotebook 授权: ${apiErrorMessage(error, '未知错误')}`);
-    }
-  };
-
-  const disconnectOpenNotebook = () => {
-    Modal.confirm({
-      title: '断开 OpenNotebook 连接？',
-      content: '断开后需重新登录授权才能生成视频。',
-      okText: '断开',
-      okButtonProps: { danger: true },
-      cancelText: '取消',
-      onOk: async () => {
-        try {
-          await openNotebookApi.disconnect();
-          setConnection({ connected: false, status: 'disconnected', needs_reauth: false });
-          message.success('已断开 OpenNotebook');
-        } catch (error: any) {
-          message.error(`断开失败: ${apiErrorMessage(error, '未知错误')}`);
-        }
-      },
-    });
   };
 
   const doSend = async (real: boolean) => {
@@ -456,7 +340,7 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
               size="small"
               icon={videoSubmitting || videoTaskId ? <LoadingOutlined /> : <VideoCameraOutlined />}
               loading={videoSubmitting}
-              disabled={Boolean(videoTaskId) || connectionLoading || !connection?.connected || connection.needs_reauth}
+              disabled={Boolean(videoTaskId)}
               onClick={doGenerateVideo}
             >
               {videoTaskId ? '生成中' : '生成视频'}
@@ -464,58 +348,11 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
           }
           style={{ marginBottom: 12 }}
         >
-          {connectionLoading ? (
-            <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
-              <Spin size="small" tip="检查 OpenNotebook 连接..." />
-            </div>
-          ) : connection?.connected && !connection.needs_reauth ? (
-            <Alert
-              type="success"
-              showIcon
-              message={
-                <Space wrap>
-                  <span>已连接 OpenNotebook</span>
-                  {connection.workspace_name && <Tag color="green">{connection.workspace_name}</Tag>}
-                </Space>
-              }
-              description={
-                <Text type="secondary">
-                  Workspace: {connection.workspace_name || connection.workspace_id || '已授权'}
-                  {connection.tenant_id ? ` · Tenant: ${connection.tenant_id}` : ''}
-                </Text>
-              }
-              action={
-                <Space direction="vertical" size={4}>
-                  <Button size="small" icon={<LinkOutlined />} loading={connecting} disabled={Boolean(videoTaskId)} onClick={connectOpenNotebook}>
-                    切换授权
-                  </Button>
-                  <Button size="small" danger icon={<DisconnectOutlined />} disabled={Boolean(videoTaskId)} onClick={disconnectOpenNotebook}>
-                    断开
-                  </Button>
-                </Space>
-              }
-              style={{ marginBottom: 12 }}
-            />
-          ) : (
-            <Alert
-              type={connection?.needs_reauth ? 'error' : 'warning'}
-              showIcon
-              message={connection?.needs_reauth ? 'OpenNotebook 授权已失效' : '生成视频前需连接 OpenNotebook'}
-              description="将跳转 OpenNotebook 登录授权，视频费用由你选择的 OpenNotebook 账号与工作区承担。MediaCrawler 前端不会接触 Token。"
-              action={
-                <Button type="primary" size="small" icon={<LinkOutlined />} loading={connecting} onClick={connectOpenNotebook}>
-                  {connection?.needs_reauth ? '重新授权' : '去 OpenNotebook 登录'}
-                </Button>
-              }
-              style={{ marginBottom: 12 }}
-            />
-          )}
-
           <Alert
             type="info"
             showIcon
-            message="使用视频拆解上下文生成 4 秒中文解说预览"
-            description="低成本参数：Mini、480p。检测到图片或视频时使用 Seedance 2.0 参考生，否则使用 Seedance 2.0 首尾帧的文生视频模式。"
+            message="通过 AI6700 生成 10 秒手机竖屏中文解说视频"
+            description="输出规格为 9:16、720p；检测到参考图片时使用参考生模型，否则使用文生视频模型。"
             style={{ marginBottom: videoState ? 12 : 0 }}
           />
 
@@ -553,6 +390,15 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
                     打开或下载视频
                   </Button>
                 </>
+              )}
+
+              {!videoState.result_url && videoState.result_reference && (
+                <Alert
+                  type="success"
+                  showIcon
+                  message="视频已生成"
+                  description={`AI6700 结果引用：${videoState.result_reference}`}
+                />
               )}
             </Space>
           )}

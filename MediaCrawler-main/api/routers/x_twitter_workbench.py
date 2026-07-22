@@ -130,26 +130,11 @@ def _explainer_request_hash(post_id: str) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _agent_idempotency_key(owner_user_id: str, intent_key: str) -> str:
-    """Namespace a browser intent before sharing it with OpenNotebook.
-
-    Multiple MediaCrawler users can connect the same OpenNotebook account. A
-    digest of the local owner plus intent prevents one user-selected key from
-    replaying another user's paid task in that shared upstream namespace.
-    """
-    digest = hashlib.sha256(
-        f"{owner_user_id}\0{intent_key}".encode("utf-8")
-    ).hexdigest()
-    return f"mc:{digest}"
-
-
 def _explainer_task_response(task: XTwitterExplainerVideoTask) -> Dict[str, Any]:
     reference_count = 0
     try:
         snapshot = json.loads(task.submission_payload or "{}")
-        reference_count = len(snapshot.get("image_urls") or []) + len(
-            snapshot.get("video_urls") or []
-        )
+        reference_count = min(9, len(snapshot.get("image_urls") or []))
     except (TypeError, ValueError):
         pass
     return {
@@ -187,39 +172,12 @@ def _ensure_same_explainer_intent(
         )
 
 
-def _ensure_same_opennotebook_destination(
-    task: XTwitterExplainerVideoTask,
-    credentials: Any,
-) -> None:
-    changed = (
-        bool(task.connection_id)
-        and task.connection_id != credentials.connection_id
-    ) or (
-        bool(task.grant_id)
-        and task.grant_id != credentials.grant_id
-    ) or (
-        bool(task.tenant_id)
-        and task.tenant_id != credentials.tenant_id
-    ) or (
-        bool(task.workspace_id)
-        and task.workspace_id != credentials.workspace_id
-    )
-    if changed:
-        from api.services.opennotebook_oauth import OpenNotebookOAuthError
-
-        raise OpenNotebookOAuthError(
-            "OpenNotebook 授权或工作区已变化，请重新发起视频生成",
-            code="OPENNOTEBOOK_CONNECTION_CHANGED",
-        )
-
-
 async def _claim_explainer_submission(
     task: XTwitterExplainerVideoTask,
     owner_user_id: str,
 ) -> bool:
     """Atomically claim provider submission across API workers."""
     now = _ts()
-    stale_before = now - _EXPLAINER_SUBMISSION_LEASE_SECONDS
     async with get_session() as session:
         claimed = await session.execute(
             update(XTwitterExplainerVideoTask)
@@ -227,13 +185,7 @@ async def _claim_explainer_submission(
                 XTwitterExplainerVideoTask.id == task.id,
                 XTwitterExplainerVideoTask.owner_user_id == owner_user_id,
                 XTwitterExplainerVideoTask.provider_task_id == "",
-                or_(
-                    XTwitterExplainerVideoTask.status.in_(["pending", "error"]),
-                    and_(
-                        XTwitterExplainerVideoTask.status == "submitting",
-                        XTwitterExplainerVideoTask.updated_ts <= stale_before,
-                    ),
-                ),
+                XTwitterExplainerVideoTask.status.in_(["pending", "error"]),
             )
             .values(
                 status="submitting",
@@ -251,6 +203,8 @@ async def _mark_explainer_submission_error(
     local_task_id: str,
     owner_user_id: str,
     error: Exception,
+    *,
+    submission_uncertain: bool = False,
 ) -> None:
     now = _ts()
     async with get_session() as session:
@@ -262,7 +216,7 @@ async def _mark_explainer_submission_error(
                 XTwitterExplainerVideoTask.provider_task_id == "",
             )
             .values(
-                status="error",
+                status=("submission_unknown" if submission_uncertain else "error"),
                 error=str(error)[:1000],
                 updated_ts=now,
                 finished_ts=now,
@@ -567,26 +521,17 @@ async def generate_explainer_video(
     req: ExplainerVideoRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """使用已保存的视频拆解上下文幂等提交 Seedance 解说视频任务。"""
+    """使用已保存的视频拆解上下文提交 AI6700 媒体任务。"""
     from api.services.explainer_video_client import (
-        AgentVideoError,
+        AI6700VideoError,
         build_explainer_prompt,
         choose_seedance_model,
         normalize_media_urls,
         submit_explainer_video,
     )
-    from api.services.opennotebook_oauth import (
-        OpenNotebookOAuthError,
-        get_valid_credentials,
-        mark_reauth_required,
-    )
-    from api.routers.opennotebook_integration import raise_opennotebook_conflict
+    from config.onellm_config import load_onellm_config
     owner_user_id = str(current_user["id"])
     idempotency_key = str(req.idempotency_key)
-    agent_idempotency_key = _agent_idempotency_key(
-        owner_user_id,
-        idempotency_key,
-    )
     request_hash = _explainer_request_hash(req.post_id)
 
     async with _explainer_submission_lock(owner_user_id, idempotency_key):
@@ -595,13 +540,20 @@ async def generate_explainer_video(
             _ensure_same_explainer_intent(task, request_hash)
             if task.provider_task_id:
                 return _explainer_task_response(task)
-            if (
-                task.status == "submitting"
-                and (task.updated_ts or 0)
-                > _ts() - _EXPLAINER_SUBMISSION_LEASE_SECONDS
-            ):
-                # Another worker owns the short submission lease.  The caller
-                # can safely poll the stable local task id while it finishes.
+            if task.status == "submission_unknown":
+                return _explainer_task_response(task)
+            if task.status == "submitting":
+                if (task.updated_ts or 0) <= _ts() - _EXPLAINER_SUBMISSION_LEASE_SECONDS:
+                    await _mark_explainer_submission_error(
+                        task.local_task_id,
+                        owner_user_id,
+                        RuntimeError(
+                            "AI6700 提交响应未知；为避免重复扣费，系统不会自动重提。"
+                            "请在 AI6700 消费明细中核对最近任务后再创建新请求"
+                        ),
+                        submission_uncertain=True,
+                    )
+                    task = await _find_explainer_intent(owner_user_id, idempotency_key)
                 return _explainer_task_response(task)
 
         if task is None:
@@ -638,15 +590,11 @@ async def generate_explainer_video(
                 sort_keys=True,
             )
 
-            try:
-                credentials = await get_valid_credentials(owner_user_id)
-            except OpenNotebookOAuthError as exc:
-                raise_opennotebook_conflict(exc)
-
+            onellm = load_onellm_config()
             model = choose_seedance_model(image_urls, video_urls)
             model_name = (
                 "Seedance 2.0 参考生"
-                if model == "kwvideo-v2-ref"
+                if model == onellm.reference_video_model
                 else "Seedance 2.0 首尾帧"
             )
             now = _ts()
@@ -657,11 +605,11 @@ async def generate_explainer_video(
                 idempotency_key=idempotency_key,
                 request_hash=request_hash,
                 submission_payload=submission_payload,
-                connection_id=credentials.connection_id,
-                grant_id=credentials.grant_id,
+                connection_id=0,
+                grant_id="",
                 post_id=req.post_id,
-                tenant_id=credentials.tenant_id,
-                workspace_id=credentials.workspace_id,
+                tenant_id="",
+                workspace_id="",
                 model=model,
                 model_name=model_name,
                 status="pending",
@@ -680,19 +628,11 @@ async def generate_explainer_video(
                 if task is None:
                     raise
                 _ensure_same_explainer_intent(task, request_hash)
-                if task.provider_task_id or task.status == "submitting":
+                if task.provider_task_id or task.status in {
+                    "submitting",
+                    "submission_unknown",
+                }:
                     return _explainer_task_response(task)
-        else:
-            try:
-                credentials = await get_valid_credentials(owner_user_id)
-            except OpenNotebookOAuthError as exc:
-                raise_opennotebook_conflict(exc)
-
-        try:
-            _ensure_same_opennotebook_destination(task, credentials)
-        except OpenNotebookOAuthError as exc:
-            raise_opennotebook_conflict(exc)
-
         if not await _claim_explainer_submission(task, owner_user_id):
             replay = await _find_explainer_intent(owner_user_id, idempotency_key)
             if replay is None:
@@ -714,55 +654,17 @@ async def generate_explainer_video(
             raise HTTPException(500, "视频生成提交快照损坏") from exc
 
         try:
-            try:
-                result = await submit_explainer_video(
-                    credentials=credentials,
-                    prompt=prompt,
-                    image_urls=image_urls,
-                    video_urls=video_urls,
-                    idempotency_key=agent_idempotency_key,
-                )
-            except AgentVideoError as exc:
-                if exc.status_code != 401:
-                    raise
-                # 刷新前后以及网络响应丢失后的重试都复用同一个 key。
-                credentials = await get_valid_credentials(
-                    owner_user_id,
-                    force_refresh=True,
-                )
-                _ensure_same_opennotebook_destination(task, credentials)
-                try:
-                    result = await submit_explainer_video(
-                        credentials=credentials,
-                        prompt=prompt,
-                        image_urls=image_urls,
-                        video_urls=video_urls,
-                        idempotency_key=agent_idempotency_key,
-                    )
-                except AgentVideoError as retry_exc:
-                    if retry_exc.status_code == 401:
-                        await mark_reauth_required(
-                            credentials,
-                            "Agent API 拒绝刷新后凭证",
-                        )
-                        raise OpenNotebookOAuthError(
-                            "OpenNotebook 授权已失效，请重新连接",
-                            code="OPENNOTEBOOK_REAUTH_REQUIRED",
-                            reauth_required=True,
-                        ) from retry_exc
-                    raise
-        except OpenNotebookOAuthError as exc:
-            await _mark_explainer_submission_error(
-                task.local_task_id,
-                owner_user_id,
-                exc,
+            result = await submit_explainer_video(
+                prompt=prompt,
+                image_urls=image_urls,
+                video_urls=video_urls,
             )
-            raise_opennotebook_conflict(exc)
-        except AgentVideoError as exc:
+        except AI6700VideoError as exc:
             await _mark_explainer_submission_error(
                 task.local_task_id,
                 owner_user_id,
                 exc,
+                submission_uncertain=exc.submission_uncertain,
             )
             raise HTTPException(exc.status_code, str(exc)) from exc
 
@@ -776,7 +678,6 @@ async def generate_explainer_video(
                 )
                 .values(
                     provider_task_id=result["task_id"],
-                    connection_id=credentials.connection_id,
                     model=result.get("model", task.model or ""),
                     model_name=result.get("model_name", task.model_name or ""),
                     status=result.get("status", "running"),
@@ -804,17 +705,11 @@ async def explainer_video_status(
     task_id: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """查询 Seedance 解说视频任务进度。"""
+    """查询 AI6700 解说视频任务进度。"""
     from api.services.explainer_video_client import (
-        AgentVideoError,
+        AI6700VideoError,
         get_explainer_video_status,
     )
-    from api.services.opennotebook_oauth import (
-        OpenNotebookOAuthError,
-        get_valid_credentials,
-        mark_reauth_required,
-    )
-    from api.routers.opennotebook_integration import raise_opennotebook_conflict
 
     owner_user_id = str(current_user["id"])
     async with get_session() as session:
@@ -828,10 +723,10 @@ async def explainer_video_status(
     if not task:
         raise HTTPException(404, "视频任务不存在")
     if not task.provider_task_id:
-        if task.status == "error":
+        if task.status in {"error", "submission_unknown"}:
             return {
                 "task_id": task.local_task_id,
-                "status": "error",
+                "status": task.status,
                 "is_final": True,
                 "progress": task.progress or 0,
                 "current_step": "error",
@@ -851,38 +746,8 @@ async def explainer_video_status(
         }
 
     try:
-        credentials = await get_valid_credentials(owner_user_id)
-        _ensure_same_opennotebook_destination(task, credentials)
-        try:
-            status_result = await get_explainer_video_status(
-                task.provider_task_id,
-                credentials=credentials,
-            )
-        except AgentVideoError as exc:
-            if exc.status_code != 401:
-                raise
-            credentials = await get_valid_credentials(owner_user_id, force_refresh=True)
-            _ensure_same_opennotebook_destination(task, credentials)
-            try:
-                status_result = await get_explainer_video_status(
-                    task.provider_task_id,
-                    credentials=credentials,
-                )
-            except AgentVideoError as retry_exc:
-                if retry_exc.status_code == 401:
-                    await mark_reauth_required(
-                        credentials,
-                        "Agent API 拒绝刷新后凭证",
-                    )
-                    raise OpenNotebookOAuthError(
-                        "OpenNotebook 授权已失效，请重新连接",
-                        code="OPENNOTEBOOK_REAUTH_REQUIRED",
-                        reauth_required=True,
-                    ) from retry_exc
-                raise
-    except OpenNotebookOAuthError as exc:
-        raise_opennotebook_conflict(exc)
-    except AgentVideoError as exc:
+        status_result = await get_explainer_video_status(task.provider_task_id)
+    except AI6700VideoError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
 
     async with get_session() as session:
@@ -1322,7 +1187,7 @@ async def stop_monitor():
 
 @router.get("/ai/health")
 async def ai_health():
-    """检查 AI Agent API 是否可用"""
+    """检查 AI6700 Chat Completions API 是否可用。"""
     from api.services import ai_agent_client
     # 重新加载配置（避免启动时未加载）
     ai_agent_client.CONFIG = ai_agent_client._load_config()

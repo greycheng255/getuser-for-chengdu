@@ -30,6 +30,10 @@ async def test_chat_configures_all_httpx_timeouts(monkeypatch):
             return FakeResponse()
 
     monkeypatch.setitem(ai_agent_client.CONFIG, "api_key", "test-key")
+    async def fake_balance():
+        return {"balance": 100, "unit": "算力"}
+
+    monkeypatch.setattr(ai_agent_client, "ensure_ai6700_balance", fake_balance)
     monkeypatch.setattr(
         ai_agent_client,
         "workbench_config",

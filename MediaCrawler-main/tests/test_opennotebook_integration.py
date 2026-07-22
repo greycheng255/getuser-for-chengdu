@@ -27,7 +27,6 @@ def oauth_env(monkeypatch):
     monkeypatch.delenv("MEDIACRAWLER_API_URL", raising=False)
     monkeypatch.delenv("MEDIACRAWLER_PUBLIC_URL", raising=False)
     monkeypatch.delenv("OPENNOTEBOOK_ALLOW_INSECURE_HTTP", raising=False)
-    monkeypatch.setenv("AGENT_API_URL", "https://onb.test/api/v1/agent")
     monkeypatch.setenv("OPENNOTEBOOK_PUBLIC_URL", "https://onb-ui.test")
     monkeypatch.setenv("OPENNOTEBOOK_API_URL", "https://onb.test")
     monkeypatch.setenv("OPENNOTEBOOK_CLIENT_ID", "11111111-1111-4111-8111-111111111111")
@@ -49,7 +48,6 @@ def oauth_env(monkeypatch):
 @pytest.mark.parametrize(
     "variable",
     [
-        "AGENT_API_URL",
         "OPENNOTEBOOK_PUBLIC_URL",
         "OPENNOTEBOOK_API_URL",
         "OPENNOTEBOOK_REDIRECT_URI",
@@ -68,7 +66,6 @@ def test_oauth_config_rejects_remote_http_by_default(monkeypatch, variable):
 def test_oauth_config_allows_loopback_http_and_explicit_dev_opt_in(monkeypatch):
     import api.services.opennotebook_oauth as oauth
 
-    monkeypatch.setenv("AGENT_API_URL", "http://127.0.0.1:8000/api/v1/agent")
     monkeypatch.setenv("OPENNOTEBOOK_PUBLIC_URL", "http://localhost:3000")
     monkeypatch.setenv("OPENNOTEBOOK_API_URL", "http://[::1]:8000")
     cfg = oauth.oauth_config()
@@ -83,7 +80,6 @@ def test_minimal_discovery_config_derives_callbacks_and_client_mode(monkeypatch)
     import api.services.opennotebook_oauth as oauth
 
     for variable in (
-        "AGENT_API_URL",
         "OPENNOTEBOOK_PUBLIC_URL",
         "OPENNOTEBOOK_API_URL",
         "OPENNOTEBOOK_REDIRECT_URI",
@@ -110,7 +106,6 @@ async def test_discovery_resolves_and_caches_all_provider_endpoints(monkeypatch)
     import api.services.opennotebook_oauth as oauth
 
     for variable in (
-        "AGENT_API_URL",
         "OPENNOTEBOOK_PUBLIC_URL",
         "OPENNOTEBOOK_API_URL",
         "OPENNOTEBOOK_REDIRECT_URI",
@@ -1215,15 +1210,8 @@ async def test_concurrent_video_intent_creates_one_task_and_one_provider_submit(
     await _clear(test_engine)
     await _seed_video_context(test_engine, "post-concurrent")
     import api.services.explainer_video_client as video_client
-    import api.services.opennotebook_oauth as oauth
 
-    credentials = _test_credentials()
     submit_calls = []
-
-    async def fake_credentials(owner_user_id: str, *, force_refresh: bool = False):
-        assert owner_user_id == "1"
-        assert force_refresh is False
-        return credentials
 
     async def fake_submit(**kwargs):
         submit_calls.append(kwargs)
@@ -1236,7 +1224,6 @@ async def test_concurrent_video_intent_creates_one_task_and_one_provider_submit(
             "reference_count": 0,
         }
 
-    monkeypatch.setattr(oauth, "get_valid_credentials", fake_credentials)
     monkeypatch.setattr(video_client, "submit_explainer_video", fake_submit)
     body = {
         "post_id": "post-concurrent",
@@ -1251,8 +1238,7 @@ async def test_concurrent_video_intent_creates_one_task_and_one_provider_submit(
     assert first.status_code == second.status_code == 200
     assert first.json()["task_id"] == second.json()["task_id"]
     assert len(submit_calls) == 1
-    assert submit_calls[0]["idempotency_key"].startswith("mc:")
-    assert body["idempotency_key"] not in submit_calls[0]["idempotency_key"]
+    assert "idempotency_key" not in submit_calls[0]
 
     factory = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as session:
@@ -1264,7 +1250,7 @@ async def test_concurrent_video_intent_creates_one_task_and_one_provider_submit(
 
 
 @pytest.mark.asyncio
-async def test_response_loss_retry_reuses_local_task_snapshot_and_upstream_key(
+async def test_uncertain_ai6700_submit_is_not_retried_to_avoid_double_billing(
     app_client,
     test_engine,
     monkeypatch,
@@ -1272,27 +1258,17 @@ async def test_response_loss_retry_reuses_local_task_snapshot_and_upstream_key(
     await _clear(test_engine)
     await _seed_video_context(test_engine, "post-loss")
     import api.services.explainer_video_client as video_client
-    import api.services.opennotebook_oauth as oauth
 
-    credentials = _test_credentials()
     submit_calls = []
-
-    async def fake_credentials(owner_user_id: str, *, force_refresh: bool = False):
-        return credentials
 
     async def fake_submit(**kwargs):
         submit_calls.append(kwargs)
-        if len(submit_calls) == 1:
-            raise video_client.AgentVideoError("provider response lost", 502)
-        return {
-            "task_id": "provider-recovered",
-            "status": "running",
-            "model": "kwvideo-v2",
-            "model_name": "Seedance 2.0 首尾帧",
-            "reference_count": 0,
-        }
+        raise video_client.AI6700VideoError(
+            "provider response lost",
+            502,
+            submission_uncertain=True,
+        )
 
-    monkeypatch.setattr(oauth, "get_valid_credentials", fake_credentials)
     monkeypatch.setattr(video_client, "submit_explainer_video", fake_submit)
     body = {
         "post_id": "post-loss",
@@ -1309,15 +1285,14 @@ async def test_response_loss_retry_reuses_local_task_snapshot_and_upstream_key(
         first_local_task_id = first_task.local_task_id
         original_snapshot = first_task.submission_payload
 
-    recovered = await app_client.post(
+    replay = await app_client.post(
         "/api/x-workbench/explainer-video",
         json=body,
     )
-    assert recovered.status_code == 200
-    assert recovered.json()["task_id"] == first_local_task_id
-    assert len(submit_calls) == 2
-    assert submit_calls[0]["idempotency_key"] == submit_calls[1]["idempotency_key"]
-    assert submit_calls[0]["prompt"] == submit_calls[1]["prompt"]
+    assert replay.status_code == 200
+    assert replay.json()["task_id"] == first_local_task_id
+    assert replay.json()["status"] == "submission_unknown"
+    assert len(submit_calls) == 1
 
     async with factory() as session:
         rows = (
@@ -1325,11 +1300,12 @@ async def test_response_loss_retry_reuses_local_task_snapshot_and_upstream_key(
         ).scalars().all()
     assert len(rows) == 1
     assert rows[0].submission_payload == original_snapshot
-    assert rows[0].provider_task_id == "provider-recovered"
+    assert rows[0].provider_task_id == ""
+    assert rows[0].status == "submission_unknown"
 
 
 @pytest.mark.asyncio
-async def test_response_loss_retry_cannot_cross_opennotebook_grants(
+async def test_definite_ai6700_preflight_error_can_retry_local_snapshot(
     app_client,
     test_engine,
     monkeypatch,
@@ -1337,44 +1313,34 @@ async def test_response_loss_retry_cannot_cross_opennotebook_grants(
     await _clear(test_engine)
     await _seed_video_context(test_engine, "post-grant-change")
     import api.services.explainer_video_client as video_client
-    import api.services.opennotebook_oauth as oauth
-
-    current_credentials = _test_credentials()
     submit_calls = 0
 
-    async def fake_credentials(owner_user_id: str, *, force_refresh: bool = False):
-        return current_credentials
-
-    async def lost_submit(**kwargs):
+    async def retryable_submit(**kwargs):
         nonlocal submit_calls
         submit_calls += 1
-        raise video_client.AgentVideoError("provider response lost", 502)
+        if submit_calls == 1:
+            raise video_client.AI6700VideoError("balance check unavailable", 503)
+        return {
+            "task_id": "provider-recovered",
+            "status": "pending",
+            "model": "kwvideo-v2",
+            "model_name": "Seedance 2.0 首尾帧",
+            "reference_count": 0,
+        }
 
-    monkeypatch.setattr(oauth, "get_valid_credentials", fake_credentials)
-    monkeypatch.setattr(video_client, "submit_explainer_video", lost_submit)
+    monkeypatch.setattr(video_client, "submit_explainer_video", retryable_submit)
     body = {
         "post_id": "post-grant-change",
         "idempotency_key": "34c1c0eb-ef69-4568-aedf-80042c3b06fc",
     }
     first = await app_client.post("/api/x-workbench/explainer-video", json=body)
-    assert first.status_code == 502
+    assert first.status_code == 503
 
-    current_credentials = oauth.OpenNotebookCredentials(
-        connection_id=10,
-        owner_user_id="1",
-        credential_version=1,
-        access_token="other-access",
-        token_type="Bearer",
-        tenant_id="tenant-1",
-        workspace_id="workspace-1",
-        workspace_name="Workspace",
-        grant_id="grant-other-account",
-    )
     retry = await app_client.post("/api/x-workbench/explainer-video", json=body)
 
-    assert retry.status_code == 409
-    assert retry.json()["data"]["reason"] == "OPENNOTEBOOK_CONNECTION_CHANGED"
-    assert submit_calls == 1
+    assert retry.status_code == 200
+    assert retry.json()["status"] == "pending"
+    assert submit_calls == 2
 
 
 @pytest.mark.asyncio
@@ -1387,10 +1353,6 @@ async def test_video_intent_reuse_with_different_post_is_conflict(
     await _seed_video_context(test_engine, "post-original")
     await _seed_video_context(test_engine, "post-conflict")
     import api.services.explainer_video_client as video_client
-    import api.services.opennotebook_oauth as oauth
-
-    async def fake_credentials(owner_user_id: str, *, force_refresh: bool = False):
-        return _test_credentials()
 
     calls = 0
 
@@ -1405,7 +1367,6 @@ async def test_video_intent_reuse_with_different_post_is_conflict(
             "reference_count": 0,
         }
 
-    monkeypatch.setattr(oauth, "get_valid_credentials", fake_credentials)
     monkeypatch.setattr(video_client, "submit_explainer_video", fake_submit)
     key = "e4cc9cd2-e14d-4169-be26-13981821129e"
     original = await app_client.post(
@@ -1443,10 +1404,11 @@ async def test_video_intent_requires_uuid4(app_client, body):
 
 
 @pytest.mark.asyncio
-async def test_unconnected_generation_maps_to_409_and_task_status_is_owner_scoped(
+async def test_ai6700_generation_and_task_status_are_owner_scoped(
     app_client,
     user_context,
     test_engine,
+    monkeypatch,
 ):
     await _clear(test_engine)
     factory = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
@@ -1487,6 +1449,19 @@ async def test_unconnected_generation_maps_to_409_and_task_status_is_owner_scope
         )
         await session.commit()
 
+    import api.services.explainer_video_client as video_client
+
+    async def fake_submit(**kwargs):
+        return {
+            "task_id": "provider-task",
+            "status": "created",
+            "model": "kwvideo-v2",
+            "model_name": "Seedance 2.0 首尾帧",
+            "reference_count": 0,
+        }
+
+    monkeypatch.setattr(video_client, "submit_explainer_video", fake_submit)
+
     generation = await app_client.post(
         "/api/x-workbench/explainer-video",
         json={
@@ -1494,8 +1469,7 @@ async def test_unconnected_generation_maps_to_409_and_task_status_is_owner_scope
             "idempotency_key": "53b19ea9-d354-4e11-b862-03ca33a059bd",
         },
     )
-    assert generation.status_code == 409
-    assert generation.json()["data"]["reason"] == "OPENNOTEBOOK_NOT_CONNECTED"
+    assert generation.status_code == 200
 
     owner_status = await app_client.get(
         "/api/x-workbench/explainer-video/private-task"
@@ -1511,7 +1485,7 @@ async def test_unconnected_generation_maps_to_409_and_task_status_is_owner_scope
 
 
 @pytest.mark.asyncio
-async def test_upstream_401_is_mapped_to_reauth_conflict_not_local_401(
+async def test_ai6700_401_is_mapped_to_service_error_not_local_401(
     app_client,
     test_engine,
     monkeypatch,
@@ -1544,35 +1518,13 @@ async def test_upstream_401_is_mapped_to_reauth_conflict_not_local_401(
         await session.commit()
 
     import api.services.explainer_video_client as video_client
-    import api.services.opennotebook_oauth as oauth
-
-    credentials = oauth.OpenNotebookCredentials(
-        connection_id=9,
-        owner_user_id="1",
-        credential_version=3,
-        access_token="access",
-        token_type="Bearer",
-        tenant_id="tenant-1",
-        workspace_id="workspace-1",
-        workspace_name="Workspace",
-        grant_id="grant-1",
-    )
-    credential_calls = []
-    submission_keys = []
-
-    async def fake_credentials(owner_user_id: str, *, force_refresh: bool = False):
-        credential_calls.append((owner_user_id, force_refresh))
-        return credentials
+    submission_calls = 0
 
     async def unauthorized_submit(**kwargs):
-        submission_keys.append(kwargs["idempotency_key"])
-        raise video_client.AgentVideoError("expired", 401)
+        nonlocal submission_calls
+        submission_calls += 1
+        raise video_client.AI6700VideoError("expired", 503)
 
-    async def fake_mark(failed_credentials, message: str):
-        assert failed_credentials == credentials
-
-    monkeypatch.setattr(oauth, "get_valid_credentials", fake_credentials)
-    monkeypatch.setattr(oauth, "mark_reauth_required", fake_mark)
     monkeypatch.setattr(video_client, "submit_explainer_video", unauthorized_submit)
 
     response = await app_client.post(
@@ -1582,9 +1534,6 @@ async def test_upstream_401_is_mapped_to_reauth_conflict_not_local_401(
             "idempotency_key": "cf3a7c82-b714-40ee-9d89-0abc79a38ba2",
         },
     )
-    assert response.status_code == 409
+    assert response.status_code == 503
     assert response.status_code != 401
-    assert response.json()["data"]["reason"] == "OPENNOTEBOOK_REAUTH_REQUIRED"
-    assert credential_calls == [("1", False), ("1", True)]
-    assert len(submission_keys) == 2
-    assert submission_keys[0] == submission_keys[1]
+    assert submission_calls == 1

@@ -499,7 +499,7 @@ const MonitorPanel: React.FC = () => {
             type="error"
             showIcon
             message="AI 服务不可用"
-            description={aiHealth?.error || '请检查 .env 中 X_TWITTER_AI_API_KEY 和 X_TWITTER_AI_BASE_URL'}
+            description={aiHealth?.error || '请检查 .env 中 ONELLM_API_KEY 和 ONELLM_BASE_URL'}
           />
         )}
       </Card>

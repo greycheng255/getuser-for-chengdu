@@ -1,31 +1,34 @@
 # -*- coding: utf-8 -*-
-"""用 OpenNotebook Agent API 生成 X 工作台解说视频。"""
+"""Generate X workbench explainer videos through AI6700."""
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Iterable
 
 import httpx
 
-from api.services.opennotebook_oauth import (
-    OpenNotebookCredentials,
-    OpenNotebookOAuthError,
-    oauth_provider_config,
-    validate_service_url,
+from api.services.ai6700_client import (
+    AI6700BalanceError,
+    ai6700_error_message,
+    ai6700_headers,
+    ensure_ai6700_balance,
 )
+from config.onellm_config import load_onellm_config
 
 
-TEXT_VIDEO_MODEL = "kwvideo-v2"
-REFERENCE_VIDEO_MODEL = "kwvideo-v2-ref"
+class AI6700VideoError(RuntimeError):
+    """AI6700 media API request failed."""
 
-
-class AgentVideoError(RuntimeError):
-    """Agent API 请求失败。"""
-
-    def __init__(self, message: str, status_code: int = 502):
+    def __init__(
+        self,
+        message: str,
+        status_code: int = 502,
+        *,
+        submission_uncertain: bool = False,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
+        self.submission_uncertain = submission_uncertain
 
 
 def normalize_media_urls(value: Any) -> list[str]:
@@ -60,8 +63,10 @@ def normalize_media_urls(value: Any) -> list[str]:
 
 
 def choose_seedance_model(image_urls: list[str], video_urls: list[str]) -> str:
-    """有参考媒体使用参考生，否则使用首尾帧模型的文生视频模式。"""
-    return REFERENCE_VIDEO_MODEL if image_urls or video_urls else TEXT_VIDEO_MODEL
+    """有图片时使用参考生模型；当前两个配置模型均不接收视频引用。"""
+    del video_urls
+    settings = load_onellm_config()
+    return settings.reference_video_model if image_urls else settings.video_model
 
 
 def build_explainer_prompt(
@@ -79,7 +84,7 @@ def build_explainer_prompt(
         f"- {item}" for item in key_points
     ) or "请提炼一个最重要的信息点。"
 
-    return f"""请生成一段 4 秒、16:9、带中文解说的社交媒体短视频预览。
+    return f"""请生成一段 10 秒、9:16 竖屏、带中文解说的社交媒体短视频。
 
 目标：把下面的视频拆解内容压缩成一个清晰、有吸引力的解说片段。画面主体稳定，镜头运动自然，字幕简洁清楚；生成同步的自然中文旁白和轻量环境音。不要展示平台水印、UI 或无关文字。
 
@@ -95,168 +100,189 @@ def build_explainer_prompt(
 关键要点：
 {key_point_text}
 
-请优先呈现最核心的一个画面和一句中文解说，保证 4 秒内信息完整。"""
+请围绕核心信息设计适合手机观看的竖屏镜头和中文解说，保证 10 秒内内容完整。"""
 
 
-async def _agent_api_url() -> str:
-    """显式旧配置优先；新配置从 OpenNotebook Discovery 获取。"""
-    api_url = os.getenv("AGENT_API_URL", "").strip().rstrip("/")
+def _headers() -> dict[str, str]:
     try:
-        if api_url:
-            return validate_service_url("AGENT_API_URL", api_url, base_url=True)
-        return (await oauth_provider_config())["agent_endpoint"]
-    except OpenNotebookOAuthError as exc:
-        raise AgentVideoError(str(exc), 503) from exc
-
-
-def _headers(
-    credentials: OpenNotebookCredentials,
-    *,
-    idempotency_key: str | None = None,
-) -> dict[str, str]:
-    headers = {
-        "Authorization": f"{credentials.token_type} {credentials.access_token}",
-        "Content-Type": "application/json",
-    }
-    if credentials.tenant_id:
-        headers["X-Tenant-ID"] = credentials.tenant_id
-    if idempotency_key:
-        headers["Idempotency-Key"] = idempotency_key
-    return headers
-
-
-def _error_message(response: httpx.Response) -> str:
-    try:
-        payload = response.json()
-    except ValueError:
-        return response.text[:500] or f"HTTP {response.status_code}"
-    if isinstance(payload, dict):
-        detail = payload.get("detail") or payload.get("message") or payload.get("error")
-        if isinstance(detail, dict):
-            return str(detail.get("message") or detail.get("code") or detail)
-        if detail:
-            return str(detail)
-    return str(payload)[:500]
+        return ai6700_headers(load_onellm_config())
+    except AI6700BalanceError as exc:
+        raise AI6700VideoError(str(exc), exc.status_code) from exc
 
 
 async def submit_explainer_video(
     *,
-    credentials: OpenNotebookCredentials,
     prompt: str,
     image_urls: list[str],
     video_urls: list[str],
-    idempotency_key: str,
 ) -> dict[str, Any]:
-    """提交低成本 Seedance 视频任务，返回 Agent task_id。"""
-    api_url = await _agent_api_url()
+    """Check balance, submit one AI6700 media task, and return its task id."""
+    settings = load_onellm_config()
     model = choose_seedance_model(image_urls, video_urls)
+    is_reference_model = model == settings.reference_video_model
     model_name = (
         "Seedance 2.0 参考生"
-        if model == REFERENCE_VIDEO_MODEL
+        if is_reference_model
         else "Seedance 2.0 首尾帧"
     )
     params: dict[str, Any] = {
-        "prompt": prompt,
-        "model_id": model,
-        "model_name": model_name,
         "version": "Mini",
-        "duration": "4",
-        "aspect_ratio": "16:9",
-        "resolution": "480p",
+        "duration": "10",
+        "aspect_ratio": "9:16",
+        "resolution": "720p",
     }
-    if image_urls:
-        params["images"] = image_urls[:9]
-    if video_urls:
-        params["videos"] = video_urls[:3]
-
+    reference_images = image_urls[:9] if is_reference_model else image_urls[:2]
+    if reference_images:
+        params["images"] = reference_images
     body = {
-        "type": "videogen",
         "model": model,
         "prompt": prompt,
         "params": params,
-        "workspace_id": credentials.workspace_id,
     }
+
     try:
-        # 视频创建是计费、非幂等操作。明确关闭 transport 连接重试，
-        # 且不跟随可能重复 POST 的 307/308 重定向。
+        await ensure_ai6700_balance(settings)
+    except AI6700BalanceError as exc:
+        raise AI6700VideoError(str(exc), exc.status_code) from exc
+
+    try:
+        # AI6700 does not document an upstream idempotency key. Never retry
+        # this paid POST at transport level; an interrupted response is marked
+        # as uncertain by the caller to avoid accidental duplicate billing.
         async with httpx.AsyncClient(
             timeout=60.0,
             transport=httpx.AsyncHTTPTransport(retries=0),
             follow_redirects=False,
         ) as client:
             response = await client.post(
-                f"{api_url}/generate",
-                headers=_headers(
-                    credentials,
-                    idempotency_key=idempotency_key,
-                ),
+                settings.endpoint("media/generate"),
+                headers=_headers(),
                 json=body,
             )
     except httpx.HTTPError as exc:
-        raise AgentVideoError(f"Agent 视频任务提交失败: {exc}") from exc
+        raise AI6700VideoError(
+            f"AI6700 视频任务提交结果未知: {exc}",
+            submission_uncertain=True,
+        ) from exc
 
     if response.status_code >= 400:
-        raise AgentVideoError(
-            f"Agent 视频任务提交失败: {_error_message(response)}",
-            response.status_code,
+        status_code = 503 if response.status_code == 401 else response.status_code
+        raise AI6700VideoError(
+            f"AI6700 视频任务提交失败: {ai6700_error_message(response)}",
+            status_code,
+            submission_uncertain=response.status_code >= 500,
         )
 
-    payload = response.json()
-    data = payload.get("data") if isinstance(payload, dict) else None
-    task_id = data.get("task_id") if isinstance(data, dict) else None
-    task_id = task_id or (payload.get("task_id") if isinstance(payload, dict) else None)
-    if not task_id:
-        raise AgentVideoError("Agent 返回结果中缺少 task_id")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise AI6700VideoError(
+            "AI6700 视频任务响应不是有效 JSON",
+            submission_uncertain=True,
+        ) from exc
+    if not isinstance(payload, dict):
+        raise AI6700VideoError(
+            "AI6700 视频任务响应格式异常",
+            submission_uncertain=True,
+        )
+    code = payload.get("code")
+    if code not in (None, 200, "200"):
+        try:
+            status_code = int(code)
+        except (TypeError, ValueError):
+            status_code = 502
+        if not 400 <= status_code <= 599:
+            status_code = 502
+        raise AI6700VideoError(
+            f"AI6700 视频任务提交失败: {payload.get('msg') or payload}",
+            503 if status_code == 401 else status_code,
+            submission_uncertain=status_code >= 500,
+        )
 
+    data = payload.get("data")
+    task_id = data.get("task_id") if isinstance(data, dict) else None
+    if not task_id:
+        raise AI6700VideoError(
+            "AI6700 返回结果中缺少任务 ID",
+            submission_uncertain=True,
+        )
     return {
         "task_id": str(task_id),
-        "status": "running",
+        "status": "pending",
         "model": model,
         "model_name": model_name,
-        "reference_count": len(image_urls) + len(video_urls),
+        "reference_count": len(reference_images),
     }
 
 
-async def get_explainer_video_status(
-    task_id: str,
-    *,
-    credentials: OpenNotebookCredentials,
-) -> dict[str, Any]:
-    """查询 Agent 异步视频任务并返回前端需要的统一字段。"""
-    api_url = await _agent_api_url()
+async def get_explainer_video_status(task_id: str) -> dict[str, Any]:
+    """Read AI6700 task-status and normalize it for the frontend."""
+    settings = load_onellm_config()
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
-                f"{api_url}/status",
-                headers=_headers(credentials),
+                settings.endpoint("skills/task-status"),
+                headers=_headers(),
                 params={"task_id": task_id},
             )
     except httpx.HTTPError as exc:
-        raise AgentVideoError(f"Agent 视频状态查询失败: {exc}") from exc
+        raise AI6700VideoError(f"AI6700 视频状态查询失败: {exc}") from exc
 
     if response.status_code >= 400:
-        raise AgentVideoError(
-            f"Agent 视频状态查询失败: {_error_message(response)}",
-            response.status_code,
+        status_code = 503 if response.status_code == 401 else response.status_code
+        raise AI6700VideoError(
+            f"AI6700 视频状态查询失败: {ai6700_error_message(response)}",
+            status_code,
         )
-
-    payload = response.json()
-    data = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(data, dict):
-        raise AgentVideoError("Agent 视频状态响应格式异常")
-    progress_text = str(data.get("progress") or "0")
     try:
-        progress = int(progress_text.rstrip("%"))
+        payload = response.json()
+    except ValueError as exc:
+        raise AI6700VideoError("AI6700 视频状态响应不是有效 JSON") from exc
+    if not isinstance(payload, dict):
+        raise AI6700VideoError("AI6700 视频状态响应格式异常")
+
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    state = str(data.get("state") or "").lower()
+    status_text = str(data.get("status") or "")
+    status_group = str(data.get("status_group") or "")
+    if not state:
+        state = {
+            "等待中": "pending",
+            "处理中": "running",
+            "已完成": "success",
+            "失败": "failed",
+        }.get(status_group, "pending")
+        if "失败" in status_text:
+            state = "failed"
+        elif "完成" in status_text:
+            state = "success"
+    is_final = bool(data.get("is_final")) or state in {"success", "failed"}
+
+    progress_text = str(data.get("progress") or "0").strip().rstrip("%")
+    try:
+        progress = int(float(progress_text))
     except ValueError:
-        progress = 0
+        progress = 100 if is_final else (50 if state == "running" else 0)
+
+    error_value = data.get("error")
+    if isinstance(error_value, dict):
+        error = str(error_value.get("message") or error_value.get("code") or "")
+    else:
+        error = str(error_value or "")
+    if state == "failed" and not error:
+        error = status_text or "AI6700 视频生成失败"
 
     return {
         "task_id": str(data.get("task_id") or task_id),
-        "status": str(data.get("status") or "running"),
-        "is_final": bool(data.get("is_final")),
+        "status": state,
+        "is_final": is_final,
         "progress": max(0, min(100, progress)),
-        "current_step": str(data.get("current_step") or ""),
+        "current_step": status_text or state,
         "result_url": str(data.get("result_url") or ""),
-        "error": str(data.get("error") or ""),
-        "cost": data.get("cost") or 0,
+        "result_reference": "",
+        "error": error,
+        "cost": data.get("cost", 0),
+        "refunded": bool(data.get("refunded", False)),
+        "refunded_amount": data.get("refunded_amount", 0),
+        "channel_group": str(data.get("channel_group") or ""),
     }
