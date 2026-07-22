@@ -1,4 +1,16 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import { shouldRetryRequest } from './retryPolicy.js';
+
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    /** 计费/非幂等 POST 可禁止拦截器自动重试。 */
+    skipRetry?: boolean;
+  }
+
+  export interface InternalAxiosRequestConfig {
+    skipRetry?: boolean;
+  }
+}
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
@@ -10,21 +22,9 @@ const request = axios.create({
   },
 });
 
-// 请求重试配置
-const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000;
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const shouldRetry = (error: AxiosError): boolean => {
-  // 网络错误或超时重试
-  if (!error.response) return true;
-  // 5xx 服务器错误重试
-  if (error.response.status >= 500) return true;
-  // 429 限流重试
-  if (error.response.status === 429) return true;
-  return false;
-};
 
 // 请求拦截器：添加token
 request.interceptors.request.use(
@@ -50,7 +50,12 @@ request.interceptors.response.use(
 
     config.retryCount = config.retryCount || 0;
 
-    if (config.retryCount < MAX_RETRIES && shouldRetry(error)) {
+    if (shouldRetryRequest({
+      skipRetry: config.skipRetry,
+      retryCount: config.retryCount,
+      hasResponse: Boolean(error.response),
+      status: error.response?.status,
+    })) {
       config.retryCount++;
       console.warn(`请求失败，第 ${config.retryCount} 次重试...`, config.url);
       await sleep(RETRY_DELAY * config.retryCount);

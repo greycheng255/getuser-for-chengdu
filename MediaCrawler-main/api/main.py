@@ -37,7 +37,7 @@ from .services.cookie_manager import _ensure_env_loaded
 _ensure_env_loaded()
 print("[main] Loaded .env via cookie_manager")
 
-from .routers import crawler_router, data_router, websocket_router, customer_lead_router, tasks_router, cookies_router, auth_router, business_router, agent_router, external_api_router, config_router, notifications_router, plan_router, x_twitter_router, x_twitter_workbench_router, x_workbench_crawl_router, x_workbench_templates_router, x_workbench_analytics_router, x_workbench_export_router, x_workbench_notifications_router, x_workbench_auto_mode_router, x_workbench_advanced_router, x_workbench_ws_router, hotpoint_router
+from .routers import crawler_router, data_router, websocket_router, customer_lead_router, tasks_router, cookies_router, auth_router, business_router, agent_router, external_api_router, config_router, notifications_router, plan_router, x_twitter_router, x_twitter_workbench_router, x_workbench_crawl_router, x_workbench_templates_router, x_workbench_analytics_router, x_workbench_export_router, x_workbench_notifications_router, x_workbench_auto_mode_router, x_workbench_advanced_router, x_workbench_ws_router, hotpoint_router, opennotebook_integration_router
 from .utils.exceptions import register_exception_handlers
 
 # OpenAPI 文档元数据(用于 /docs 和 /redoc 展示)
@@ -208,6 +208,7 @@ app.include_router(x_workbench_auto_mode_router, prefix="/api")
 app.include_router(x_workbench_advanced_router, prefix="/api")
 app.include_router(x_workbench_ws_router, prefix="/api")
 app.include_router(hotpoint_router, prefix="/api")
+app.include_router(opennotebook_integration_router, prefix="/api")
 
 # 添加 /api/dashboard 别名（从数据库获取数据）
 @app.get("/api/dashboard")

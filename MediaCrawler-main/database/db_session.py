@@ -87,10 +87,100 @@ async def create_tables(db_type: str = None):
             await conn.run_sync(Base.metadata.create_all)
         # 给已有业务表补充 owner_user_id 字段(数据隔离)
         await _migrate_owner_user_id(engine, db_type)
+        # OAuth flow 的安全绑定字段可能来自增量升级，create_all 不会补列。
+        await _ensure_opennotebook_oauth_columns(engine, db_type)
+        # 付费视频提交的持久幂等字段/唯一索引也需要覆盖存量数据库。
+        await _ensure_explainer_video_idempotency(engine, db_type)
         # 补充高频查询字段索引(对存量数据库生效,create_all 不会改已有表结构)
         await _ensure_indexes(engine, db_type)
 
 
+async def _ensure_opennotebook_oauth_columns(engine, db_type: str):
+    table = "sys_user_opennotebook_oauth_flow"
+    columns = [
+        ("browser_binding_hash", "VARCHAR(64) NOT NULL DEFAULT ''"),
+        ("expected_credential_version", "INTEGER NOT NULL DEFAULT 0"),
+    ]
+    if db_type == "postgres":
+        async with engine.begin() as conn:
+            for name, definition in columns:
+                await conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {name} {definition}")
+                )
+    elif db_type == "sqlite":
+        async with engine.begin() as conn:
+            for name, definition in columns:
+                try:
+                    await conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+                    )
+                except Exception:
+                    pass
+    elif db_type in ("mysql", "db"):
+        async with engine.begin() as conn:
+            for name, definition in columns:
+                try:
+                    await conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+                    )
+                except Exception:
+                    pass
+
+
+async def _ensure_explainer_video_idempotency(engine, db_type: str):
+    table = "x_twitter_explainer_video_task"
+    columns = [
+        ("idempotency_key", "VARCHAR(64) NULL"),
+        ("request_hash", "VARCHAR(64) NOT NULL DEFAULT ''"),
+        ("submission_payload", "TEXT"),
+        ("grant_id", "VARCHAR(128) NOT NULL DEFAULT ''"),
+    ]
+    index = "uq_explainer_video_owner_idempotency"
+    if db_type == "postgres":
+        async with engine.begin() as conn:
+            for name, definition in columns:
+                await conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {name} {definition}")
+                )
+            await conn.execute(
+                text(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS {index} "
+                    f"ON {table} (owner_user_id, idempotency_key)"
+                )
+            )
+    elif db_type == "sqlite":
+        async with engine.begin() as conn:
+            for name, definition in columns:
+                try:
+                    await conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+                    )
+                except Exception:
+                    pass
+            await conn.execute(
+                text(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS {index} "
+                    f"ON {table} (owner_user_id, idempotency_key)"
+                )
+            )
+    elif db_type in ("mysql", "db"):
+        async with engine.begin() as conn:
+            for name, definition in columns:
+                try:
+                    await conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+                    )
+                except Exception:
+                    pass
+            try:
+                await conn.execute(
+                    text(
+                        f"CREATE UNIQUE INDEX {index} "
+                        f"ON {table} (owner_user_id, idempotency_key)"
+                    )
+                )
+            except Exception:
+                pass
 # 需要补充索引的字段清单 (table_name, column_name)
 # 仅列出模型新增 index=True 但存量数据库可能缺失的字段
 _INDEX_TARGETS = [

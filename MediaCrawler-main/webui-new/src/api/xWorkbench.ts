@@ -404,8 +404,12 @@ export const xWorkbenchApi = {
     request.post<any, BreakdownResp>('/x-workbench/breakdown', { post_id, force_refresh }),
 
   // 使用拆解上下文生成低成本 Seedance 解说视频
-  generateExplainerVideo: (post_id: string) =>
-    request.post<any, ExplainerVideoCreateResp>('/x-workbench/explainer-video', { post_id }),
+  generateExplainerVideo: (post_id: string, idempotency_key: string) =>
+    request.post<any, ExplainerVideoCreateResp>(
+      '/x-workbench/explainer-video',
+      { post_id, idempotency_key },
+      { skipRetry: true },
+    ),
 
   // 查询 Seedance 解说视频异步任务
   getExplainerVideoStatus: (task_id: string) =>

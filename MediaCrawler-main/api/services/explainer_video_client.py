@@ -8,6 +8,13 @@ from typing import Any, Iterable
 
 import httpx
 
+from api.services.opennotebook_oauth import (
+    OpenNotebookCredentials,
+    OpenNotebookOAuthError,
+    oauth_provider_config,
+    validate_service_url,
+)
+
 
 TEXT_VIDEO_MODEL = "kwvideo-v2"
 REFERENCE_VIDEO_MODEL = "kwvideo-v2-ref"
@@ -91,27 +98,30 @@ def build_explainer_prompt(
 请优先呈现最核心的一个画面和一句中文解说，保证 4 秒内信息完整。"""
 
 
-def _config() -> tuple[str, str, str, str]:
+async def _agent_api_url() -> str:
+    """显式旧配置优先；新配置从 OpenNotebook Discovery 获取。"""
     api_url = os.getenv("AGENT_API_URL", "").strip().rstrip("/")
-    api_key = os.getenv("AGENT_API_KEY", "").strip()
-    workspace_id = os.getenv("DEFAULT_WORKSPACE_ID", "").strip()
-    tenant_id = os.getenv("DEFAULT_TENANT_ID", "").strip()
-    if not api_url:
-        raise AgentVideoError("AGENT_API_URL 未配置", 503)
-    if not api_key:
-        raise AgentVideoError("AGENT_API_KEY 未配置", 503)
-    if not workspace_id:
-        raise AgentVideoError("DEFAULT_WORKSPACE_ID 未配置", 503)
-    return api_url, api_key, workspace_id, tenant_id
+    try:
+        if api_url:
+            return validate_service_url("AGENT_API_URL", api_url, base_url=True)
+        return (await oauth_provider_config())["agent_endpoint"]
+    except OpenNotebookOAuthError as exc:
+        raise AgentVideoError(str(exc), 503) from exc
 
 
-def _headers(api_key: str, tenant_id: str) -> dict[str, str]:
+def _headers(
+    credentials: OpenNotebookCredentials,
+    *,
+    idempotency_key: str | None = None,
+) -> dict[str, str]:
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": f"{credentials.token_type} {credentials.access_token}",
         "Content-Type": "application/json",
     }
-    if tenant_id:
-        headers["X-Tenant-ID"] = tenant_id
+    if credentials.tenant_id:
+        headers["X-Tenant-ID"] = credentials.tenant_id
+    if idempotency_key:
+        headers["Idempotency-Key"] = idempotency_key
     return headers
 
 
@@ -131,12 +141,14 @@ def _error_message(response: httpx.Response) -> str:
 
 async def submit_explainer_video(
     *,
+    credentials: OpenNotebookCredentials,
     prompt: str,
     image_urls: list[str],
     video_urls: list[str],
+    idempotency_key: str,
 ) -> dict[str, Any]:
     """提交低成本 Seedance 视频任务，返回 Agent task_id。"""
-    api_url, api_key, workspace_id, tenant_id = _config()
+    api_url = await _agent_api_url()
     model = choose_seedance_model(image_urls, video_urls)
     model_name = (
         "Seedance 2.0 参考生"
@@ -162,13 +174,22 @@ async def submit_explainer_video(
         "model": model,
         "prompt": prompt,
         "params": params,
-        "workspace_id": workspace_id,
+        "workspace_id": credentials.workspace_id,
     }
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        # 视频创建是计费、非幂等操作。明确关闭 transport 连接重试，
+        # 且不跟随可能重复 POST 的 307/308 重定向。
+        async with httpx.AsyncClient(
+            timeout=60.0,
+            transport=httpx.AsyncHTTPTransport(retries=0),
+            follow_redirects=False,
+        ) as client:
             response = await client.post(
                 f"{api_url}/generate",
-                headers=_headers(api_key, tenant_id),
+                headers=_headers(
+                    credentials,
+                    idempotency_key=idempotency_key,
+                ),
                 json=body,
             )
     except httpx.HTTPError as exc:
@@ -196,14 +217,18 @@ async def submit_explainer_video(
     }
 
 
-async def get_explainer_video_status(task_id: str) -> dict[str, Any]:
+async def get_explainer_video_status(
+    task_id: str,
+    *,
+    credentials: OpenNotebookCredentials,
+) -> dict[str, Any]:
     """查询 Agent 异步视频任务并返回前端需要的统一字段。"""
-    api_url, api_key, _workspace_id, tenant_id = _config()
+    api_url = await _agent_api_url()
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{api_url}/status",
-                headers=_headers(api_key, tenant_id),
+                headers=_headers(credentials),
                 params={"task_id": task_id},
             )
     except httpx.HTTPError as exc:

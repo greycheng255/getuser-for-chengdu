@@ -16,7 +16,7 @@
 # 详细许可条款请参阅项目根目录下的LICENSE文件。
 # 使用本代码即表示您同意遵守上述原则和LICENSE中的所有条款。
 
-from sqlalchemy import create_engine, Column, Integer, Text, String, BigInteger, Boolean
+from sqlalchemy import create_engine, Column, Integer, Text, String, BigInteger, Boolean, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -884,6 +884,41 @@ class XTwitterVideoBreakdown(Base):
     key_points = Column(Text, comment='关键要点JSON')
     suggested_comments = Column(Text, comment='推荐评论JSON')
     add_ts = Column(BigInteger, comment='添加时间戳')
+
+
+class XTwitterExplainerVideoTask(Base):
+    """OpenNotebook 解说视频任务的本地所有权映射。"""
+
+    __tablename__ = 'x_twitter_explainer_video_task'
+    __table_args__ = (
+        UniqueConstraint(
+            'owner_user_id',
+            'idempotency_key',
+            name='uq_explainer_video_owner_idempotency',
+        ),
+    )
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    local_task_id = Column(String(64), unique=True, index=True, nullable=False, comment='返回前端的本地任务ID')
+    provider_task_id = Column(String(255), default='', index=True, comment='OpenNotebook 任务ID')
+    owner_user_id = Column(String(64), index=True, nullable=False, comment='归属系统用户ID')
+    idempotency_key = Column(String(64), nullable=True, comment='用户生成意图 UUID')
+    request_hash = Column(String(64), default='', comment='幂等请求指纹')
+    submission_payload = Column(Text, default='{}', comment='可安全重放的上游提交快照')
+    connection_id = Column(Integer, default=0, index=True, comment='提交时的 OpenNotebook 连接ID')
+    grant_id = Column(String(128), default='', comment='提交时的 OpenNotebook Grant ID')
+    post_id = Column(String(255), index=True, nullable=False, comment='关联推文ID')
+    tenant_id = Column(String(128), default='', comment='提交时 Tenant ID')
+    workspace_id = Column(String(128), default='', comment='提交时 Workspace ID')
+    model = Column(String(128), default='', comment='视频模型')
+    model_name = Column(String(255), default='', comment='视频模型显示名')
+    status = Column(String(32), default='submitting', index=True, comment='submitting/running/done/error')
+    progress = Column(Integer, default=0, comment='进度 0-100')
+    result_url = Column(Text, default='', comment='结果视频 URL')
+    error = Column(Text, default='', comment='失败信息')
+    cost = Column(String(64), default='0', comment='远程返回费用')
+    created_ts = Column(BigInteger, comment='创建时间戳(秒)')
+    updated_ts = Column(BigInteger, comment='更新时间戳(秒)')
+    finished_ts = Column(BigInteger, default=0, comment='完成时间戳(秒)')
 
 
 class XTwitterSentComment(Base):

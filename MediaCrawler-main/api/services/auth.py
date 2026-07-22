@@ -16,7 +16,7 @@ import jwt
 import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
@@ -233,22 +233,69 @@ async def delete_user(user_id: int) -> bool:
     factory = _get_session_factory()
     if not factory:
         return False
-    async with factory() as session:
-        result = await session.execute(select(UserModel).where(UserModel.id == user_id))
-        u = result.scalars().first()
-        if not u:
-            return False
-        if u.role == "admin":
-            # 不允许删除最后一个管理员
-            admin_count_result = await session.execute(
-                select(UserModel).where(UserModel.role == "admin", UserModel.status == "active")
+    # Local import avoids coupling auth module initialization to OAuth config.
+    from api.services.opennotebook_oauth import credential_lock, disconnect
+    from database.models import XTwitterExplainerVideoTask
+    from database.user_models import (
+        OpenNotebookConnectionModel,
+        OpenNotebookOAuthFlowModel,
+    )
+
+    owner_user_id = str(user_id)
+    # Keep the owner lifecycle lock for validation, remote revoke, and every
+    # local delete. The user row lock is the cross-worker fence used by OAuth
+    # start/save; after this transaction commits a queued request must re-read
+    # the owner and fail instead of recreating credentials for a reused ID.
+    async with credential_lock(owner_user_id):
+        async with factory() as session:
+            result = await session.execute(
+                select(UserModel)
+                .where(UserModel.id == user_id)
+                .with_for_update()
             )
-            admins = admin_count_result.scalars().all()
-            if len(admins) <= 1:
-                raise ValueError("不允许删除最后一个管理员账号")
-        await session.delete(u)
-        await session.commit()
-        return True
+            u = result.scalars().first()
+            if not u:
+                return False
+            if u.role == "admin":
+                # Lock the active admin set so two concurrent deletions cannot
+                # both observe a count greater than one and remove the last admins.
+                admin_count_result = await session.execute(
+                    select(UserModel)
+                    .where(
+                        UserModel.role == "admin",
+                        UserModel.status == "active",
+                    )
+                    .with_for_update()
+                )
+                if len(admin_count_result.scalars().all()) <= 1:
+                    raise ValueError("不允许删除最后一个管理员账号")
+
+            # Use this transaction for disconnect as well. A revoke failure
+            # rolls back every local mutation and leaves an administrator a
+            # consistent record to retry.
+            await disconnect(
+                owner_user_id,
+                _lock_held=True,
+                _session=session,
+            )
+            await session.execute(
+                delete(OpenNotebookOAuthFlowModel).where(
+                    OpenNotebookOAuthFlowModel.owner_user_id == owner_user_id
+                )
+            )
+            await session.execute(
+                delete(XTwitterExplainerVideoTask).where(
+                    XTwitterExplainerVideoTask.owner_user_id == owner_user_id
+                )
+            )
+            await session.execute(
+                delete(OpenNotebookConnectionModel).where(
+                    OpenNotebookConnectionModel.owner_user_id == owner_user_id
+                )
+            )
+            await session.delete(u)
+            await session.commit()
+            return True
 
 
 async def update_last_login(user_id: int):
