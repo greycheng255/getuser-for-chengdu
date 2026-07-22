@@ -39,6 +39,7 @@ from .x_workbench_auto_mode import router as x_workbench_auto_mode_router
 from .x_workbench_advanced import router as x_workbench_advanced_router
 from .x_workbench_advanced import _ws_router as x_workbench_ws_router
 from .hotpoint import router as hotpoint_router
+from .opennotebook_integration import router as opennotebook_integration_router
 from ..services.agent_client import router as agent_router
 
-__all__ = ["crawler_router", "data_router", "websocket_router", "customer_lead_router", "tasks_router", "cookies_router", "auth_router", "business_router", "agent_router", "external_api_router", "config_router", "notifications_router", "plan_router", "x_twitter_router", "x_twitter_workbench_router", "x_workbench_crawl_router", "x_workbench_templates_router", "x_workbench_analytics_router", "x_workbench_export_router", "x_workbench_notifications_router", "x_workbench_auto_mode_router", "x_workbench_advanced_router", "x_workbench_ws_router", "hotpoint_router"]
+__all__ = ["crawler_router", "data_router", "websocket_router", "customer_lead_router", "tasks_router", "cookies_router", "auth_router", "business_router", "agent_router", "external_api_router", "config_router", "notifications_router", "plan_router", "x_twitter_router", "x_twitter_workbench_router", "x_workbench_crawl_router", "x_workbench_templates_router", "x_workbench_analytics_router", "x_workbench_export_router", "x_workbench_notifications_router", "x_workbench_auto_mode_router", "x_workbench_advanced_router", "x_workbench_ws_router", "hotpoint_router", "opennotebook_integration_router"]

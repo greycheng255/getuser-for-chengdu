@@ -16,6 +16,7 @@ import UserManagement from './pages/UserManagement';
 import Mine from './pages/Mine';
 import XWorkbench from './pages/XWorkbench';
 import Hotpoint from './pages/Hotpoint';
+import OpenNotebookCallback from './pages/OpenNotebookCallback';
 
 function AnimatedRoutes() {
   const location = useLocation();
@@ -58,6 +59,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/integrations/opennotebook/callback" element={<OpenNotebookCallback />} />
           <Route
             path="/*"
             element={

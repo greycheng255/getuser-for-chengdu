@@ -219,10 +219,16 @@ async def delete_user_api(
     """删除用户(管理员)"""
     if user_id == admin["id"]:
         raise HTTPException(status_code=400, detail="不允许删除自己")
+    from ..services.opennotebook_oauth import OpenNotebookOAuthError
+
     try:
         ok = await delete_user(user_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except OpenNotebookOAuthError as e:
+        # OAuth revoke is deliberately fail-closed: do not delete a user while
+        # its remote OpenNotebook grant may still be active.
+        raise HTTPException(status_code=502, detail=str(e)) from e
     if not ok:
         raise HTTPException(status_code=404, detail="用户不存在")
     return {"message": "用户已删除"}

@@ -61,6 +61,27 @@ export interface GenerateCommentsResp {
   comments: string[];
 }
 
+export interface ExplainerVideoCreateResp {
+  post_id: string;
+  task_id: string;
+  status: string;
+  model: 'kwvideo-v2' | 'kwvideo-v2-ref';
+  model_name: string;
+  reference_count: number;
+}
+
+export interface ExplainerVideoStatusResp {
+  task_id: string;
+  status: string;
+  is_final: boolean;
+  progress: number;
+  current_step: string;
+  result_url: string;
+  result_reference?: string;
+  error: string;
+  cost: number;
+}
+
 export interface SendCommentResp {
   success: boolean;
   mode: 'real' | 'draft';
@@ -382,6 +403,18 @@ export const xWorkbenchApi = {
   // 视频拆解
   generateBreakdown: (post_id: string, force_refresh = false) =>
     request.post<any, BreakdownResp>('/x-workbench/breakdown', { post_id, force_refresh }),
+
+  // 使用拆解上下文生成低成本 Seedance 解说视频
+  generateExplainerVideo: (post_id: string, idempotency_key: string) =>
+    request.post<any, ExplainerVideoCreateResp>(
+      '/x-workbench/explainer-video',
+      { post_id, idempotency_key },
+      { skipRetry: true },
+    ),
+
+  // 查询 Seedance 解说视频异步任务
+  getExplainerVideoStatus: (task_id: string) =>
+    request.get<any, ExplainerVideoStatusResp>(`/x-workbench/explainer-video/${encodeURIComponent(task_id)}`),
 
   // 生成评论
   generateComments: (post_id: string, count = 3) =>

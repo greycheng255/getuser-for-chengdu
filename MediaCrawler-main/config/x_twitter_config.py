@@ -50,11 +50,6 @@ X_TWITTER_REPLY_CHECK_INTERVAL = int(os.getenv("X_TWITTER_REPLY_CHECK_INTERVAL",
 # AI service configuration for generating replies
 X_TWITTER_AI_REPLY_ENABLED = os.getenv("X_TWITTER_AI_REPLY_ENABLED", "true").lower() == "true"
 
-# AI API configuration
-X_TWITTER_AI_API_KEY = os.getenv("X_TWITTER_AI_API_KEY", "")
-X_TWITTER_AI_BASE_URL = os.getenv("X_TWITTER_AI_BASE_URL", "https://api.openai.com/v1")
-X_TWITTER_AI_MODEL = os.getenv("X_TWITTER_AI_MODEL", "gpt-3.5-turbo")
-
 # Video breakdown configuration
 X_TWITTER_VIDEO_BREAKDOWN_ENABLED = os.getenv("X_TWITTER_VIDEO_BREAKDOWN_ENABLED", "true").lower() == "true"
 

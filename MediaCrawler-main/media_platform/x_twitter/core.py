@@ -584,9 +584,9 @@ class XTwitterCrawler(AbstractCrawler):
                 "你是一个活跃的社交媒体用户，擅长用轻松友好的语气回复评论。")
             user_prompt = f"请回复以下评论内容:\n\n{context_text}\n\n请直接给出回复内容，不要解释。"
 
-            api_key = config.X_TWITTER_AI_API_KEY
-            base_url = config.X_TWITTER_AI_BASE_URL
-            model = config.X_TWITTER_AI_MODEL
+            api_key = config.ONELLM_API_KEY
+            base_url = config.ONELLM_BASE_URL
+            model = config.ONELLM_CHAT_MODEL
 
             if not api_key:
                 utils.logger.warning("[XTwitterCrawler._generate_ai_reply] AI API key not configured, using fallback reply")
@@ -645,9 +645,9 @@ class XTwitterCrawler(AbstractCrawler):
 请用中文输出，格式清晰。
             """.strip()
 
-            api_key = config.X_TWITTER_AI_API_KEY
-            base_url = config.X_TWITTER_AI_BASE_URL
-            model = config.X_TWITTER_AI_MODEL
+            api_key = config.ONELLM_API_KEY
+            base_url = config.ONELLM_BASE_URL
+            model = config.ONELLM_CHAT_MODEL
 
             if not api_key:
                 utils.logger.warning("[XTwitterCrawler._breakdown_video] AI API key not configured, skipping video breakdown")

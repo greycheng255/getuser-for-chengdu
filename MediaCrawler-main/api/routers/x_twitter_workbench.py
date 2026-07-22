@@ -10,17 +10,22 @@ X Twitter 工作台路由
 5. AI 自动回复
 """
 import asyncio
+import hashlib
+import json
 import logging
 import time
+import uuid
 from typing import Any, Dict, List, Optional
+from weakref import WeakValueDictionary
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
-from sqlalchemy import select, func, and_, or_, desc, case
+from pydantic import BaseModel, Field, UUID4
+from sqlalchemy import select, update, func, and_, or_, desc, case
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db_session import get_session
-from database.models import XTwitterPost, XTwitterVideoBreakdown, XTwitterSentComment, XTwitterReply, XTwitterMonitoredPost, XTwitterPostReply, XTwitterTrendingPost
+from database.models import XTwitterPost, XTwitterVideoBreakdown, XTwitterExplainerVideoTask, XTwitterSentComment, XTwitterReply, XTwitterMonitoredPost, XTwitterPostReply, XTwitterTrendingPost
 from api.utils.ttl_cache import ttl_cache
 from api.utils.rate_limit import rate_limit, ai_rate_limit
 from api.services.auth import get_current_user, require_admin
@@ -46,6 +51,11 @@ logger = logging.getLogger("x_workbench_router")
 class BreakdownRequest(BaseModel):
     post_id: str = Field(..., description="推文ID")
     force_refresh: bool = Field(False, description="是否强制重新生成拆解")
+
+
+class ExplainerVideoRequest(BaseModel):
+    post_id: str = Field(..., description="推文ID")
+    idempotency_key: UUID4 = Field(..., description="本次视频生成意图 UUID v4")
 
 
 class GenerateCommentsRequest(BaseModel):
@@ -75,6 +85,144 @@ class UpdateMonitoringRequest(BaseModel):
 
 def _ts() -> int:
     return int(time.time())
+
+
+def _stored_list(value: Any) -> List[str]:
+    """兼容数据库 JSON 字符串、历史换行文本和原生列表。"""
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if not value:
+        return []
+    text = str(value).strip()
+    try:
+        import json
+        decoded = json.loads(text)
+        if isinstance(decoded, list):
+            return [str(item).strip() for item in decoded if str(item).strip()]
+    except (TypeError, ValueError):
+        pass
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+_explainer_submission_locks: WeakValueDictionary[
+    tuple[str, str], asyncio.Lock
+] = WeakValueDictionary()
+_EXPLAINER_SUBMISSION_LEASE_SECONDS = 90
+
+
+def _explainer_submission_lock(owner_user_id: str, idempotency_key: str) -> asyncio.Lock:
+    """Serialize one paid generation intent inside this API process."""
+    key = (owner_user_id, idempotency_key)
+    lock = _explainer_submission_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _explainer_submission_locks[key] = lock
+    return lock
+
+
+def _explainer_request_hash(post_id: str) -> str:
+    canonical = json.dumps(
+        {"post_id": post_id},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _explainer_task_response(task: XTwitterExplainerVideoTask) -> Dict[str, Any]:
+    reference_count = 0
+    try:
+        snapshot = json.loads(task.submission_payload or "{}")
+        reference_count = min(9, len(snapshot.get("image_urls") or []))
+    except (TypeError, ValueError):
+        pass
+    return {
+        "post_id": task.post_id,
+        "task_id": task.local_task_id,
+        "status": task.status or "submitting",
+        "model": task.model or "",
+        "model_name": task.model_name or "",
+        "reference_count": reference_count,
+    }
+
+
+async def _find_explainer_intent(
+    owner_user_id: str,
+    idempotency_key: str,
+) -> Optional[XTwitterExplainerVideoTask]:
+    async with get_session() as session:
+        result = await session.execute(
+            select(XTwitterExplainerVideoTask).where(
+                XTwitterExplainerVideoTask.owner_user_id == owner_user_id,
+                XTwitterExplainerVideoTask.idempotency_key == idempotency_key,
+            )
+        )
+        return result.scalar_one_or_none()
+
+
+def _ensure_same_explainer_intent(
+    task: XTwitterExplainerVideoTask,
+    request_hash: str,
+) -> None:
+    if task.request_hash != request_hash:
+        raise HTTPException(
+            409,
+            "该 Idempotency Key 已用于另一个视频生成请求",
+        )
+
+
+async def _claim_explainer_submission(
+    task: XTwitterExplainerVideoTask,
+    owner_user_id: str,
+) -> bool:
+    """Atomically claim provider submission across API workers."""
+    now = _ts()
+    async with get_session() as session:
+        claimed = await session.execute(
+            update(XTwitterExplainerVideoTask)
+            .where(
+                XTwitterExplainerVideoTask.id == task.id,
+                XTwitterExplainerVideoTask.owner_user_id == owner_user_id,
+                XTwitterExplainerVideoTask.provider_task_id == "",
+                XTwitterExplainerVideoTask.status.in_(["pending", "error"]),
+            )
+            .values(
+                status="submitting",
+                progress=0,
+                error="",
+                updated_ts=now,
+                finished_ts=0,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        return claimed.rowcount == 1
+
+
+async def _mark_explainer_submission_error(
+    local_task_id: str,
+    owner_user_id: str,
+    error: Exception,
+    *,
+    submission_uncertain: bool = False,
+) -> None:
+    now = _ts()
+    async with get_session() as session:
+        await session.execute(
+            update(XTwitterExplainerVideoTask)
+            .where(
+                XTwitterExplainerVideoTask.local_task_id == local_task_id,
+                XTwitterExplainerVideoTask.owner_user_id == owner_user_id,
+                XTwitterExplainerVideoTask.provider_task_id == "",
+            )
+            .values(
+                status=("submission_unknown" if submission_uncertain else "error"),
+                error=str(error)[:1000],
+                updated_ts=now,
+                finished_ts=now,
+            )
+            .execution_options(synchronize_session=False)
+        )
 
 
 async def _get_post_by_id(session: AsyncSession, post_id: str) -> Optional[XTwitterPost]:
@@ -366,6 +514,259 @@ async def generate_breakdown(req: BreakdownRequest):
         "suggested_comments": parsed["suggested_comments"],
         "full_text": parsed["full_text"],
     }
+
+
+@router.post("/explainer-video", dependencies=[Depends(ai_rate_limit())])
+async def generate_explainer_video(
+    req: ExplainerVideoRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """使用已保存的视频拆解上下文提交 AI6700 媒体任务。"""
+    from api.services.explainer_video_client import (
+        AI6700VideoError,
+        build_explainer_prompt,
+        choose_seedance_model,
+        normalize_media_urls,
+        submit_explainer_video,
+    )
+    from config.onellm_config import load_onellm_config
+    owner_user_id = str(current_user["id"])
+    idempotency_key = str(req.idempotency_key)
+    request_hash = _explainer_request_hash(req.post_id)
+
+    async with _explainer_submission_lock(owner_user_id, idempotency_key):
+        task = await _find_explainer_intent(owner_user_id, idempotency_key)
+        if task is not None:
+            _ensure_same_explainer_intent(task, request_hash)
+            if task.provider_task_id:
+                return _explainer_task_response(task)
+            if task.status == "submission_unknown":
+                return _explainer_task_response(task)
+            if task.status == "submitting":
+                if (task.updated_ts or 0) <= _ts() - _EXPLAINER_SUBMISSION_LEASE_SECONDS:
+                    await _mark_explainer_submission_error(
+                        task.local_task_id,
+                        owner_user_id,
+                        RuntimeError(
+                            "AI6700 提交响应未知；为避免重复扣费，系统不会自动重提。"
+                            "请在 AI6700 消费明细中核对最近任务后再创建新请求"
+                        ),
+                        submission_uncertain=True,
+                    )
+                    task = await _find_explainer_intent(owner_user_id, idempotency_key)
+                return _explainer_task_response(task)
+
+        if task is None:
+            async with get_session() as session:
+                post = await _get_post_by_id(session, req.post_id)
+                breakdown_result = await session.execute(
+                    select(XTwitterVideoBreakdown).where(
+                        XTwitterVideoBreakdown.post_id == req.post_id
+                    )
+                )
+                breakdown = breakdown_result.scalar_one_or_none()
+
+            if not post:
+                raise HTTPException(404, f"推文 {req.post_id} 不存在")
+            if not breakdown:
+                raise HTTPException(400, "请先完成视频拆解，再生成解说视频")
+
+            image_urls = normalize_media_urls(getattr(post, "image_urls", None))
+            video_urls = normalize_media_urls(getattr(post, "video_url", None))
+            prompt = build_explainer_prompt(
+                post_content=post.content or "",
+                script=breakdown.script or "",
+                storyboards=_stored_list(breakdown.storyboards),
+                key_points=_stored_list(breakdown.key_points),
+            )
+            submission_payload = json.dumps(
+                {
+                    "prompt": prompt,
+                    "image_urls": image_urls,
+                    "video_urls": video_urls,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+
+            onellm = load_onellm_config()
+            model = choose_seedance_model(image_urls, video_urls)
+            model_name = (
+                "Seedance 2.0 参考生"
+                if model == onellm.reference_video_model
+                else "Seedance 2.0 首尾帧"
+            )
+            now = _ts()
+            candidate = XTwitterExplainerVideoTask(
+                local_task_id=str(uuid.uuid4()),
+                provider_task_id="",
+                owner_user_id=owner_user_id,
+                idempotency_key=idempotency_key,
+                request_hash=request_hash,
+                submission_payload=submission_payload,
+                connection_id=0,
+                grant_id="",
+                post_id=req.post_id,
+                tenant_id="",
+                workspace_id="",
+                model=model,
+                model_name=model_name,
+                status="pending",
+                progress=0,
+                created_ts=now,
+                updated_ts=now,
+            )
+            try:
+                async with get_session() as session:
+                    session.add(candidate)
+                    await session.flush()
+                task = candidate
+            except IntegrityError:
+                # A different API worker won the unique (owner, key) insert.
+                task = await _find_explainer_intent(owner_user_id, idempotency_key)
+                if task is None:
+                    raise
+                _ensure_same_explainer_intent(task, request_hash)
+                if task.provider_task_id or task.status in {
+                    "submitting",
+                    "submission_unknown",
+                }:
+                    return _explainer_task_response(task)
+        if not await _claim_explainer_submission(task, owner_user_id):
+            replay = await _find_explainer_intent(owner_user_id, idempotency_key)
+            if replay is None:
+                raise HTTPException(409, "视频生成意图状态已变化，请重试")
+            _ensure_same_explainer_intent(replay, request_hash)
+            return _explainer_task_response(replay)
+
+        try:
+            snapshot = json.loads(task.submission_payload or "{}")
+            prompt = str(snapshot["prompt"])
+            image_urls = [str(url) for url in snapshot.get("image_urls") or []]
+            video_urls = [str(url) for url in snapshot.get("video_urls") or []]
+        except (KeyError, TypeError, ValueError) as exc:
+            await _mark_explainer_submission_error(
+                task.local_task_id,
+                owner_user_id,
+                exc,
+            )
+            raise HTTPException(500, "视频生成提交快照损坏") from exc
+
+        try:
+            result = await submit_explainer_video(
+                prompt=prompt,
+                image_urls=image_urls,
+                video_urls=video_urls,
+            )
+        except AI6700VideoError as exc:
+            await _mark_explainer_submission_error(
+                task.local_task_id,
+                owner_user_id,
+                exc,
+                submission_uncertain=exc.submission_uncertain,
+            )
+            raise HTTPException(exc.status_code, str(exc)) from exc
+
+        async with get_session() as session:
+            saved = await session.execute(
+                update(XTwitterExplainerVideoTask)
+                .where(
+                    XTwitterExplainerVideoTask.id == task.id,
+                    XTwitterExplainerVideoTask.owner_user_id == owner_user_id,
+                    XTwitterExplainerVideoTask.provider_task_id == "",
+                )
+                .values(
+                    provider_task_id=result["task_id"],
+                    model=result.get("model", task.model or ""),
+                    model_name=result.get("model_name", task.model_name or ""),
+                    status=result.get("status", "running"),
+                    progress=5,
+                    error="",
+                    updated_ts=_ts(),
+                    finished_ts=0,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if saved.rowcount != 1:
+                logger.warning(
+                    "explainer task provider result raced: local_task_id=%s",
+                    task.local_task_id,
+                )
+
+        completed = await _find_explainer_intent(owner_user_id, idempotency_key)
+        if completed is None:
+            raise HTTPException(500, "视频任务本地映射丢失")
+        return _explainer_task_response(completed)
+
+
+@router.get("/explainer-video/{task_id}")
+async def explainer_video_status(
+    task_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """查询 AI6700 解说视频任务进度。"""
+    from api.services.explainer_video_client import (
+        AI6700VideoError,
+        get_explainer_video_status,
+    )
+
+    owner_user_id = str(current_user["id"])
+    async with get_session() as session:
+        task_result = await session.execute(
+            select(XTwitterExplainerVideoTask).where(
+                XTwitterExplainerVideoTask.local_task_id == task_id,
+                XTwitterExplainerVideoTask.owner_user_id == owner_user_id,
+            )
+        )
+        task = task_result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(404, "视频任务不存在")
+    if not task.provider_task_id:
+        if task.status in {"error", "submission_unknown"}:
+            return {
+                "task_id": task.local_task_id,
+                "status": task.status,
+                "is_final": True,
+                "progress": task.progress or 0,
+                "current_step": "error",
+                "result_url": task.result_url or "",
+                "error": task.error or "任务提交失败",
+                "cost": task.cost or 0,
+            }
+        return {
+            "task_id": task.local_task_id,
+            "status": task.status or "submitting",
+            "is_final": False,
+            "progress": task.progress or 0,
+            "current_step": "submitting",
+            "result_url": "",
+            "error": "",
+            "cost": 0,
+        }
+
+    try:
+        status_result = await get_explainer_video_status(task.provider_task_id)
+    except AI6700VideoError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+    async with get_session() as session:
+        task_result = await session.execute(
+            select(XTwitterExplainerVideoTask).where(
+                XTwitterExplainerVideoTask.local_task_id == task_id,
+                XTwitterExplainerVideoTask.owner_user_id == owner_user_id,
+            )
+        )
+        row = task_result.scalar_one()
+        row.status = status_result["status"]
+        row.progress = status_result["progress"]
+        row.result_url = status_result["result_url"]
+        row.error = status_result["error"]
+        row.cost = str(status_result["cost"])
+        row.updated_ts = _ts()
+        if status_result["is_final"]:
+            row.finished_ts = _ts()
+    return {**status_result, "task_id": task_id}
 
 
 # ==================== 评论生成 ====================
@@ -786,7 +1187,7 @@ async def stop_monitor():
 
 @router.get("/ai/health")
 async def ai_health():
-    """检查 AI Agent API 是否可用"""
+    """检查 AI6700 Chat Completions API 是否可用。"""
     from api.services import ai_agent_client
     # 重新加载配置（避免启动时未加载）
     ai_agent_client.CONFIG = ai_agent_client._load_config()

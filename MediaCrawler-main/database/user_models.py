@@ -55,3 +55,49 @@ class UserCookieModel(Base):
     status = Column(String(20), default='active', comment='状态: active / invalid / disabled')
     created_ts = Column(BigInteger, comment='创建时间戳')
     last_check_ts = Column(BigInteger, default=0, comment='最后校验时间戳')
+
+
+class OpenNotebookConnectionModel(Base):
+    """MediaCrawler 用户的 OpenNotebook OAuth 连接。
+
+    OAuth 凭证始终按 ``owner_user_id`` 隔离，密文由服务层负责
+    加解密；前端和 API 响应都不暴露 token。
+    """
+
+    __tablename__ = 'sys_user_opennotebook_connection'
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    owner_user_id = Column(String(64), unique=True, index=True, nullable=False, comment='归属系统用户ID')
+    provider_user_id = Column(String(128), default='', comment='OpenNotebook 用户ID')
+    tenant_id = Column(String(128), default='', index=True, comment='OpenNotebook Tenant ID')
+    workspace_id = Column(String(128), default='', comment='默认 Workspace ID')
+    workspace_name = Column(String(255), default='', comment='默认 Workspace 名称')
+    grant_id = Column(String(128), default='', comment='OAuth Grant ID')
+    scope = Column(Text, default='*', comment='OAuth scope')
+    token_type = Column(String(32), default='Bearer', comment='Token 类型')
+    access_token_ciphertext = Column(Text, nullable=False, comment='加密 Access Token')
+    refresh_token_ciphertext = Column(Text, default='', comment='加密 Refresh Token')
+    access_token_expires_ts = Column(BigInteger, default=0, comment='Access Token 过期时间(秒)')
+    refresh_token_expires_ts = Column(BigInteger, default=0, comment='Refresh Token 过期时间(秒)')
+    status = Column(String(32), default='active', index=True, comment='active/reauth_required/revoked/error')
+    credential_version = Column(Integer, default=1, comment='凭证轮换版本')
+    last_error = Column(Text, default='', comment='最近错误(不含敏感信息)')
+    created_ts = Column(BigInteger, comment='创建时间戳(秒)')
+    updated_ts = Column(BigInteger, comment='更新时间戳(秒)')
+    last_refresh_ts = Column(BigInteger, default=0, comment='最近刷新时间戳(秒)')
+    last_used_ts = Column(BigInteger, default=0, comment='最近使用时间戳(秒)')
+
+
+class OpenNotebookOAuthFlowModel(Base):
+    """OAuth 授权码流的一次性 state/PKCE 会话。"""
+
+    __tablename__ = 'sys_user_opennotebook_oauth_flow'
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    state_hash = Column(String(64), unique=True, index=True, nullable=False, comment='state SHA-256')
+    owner_user_id = Column(String(64), index=True, nullable=False, comment='发起授权的系统用户ID')
+    browser_binding_hash = Column(String(64), nullable=False, default='', comment='发起浏览器随机绑定值的 SHA-256')
+    expected_credential_version = Column(Integer, default=0, nullable=False, comment='发起授权时的凭证版本')
+    code_verifier_ciphertext = Column(Text, nullable=False, comment='加密 PKCE verifier')
+    return_to = Column(String(255), default='/x-workbench', comment='授权后返回的内部路径')
+    expires_ts = Column(BigInteger, index=True, nullable=False, comment='过期时间戳(秒)')
+    consumed_ts = Column(BigInteger, default=0, comment='消费时间戳(秒)')
+    created_ts = Column(BigInteger, comment='创建时间戳(秒)')
