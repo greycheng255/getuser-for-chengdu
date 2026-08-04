@@ -1,10 +1,9 @@
+import { message } from '../utils/antdMessage';
 import React, { useEffect, useState } from 'react';
-import {
-  Card, Tabs, Form, Input, Button, Tag, Switch, Slider, message,
-  List, Space, Modal, InputNumber, Row, Col, Divider, Select, Spin, Badge,
-} from 'antd';
+import { Card, Tabs, Form, Input, Button, Tag, Switch, Slider, List, Space, Modal, InputNumber, Row, Col, Divider, Select, Spin, Badge } from 'antd';
 import { PlusOutlined, SaveOutlined, ReloadOutlined, DownloadOutlined, EditOutlined } from '@ant-design/icons';
 import { authStorage } from '../api/auth';
+import { systemConfigApi } from '../api/prdGap';
 
 const { TabPane } = Tabs;
 const { Option } = Select;
@@ -367,17 +366,53 @@ const Settings: React.FC = () => {
           })));
         }
       }
-      // 评分规则等其他配置仍走 localStorage(后端尚未提供)
-      const saved = localStorage.getItem(STORAGE_KEY());
-      if (saved) {
-        const data = JSON.parse(saved);
-        if (data.scoringConfig) {
-          setScoringConfig(data.scoringConfig);
-          scoringForm.setFieldsValue(data.scoringConfig);
+      // 评分规则: 优先从后端加载,localStorage 作为 fallback 缓存(阶段三 P2-7)
+      let scoringLoaded = false;
+      try {
+        const scoringResp: any = await systemConfigApi.get('scoring');
+        if (scoringResp && scoringResp.found && scoringResp.value) {
+          const cfg = scoringResp.value as ScoringConfig;
+          setScoringConfig(cfg);
+          scoringForm.setFieldsValue(cfg);
+          scoringLoaded = true;
+          // 同步写回 localStorage 作为本地缓存
+          saveSettings('scoringConfig', cfg);
         }
-        if (data.notificationConfig) {
-          setNotificationConfig(data.notificationConfig);
-          notificationForm.setFieldsValue(data.notificationConfig);
+      } catch (e) {
+        console.warn('从后端加载评分规则失败,回退到 localStorage', e);
+      }
+      if (!scoringLoaded) {
+        const saved = localStorage.getItem(STORAGE_KEY());
+        if (saved) {
+          const data = JSON.parse(saved);
+          if (data.scoringConfig) {
+            setScoringConfig(data.scoringConfig);
+            scoringForm.setFieldsValue(data.scoringConfig);
+          }
+        }
+      }
+      // 通知设置: 同上,优先后端(阶段三 P2-7)
+      let notificationLoaded = false;
+      try {
+        const notifResp: any = await systemConfigApi.get('notification');
+        if (notifResp && notifResp.found && notifResp.value) {
+          const cfg = notifResp.value as NotificationConfig;
+          setNotificationConfig(cfg);
+          notificationForm.setFieldsValue(cfg);
+          notificationLoaded = true;
+          saveSettings('notificationConfig', cfg);
+        }
+      } catch (e) {
+        console.warn('从后端加载通知设置失败,回退到 localStorage', e);
+      }
+      if (!notificationLoaded) {
+        const saved = localStorage.getItem(STORAGE_KEY());
+        if (saved) {
+          const data = JSON.parse(saved);
+          if (data.notificationConfig) {
+            setNotificationConfig(data.notificationConfig);
+            notificationForm.setFieldsValue(data.notificationConfig);
+          }
         }
       }
       const savedTemplates = localStorage.getItem(TEMPLATES_KEY());
@@ -456,16 +491,32 @@ const Settings: React.FC = () => {
     }
   };
 
-  const handleSaveScoring = (values: any) => {
+  const handleSaveScoring = async (values: any) => {
     setScoringConfig(values);
+    // 保留 localStorage 作为本地缓存(fallback)
     saveSettings('scoringConfig', values);
-    message.success('评分规则已保存');
+    // 优先写入后端(阶段三 P2-7)
+    try {
+      await systemConfigApi.set('scoring', values, 'scoring');
+      message.success('评分规则已保存');
+    } catch (e: any) {
+      console.error('保存评分规则到后端失败', e);
+      message.warning('评分规则已保存到本地,但同步到后端失败');
+    }
   };
 
-  const handleSaveNotification = (values: any) => {
+  const handleSaveNotification = async (values: any) => {
     setNotificationConfig(values);
+    // 保留 localStorage 作为本地缓存(fallback)
     saveSettings('notificationConfig', values);
-    message.success('通知配置已保存');
+    // 优先写入后端(阶段三 P2-7)
+    try {
+      await systemConfigApi.set('notification', values, 'notification');
+      message.success('通知配置已保存');
+    } catch (e: any) {
+      console.error('保存通知设置到后端失败', e);
+      message.warning('通知配置已保存到本地,但同步到后端失败');
+    }
   };
 
   const handleSaveTemplate = (values: any) => {

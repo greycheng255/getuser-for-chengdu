@@ -1,0 +1,14 @@
+venv/
+*.pyc
+__pycache__/
+*.db
+*.deb
+*.tar
+*.zip
+output/
+.DS_Store
+*.log
+node_modules/
+playwright/driver/
+playwright/.local/
+chromium-*/

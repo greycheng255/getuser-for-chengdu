@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>客户分配调度 - 完整流程演示</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Microsoft YaHei", sans-serif; background: #f0f2f5; color: #333; padding: 20px; }
+  h1 { color: #1a1a1a; margin-bottom: 8px; }
+  .subtitle { color: #666; margin-bottom: 20px; font-size: 14px; }
+  .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .card h2 { font-size: 16px; margin-bottom: 12px; color: #1890ff; border-left: 4px solid #1890ff; padding-left: 10px; }
+  .row { display: flex; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+  label { min-width: 100px; color: #555; font-size: 14px; }
+  input, select, textarea { padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 14px; }
+  input { width: 200px; }
+  button { padding: 8px 16px; background: #1890ff; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+  button:hover { background: #40a9ff; }
+  button:disabled { background: #d9d9d9; cursor: not-allowed; }
+  button.success { background: #52c41a; }
+  button.warning { background: #faad14; }
+  button.danger { background: #ff4d4f; }
+  pre { background: #f6f8fa; padding: 12px; border-radius: 4px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; }
+  .log { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 4px; font-size: 12px; font-family: "Consolas", monospace; max-height: 400px; overflow-y: auto; }
+  .log .ok { color: #4ec9b0; }
+  .log .err { color: #f44747; }
+  .log .info { color: #569cd6; }
+  .log .warn { color: #dcdcaa; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; border: 1px solid #e8e8e8; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .tag-pending { background: #fff7e6; color: #d46b08; }
+  .tag-sent { background: #e6f7ff; color: #1890ff; }
+  .tag-replied { background: #f6ffed; color: #389e0d; }
+  .progress-bar { width: 100%; height: 20px; background: #f0f0f0; border-radius: 10px; overflow: hidden; margin: 8px 0; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #1890ff, #52c41a); transition: width 0.3s; }
+  .step-active { background: #e6f7ff; border-left: 4px solid #1890ff; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<h1>🎯 客户分配调度 - 完整流程演示</h1>
+<p class="subtitle">1000客户 / 10账号 / 区间分配 / 去重 / 漏单补发 / 全覆盖</p>
+
+<div class="card">
+  <h2>步骤 0: 登录获取Token</h2>
+  <div class="row">
+    <label>用户名:</label><input id="username" value="admin">
+    <label>密码:</label><input id="password" type="password" value="admin123">
+    <button onclick="doLogin()">登录获取Token</button>
+  </div>
+  <div id="tokenArea"></div>
+</div>
+
+<div class="card">
+  <h2>步骤 1: 创建分配计划</h2>
+  <div class="row">
+    <label>计划名称:</label><input id="planName" value="演示计划-1000客户10账号">
+    <label>平台:</label>
+    <select id="platform"><option value="douyin">抖音</option><option value="xhs">小红书</option><option value="ks">快手</option></select>
+    <label>客户总数:</label><input id="totalCustomers" value="1000" style="width:80px">
+    <label>账号数:</label><input id="totalAccounts" value="10" style="width:80px">
+  </div>
+  <div class="row">
+    <label>账号配置:</label>
+    <textarea id="accountConfigs" rows="3" style="width:500px">[{"account_alias":"账号1","cookie_id":"c1","batch_size":20},{"account_alias":"账号2","cookie_id":"c2","batch_size":38},{"account_alias":"账号3","cookie_id":"c3","batch_size":30},{"account_alias":"账号4","cookie_id":"c4","batch_size":50},{"account_alias":"账号5","cookie_id":"c5","batch_size":70},{"account_alias":"账号6","cookie_id":"c6","batch_size":80},{"account_alias":"账号7","cookie_id":"c7","batch_size":90},{"account_alias":"账号8","cookie_id":"c8","batch_size":100},{"account_alias":"账号9","cookie_id":"c9","batch_size":110},{"account_alias":"账号10","cookie_id":"c10","batch_size":412}]</textarea>
+  </div>
+  <button onclick="createPlan()">创建计划</button>
+  <pre id="createResult"></pre>
+</div>
+
+<div class="card">
+  <h2>步骤 2: 查看账号区间分配</h2>
+  <button onclick="listAccounts()">查看10个账号的区间分配</button>
+  <div id="accountsArea"></div>
+</div>
+
+<div class="card">
+  <h2>步骤 3: 账号取数 + 标记已回复(去重演示)</h2>
+  <div class="row">
+    <label>选择账号:</label>
+    <select id="accountIdx"><option value="1">账号1</option><option value="2">账号2</option><option value="3">账号3</option><option value="4">账号4</option><option value="5">账号5</option><option value="6">账号6</option><option value="7">账号7</option><option value="8">账号8</option><option value="9">账号9</option><option value="10">账号10</option></select>
+    <label>取数量:</label><input id="batchSize" value="20" style="width:80px">
+    <button onclick="getNextBatch()">取下一批客户</button>
+    <button class="success" onclick="markReplied()">标记前5个为已回复</button>
+    <button class="warning" onclick="getNextBatchAgain()">该账号再次取数(看漏单补发)</button>
+  </div>
+  <div id="batchArea"></div>
+</div>
+
+<div class="card">
+  <h2>步骤 4: 进度统计 + 覆盖率</h2>
+  <button onclick="getProgress()">查看进度</button>
+  <div id="progressArea"></div>
+</div>
+
+<div class="card">
+  <h2>步骤 5: 操作日志</h2>
+  <button class="danger" onclick="clearLog()">清空日志</button>
+  <div class="log" id="logArea"></div>
+</div>
+
+<script>
+const API_BASE = 'http://localhost:8080/api';
+let TOKEN = '';
+let CURRENT_PLAN_ID = '';
+let LAST_BATCH = null;
+
+function log(msg, type='info') {
+  const area = document.getElementById('logArea');
+  const time = new Date().toLocaleTimeString();
+  area.innerHTML += `<div class="${type}">[${time}] ${msg}</div>`;
+  area.scrollTop = area.scrollHeight;
+}
+function clearLog() { document.getElementById('logArea').innerHTML = ''; }
+async function api(path, method='GET', body=null) {
+  const opts = { method, headers: { 'Authorization': `Bearer ${TOKEN}`, 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(`${API_BASE}${path}`, opts);
+  const data = await res.json().catch(() => ({}));
+  return { status: res.status, data };
+}
+
+async function doLogin() {
+  log('尝试登录...', 'info');
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: document.getElementById('username').value, password: document.getElementById('password').value })
+  });
+  const data = await res.json();
+  if (res.ok && data.access_token) {
+    TOKEN = data.access_token;
+    log(`✓ 登录成功, Token: ${TOKEN.substring(0,30)}...`, 'ok');
+    document.getElementById('tokenArea').innerHTML = `<pre style="color:#389e0d">✓ Token获取成功: ${TOKEN.substring(0,50)}...</pre>`;
+  } else {
+    log(`✗ 登录失败: ${JSON.stringify(data)}`, 'err');
+    document.getElementById('tokenArea').innerHTML = `<pre style="color:#ff4d4f">✗ 登录失败: ${JSON.stringify(data, null, 2)}</pre>`;
+  }
+}
+
+async function createPlan() {
+  const totalC = parseInt(document.getElementById('totalCustomers').value);
+  const configs = JSON.parse(document.getElementById('accountConfigs').value);
+  const leadIds = Array.from({length: totalC}, (_, i) => 9900000 + i);
+  log(`创建计划: ${totalC}客户 / ${configs.length}账号, 模拟客户ID: ${leadIds[0]}-${leadIds[totalC-1]}`, 'info');
+  const { status, data } = await api('/customer-dispatch/plans', 'POST', {
+    name: document.getElementById('planName').value,
+    platform: document.getElementById('platform').value,
+    account_configs: configs,
+    customer_lead_ids: leadIds
+  });
+  if (status === 200 && data.plan_id) {
+    CURRENT_PLAN_ID = data.plan_id;
+    log(`✓ 计划创建成功 plan_id=${CURRENT_PLAN_ID} total=${data.total_customers} accounts=${data.total_accounts}`, 'ok');
+    document.getElementById('createResult').textContent = JSON.stringify(data, null, 2);
+  } else {
+    log(`✗ 创建失败: ${JSON.stringify(data)}`, 'err');
+    document.getElementById('createResult').textContent = JSON.stringify(data, null, 2);
+  }
+}
+
+async function listAccounts() {
+  if (!CURRENT_PLAN_ID) { log('请先创建计划', 'err'); return; }
+  log(`查询账号区间 plan_id=${CURRENT_PLAN_ID}`, 'info');
+  const { status, data } = await api(`/customer-dispatch/plans/${CURRENT_PLAN_ID}/accounts`);
+  if (status === 200 && Array.isArray(data)) {
+    log(`✓ 共 ${data.length} 个账号`, 'ok');
+    let html = '<table><tr><th>账号</th><th>别名</th><th>区间起</th><th>区间止</th><th>批次大小</th><th>已发</th><th>已回复</th></tr>';
+    data.forEach(a => {
+      html += `<tr><td>账号${a.account_idx}</td><td>${a.account_alias}</td><td>#${String(a.range_start).padStart(4,'0')}</td><td>#${String(a.range_end).padStart(4,'0')}</td><td>${a.batch_size}</td><td>${a.total_sent}</td><td>${a.total_replied}</td></tr>`;
+    });
+    html += '</table>';
+    document.getElementById('accountsArea').innerHTML = html;
+    log(`区间分配: 账号1=#0001-#0020, 账号2=#0021-#0058... 总和=${data.reduce((s,a)=>s+(a.range_end-a.range_start+1),0)}`, 'ok');
+  } else {
+    log(`✗ 查询失败: ${JSON.stringify(data)}`, 'err');
+  }
+}
+
+async function getNextBatch() {
+  if (!CURRENT_PLAN_ID) { log('请先创建计划', 'err'); return; }
+  const idx = parseInt(document.getElementById('accountIdx').value);
+  const bs = parseInt(document.getElementById('batchSize').value);
+  log(`账号${idx} 取下一批 ${bs}个客户`, 'info');
+  const { status, data } = await api(`/customer-dispatch/plans/${CURRENT_PLAN_ID}/next`, 'POST', { account_idx: idx, batch_size: bs });
+  if (status === 200 && data.ok) {
+    LAST_BATCH = data;
+    log(`✓ 取数成功 own_count=${data.own_count} leaked_count=${data.leaked_count} seqs=${data.seqs ? `#${String(Math.min(...data.seqs)).padStart(4,'0')}-#${String(Math.max(...data.seqs)).padStart(4,'0')}` : '空'}`, 'ok');
+    let html = `<div style="margin:8px 0">本批共 ${data.customers.length} 个客户 (本账号区间:${data.own_count} 漏单补发:${data.leaked_count})</div>`;
+    if (data.customers.length > 0) {
+      html += '<table><tr><th>序号</th><th>客户ID</th><th>客户昵称</th><th>来源</th></tr>';
+      data.customers.slice(0, 10).forEach((c, i) => {
+        const seq = data.seqs[i];
+        const isLeaked = seq > (data.own_count > 0 ? 0 : 999999);
+        html += `<tr><td>#${String(seq).padStart(4,'0')}</td><td>${c.id || c.customer_lead_id || '-'}</td><td>${c.nickname || c.customer_nickname || '-'}</td><td>${isLeaked ? '<span class="tag tag-sent">漏单补发</span>' : '<span class="tag tag-pending">本账号区间</span>'}</td></tr>`;
+      });
+      html += `</table><div style="margin-top:8px;color:#666">显示前10条,共${data.customers.length}条</div>`;
+    } else {
+      html += `<div style="color:#faad14">无待发客户 (${data.message || '本账号区间已发完且无漏单可补'})</div>`;
+    }
+    document.getElementById('batchArea').innerHTML = html;
+  } else {
+    log(`✗ 取数失败: ${JSON.stringify(data)}`, 'err');
+    document.getElementById('batchArea').innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+  }
+}
+
+async function markReplied() {
+  if (!LAST_BATCH || !LAST_BATCH.customer_lead_ids || LAST_BATCH.customer_lead_ids.length === 0) {
+    log('请先取下一批客户', 'err'); return;
+  }
+  const idx = parseInt(document.getElementById('accountIdx').value);
+  const ids = LAST_BATCH.customer_lead_ids.slice(0, 5);
+  log(`标记账号${idx}的前5个客户为已回复: ${JSON.stringify(ids)}`, 'info');
+  const { status, data } = await api(`/customer-dispatch/plans/${CURRENT_PLAN_ID}/batch-mark`, 'POST', { customer_lead_ids: ids, account_idx: idx });
+  if (status === 200) {
+    log(`✓ 批量标记成功: ${data}`, 'ok');
+  } else {
+    log(`✗ 标记失败: ${JSON.stringify(data)}`, 'err');
+  }
+}
+
+async function getNextBatchAgain() {
+  log('▶ 同一账号再次取数,验证漏单补发机制...', 'warn');
+  await getNextBatch();
+  if (LAST_BATCH && LAST_BATCH.customers.length > 0) {
+    log(`✓ 漏单补发生效: own_count=${LAST_BATCH.own_count} leaked_count=${LAST_BATCH.leaked_count}`, 'ok');
+  }
+}
+
+async function getProgress() {
+  if (!CURRENT_PLAN_ID) { log('请先创建计划', 'err'); return; }
+  log(`查询进度 plan_id=${CURRENT_PLAN_ID}`, 'info');
+  const { status, data } = await api(`/customer-dispatch/plans/${CURRENT_PLAN_ID}/progress`);
+  if (status === 200) {
+    log(`✓ 进度: total=${data.total} pending=${data.pending} sent=${data.sent_unreplied} replied=${data.replied} coverage=${data.coverage_pct}%`, 'ok');
+    const pct = data.coverage_pct || 0;
+    let html = `
+      <div class="grid2">
+        <div><strong>客户总数:</strong> ${data.total}</div>
+        <div><strong>待发:</strong> ${data.pending}</div>
+        <div><strong>已发未回复:</strong> ${data.sent_unreplied}</div>
+        <div><strong>已回复:</strong> ${data.replied}</div>
+        <div><strong>覆盖率:</strong> ${data.coverage_pct}%</div>
+        <div><strong>活跃账号:</strong> ${data.active_accounts}</div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(pct, 100)}%"></div></div>
+      <div style="text-align:center;color:#666">覆盖率: ${data.coverage_pct}% (已回复 ${data.replied}/${data.total})</div>`;
+    document.getElementById('progressArea').innerHTML = html;
+  } else {
+    log(`✗ 查询失败: ${JSON.stringify(data)}`, 'err');
+  }
+}
+
+log('演示页面已加载,请先点击"登录获取Token"', 'info');
+</script>
+</body>
+</html>

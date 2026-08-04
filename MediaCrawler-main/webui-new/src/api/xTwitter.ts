@@ -76,11 +76,11 @@ export async function getPosts(params: {
   keyword?: string;
   has_video?: boolean;
 }): Promise<PaginatedResponse<XTwitterPost>> {
-  return request.get('/api/x-twitter/posts', { params });
+  return request.get('/x-twitter/posts', { params });
 }
 
 export async function getPost(postId: string): Promise<XTwitterPost> {
-  return request.get(`/api/x-twitter/posts/${postId}`);
+  return request.get(`/x-twitter/posts/${postId}`);
 }
 
 export async function getPostComments(params: {
@@ -88,7 +88,7 @@ export async function getPostComments(params: {
   page?: number;
   page_size?: number;
 }): Promise<PaginatedResponse<XTwitterComment>> {
-  return request.get(`/api/x-twitter/posts/${params.post_id}/comments`, {
+  return request.get(`/x-twitter/posts/${params.post_id}/comments`, {
     params: { page: params.page, page_size: params.page_size },
   });
 }
@@ -98,7 +98,7 @@ export async function getComments(params: {
   page_size?: number;
   keyword?: string;
 }): Promise<PaginatedResponse<XTwitterComment>> {
-  return request.get('/api/x-twitter/comments', { params });
+  return request.get('/x-twitter/comments', { params });
 }
 
 export async function getVideoBreakdowns(params: {
@@ -106,11 +106,11 @@ export async function getVideoBreakdowns(params: {
   page_size?: number;
   post_id?: string;
 }): Promise<PaginatedResponse<XTwitterVideoBreakdown>> {
-  return request.get('/api/x-twitter/video-breakdowns', { params });
+  return request.get('/x-twitter/video-breakdowns', { params });
 }
 
 export async function getStats(): Promise<XTwitterStats> {
-  return request.get('/api/x-twitter/stats');
+  return request.get('/x-twitter/stats');
 }
 
 
@@ -135,15 +135,15 @@ export interface ReplyConfig {
 }
 
 export async function getReplyRules(): Promise<{ rules: KeywordReplyRule[] }> {
-  return request.get('/api/x-twitter/reply-rules');
+  return request.get('/x-twitter/reply-rules');
 }
 
 export async function updateReplyRules(rules: KeywordReplyRule[]): Promise<{ success: boolean; rules: KeywordReplyRule[] }> {
-  return request.put('/api/x-twitter/reply-rules', rules);
+  return request.put('/x-twitter/reply-rules', rules);
 }
 
 export async function getReplyConfig(): Promise<ReplyConfig> {
-  return request.get('/api/x-twitter/reply-config');
+  return request.get('/x-twitter/reply-config');
 }
 
 // ========== 任务调度 ==========
@@ -154,15 +154,15 @@ export interface CrawlStatus {
 }
 
 export async function startScheduledCrawl(): Promise<{ success: boolean; message: string }> {
-  return request.post('/api/x-twitter/crawl/start');
+  return request.post('/x-twitter/crawl/start');
 }
 
 export async function stopScheduledCrawl(): Promise<{ success: boolean; message: string }> {
-  return request.post('/api/x-twitter/crawl/stop');
+  return request.post('/x-twitter/crawl/stop');
 }
 
 export async function getCrawlStatus(): Promise<CrawlStatus> {
-  return request.get('/api/x-twitter/crawl/status');
+  return request.get('/x-twitter/crawl/status');
 }
 
 // ========== 批量操作 ==========
@@ -183,11 +183,11 @@ export interface BatchResult {
 }
 
 export async function batchVideoBreakdown(postIds: string[]): Promise<BatchResult> {
-  return request.post('/api/x-twitter/batch/breakdown', { post_ids: postIds });
+  return request.post('/x-twitter/batch/breakdown', { post_ids: postIds });
 }
 
 export async function batchPostComments(postIds: string[], comments?: string[]): Promise<BatchResult> {
-  return request.post('/api/x-twitter/batch/comment', { post_ids: postIds, comments });
+  return request.post('/x-twitter/batch/comment', { post_ids: postIds, comments });
 }
 
 // ========== WebSocket 实时通知 ==========

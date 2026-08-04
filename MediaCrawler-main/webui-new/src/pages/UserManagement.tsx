@@ -1,8 +1,6 @@
+import { message } from '../utils/antdMessage';
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  Card, Table, Button, Tag, Space, Modal, Form, Input, Select, message,
-  Popconfirm, Avatar, Row, Col, Statistic, Tooltip,
-} from 'antd';
+import { Card, Table, Button, Tag, Space, Modal, Form, Input, Select, Popconfirm, Avatar, Row, Col, Statistic, Tooltip } from 'antd';
 import {
   UserOutlined, PlusOutlined, DeleteOutlined, EditOutlined,
   LockOutlined, UnlockOutlined, ReloadOutlined,

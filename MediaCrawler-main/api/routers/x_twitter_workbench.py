@@ -13,12 +13,13 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import time
 import uuid
 from typing import Any, Dict, List, Optional
 from weakref import WeakValueDictionary
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, Request
 from pydantic import BaseModel, Field, UUID4
 from sqlalchemy import select, update, func, and_, or_, desc, case
 from sqlalchemy.exc import IntegrityError
@@ -49,13 +50,24 @@ logger = logging.getLogger("x_workbench_router")
 # ==================== 请求模型 ====================
 
 class BreakdownRequest(BaseModel):
-    post_id: str = Field(..., description="推文ID")
+    post_id: str = Field(..., description="帖子ID")
     force_refresh: bool = Field(False, description="是否强制重新生成拆解")
+    platform: str = Field("x", description="平台: x/dy/xhs/bili/wb/ks/youtube等")
+    post_url: str = Field("", description="帖子URL（非X平台必填，用于AI拆解）")
+    content: str = Field("", description="帖子内容（非X平台必填，用于AI拆解）")
+    username: str = Field("", description="帖子作者（非X平台可选）")
+    video_url: str = Field("", description="视频URL（非X平台可选）")
 
 
 class ExplainerVideoRequest(BaseModel):
-    post_id: str = Field(..., description="推文ID")
+    post_id: str = Field(..., description="帖子ID")
     idempotency_key: UUID4 = Field(..., description="本次视频生成意图 UUID v4")
+    platform: str = Field("x", description="平台: x/douyin/xiaohongshu/bilibili/weibo/kuaishou/youtube")
+    post_url: str = Field("", description="帖子URL（非X平台必填）")
+    content: str = Field("", description="帖子内容（非X平台必填）")
+    video_url: str = Field("", description="视频URL（非X平台可选）")
+    username: str = Field("", description="帖子作者（非X平台可选）")
+    custom_prompt: str = Field("", description="用户自定义视频内容/参考（覆盖拆解上下文）")
 
 
 class GenerateCommentsRequest(BaseModel):
@@ -68,6 +80,7 @@ class SendCommentRequest(BaseModel):
     post_url: str = Field(..., description="推文URL")
     content: str = Field(..., min_length=1, max_length=280, description="评论内容")
     real_send: bool = Field(True, description="是否真实发送。False=草稿模式")
+    platform: str = Field("x", description="评论所属平台: x/dy/xhs/bili/wb/ks")
 
 
 class ManualReplyRequest(BaseModel):
@@ -120,9 +133,9 @@ def _explainer_submission_lock(owner_user_id: str, idempotency_key: str) -> asyn
     return lock
 
 
-def _explainer_request_hash(post_id: str) -> str:
+def _explainer_request_hash(post_id: str, platform: str = "x", custom_prompt: str = "") -> str:
     canonical = json.dumps(
-        {"post_id": post_id},
+        {"post_id": post_id, "platform": platform, "custom_prompt": custom_prompt},
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
@@ -228,9 +241,13 @@ async def _mark_explainer_submission_error(
 async def _get_post_by_id(session: AsyncSession, post_id: str) -> Optional[XTwitterPost]:
     stmt = select(XTwitterTrendingPost).where(XTwitterTrendingPost.post_id == post_id)
     result = await session.execute(stmt)
-    trending_post = result.scalar_one_or_none()
+    trending_post = result.scalars().first()
     
     if trending_post:
+        video_url = trending_post.video_url
+        if not video_url and trending_post.post_url:
+            video_url = f"{trending_post.post_url}/video/1"
+        
         return XTwitterPost(
             id=0,
             post_id=trending_post.post_id,
@@ -238,7 +255,7 @@ async def _get_post_by_id(session: AsyncSession, post_id: str) -> Optional[XTwit
             username=trending_post.username,
             nickname=trending_post.nickname,
             content=trending_post.content,
-            video_url=trending_post.video_url,
+            video_url=video_url,
             image_urls=[trending_post.image_url] if trending_post.image_url else [],
             likes_count=trending_post.likes_count,
             retweets_count=trending_post.retweets_count,
@@ -251,7 +268,12 @@ async def _get_post_by_id(session: AsyncSession, post_id: str) -> Optional[XTwit
     
     stmt = select(XTwitterPost).where(XTwitterPost.post_id == post_id)
     result = await session.execute(stmt)
-    return result.scalar_one_or_none()
+    post = result.scalars().first()
+    
+    if post and not post.video_url and post.post_url:
+        post.video_url = f"{post.post_url}/video/1"
+    
+    return post
 
 
 # ==================== 热点推文列表（整合 hotpoint）====================
@@ -270,16 +292,20 @@ async def get_trending_posts(
     2. X 平台额外把 hotpoint 数据写回数据库，供视频拆解、评论发送等流程复用
     3. 返回统一字段格式（WorkbenchPost）
     """
+    import time as _time
+    _t0 = _time.time()
     # 统一从热点聚合获取数据（热点聚合负责采集最新热点）
     result = await _trending_from_hotpoint(platform, limit, keyword, has_video)
+    _elapsed = _time.time() - _t0
+    logger.info(f"[get_trending] platform={platform} limit={limit} items={len(result.get('items',[]))} elapsed={_elapsed:.2f}s")
     
     # X 平台额外把 hotpoint 数据写回数据库，供视频拆解等流程复用
     if platform == "x" and result.get("items"):
         try:
-            async with get_session() as session:
-                await _persist_hotpoint_posts(session, result["items"])
-                result["persisted"] = len(result["items"])
-                result["hint"] = f"已自动入库 {len(result['items'])} 条"
+            saved = await _persist_x_posts_from_hotpoint(result["items"])
+            result["persisted"] = saved
+            if saved > 0:
+                result["hint"] = f"已自动入库 {saved} 条"
         except Exception as e:
             logger.warning(f"[get_trending] Persist hotpoint posts failed: {e}")
     
@@ -300,6 +326,8 @@ async def _trending_from_hotpoint(platform: str, limit: int, keyword: str, has_v
             return {"source": "error", "platform": platform, "total": 0, "items": [], "error": f"不支持的平台: {platform}"}
 
         raw_items = await fetch_platform(platform, force_refresh=False)
+        meta = PLATFORMS.get(platform, {})
+        platform_name = meta.get("name", platform)
         items = []
         for idx, it in enumerate(raw_items[:limit], 1):
             title = it.get("title", "")
@@ -317,11 +345,13 @@ async def _trending_from_hotpoint(platform: str, limit: int, keyword: str, has_v
                     post_id = url.rstrip("/").split("/status/")[-1].split("?")[0]
                 else:
                     post_id = f"{platform}_{it.get('rank', idx)}"
+            # 作者：优先用真实 author，为空时用平台展示名（如"小红书"）避免显示 @unknown
+            author = it.get("author", "") or platform_name
             items.append({
                 "post_id": post_id,
                 "post_url": url,
-                "username": it.get("author", ""),
-                "nickname": it.get("author", ""),
+                "username": author,
+                "nickname": author,
                 "content": title,
                 "video_url": video_url,
                 "image_urls": "",
@@ -330,21 +360,49 @@ async def _trending_from_hotpoint(platform: str, limit: int, keyword: str, has_v
                 "replies_count": str(extra.get("replies", "0")),
                 "views_count": str(extra.get("views", "0")),
                 "created_at": it.get("published_at", 0),
-                "source_keyword": platform,
+                # 用平台展示名（如"小红书"）而非原始 id（"xiaohongshu"），前端 Tag 更友好
+                "source_keyword": platform_name,
             })
 
-        meta = PLATFORMS.get(platform, {})
         # X 平台：把 hotpoint 拉到的数据持久化到 XTwitterPost 表
         # 这样后续的视频拆解、评论发送等流程才能用真实 post_id
         saved_count = 0
         if platform == "x" and items:
             saved_count = await _persist_x_posts_from_hotpoint(items)
 
-        # 查询数据库中 XTwitterPost 表的真实总量
+        # 查询数据库中该平台的数据总量
+        # X 平台查 XTwitterPost 表，其他平台查 hot_items 表（统一热点库）
         total_in_db = 0
         if platform == "x":
             async with get_session() as session:
                 total_in_db = (await session.execute(select(func.count(XTwitterPost.id)))).scalar() or 0
+        else:
+            # 其他平台查 hot_items 表（统一热点库）
+            try:
+                from api.services.hotpoint.hot_items_store import get_hot_items_store
+                store = get_hot_items_store()
+                await store.ensure_table()
+                # 通过 store 查询该平台的数据量
+                from database.db_session import get_async_engine
+                import config
+                from sqlalchemy import text as sql_text
+                engine = get_async_engine(config.SAVE_DATA_OPTION)
+                if engine:
+                    async with engine.connect() as conn:
+                        r = await conn.execute(
+                            sql_text("SELECT COUNT(*) FROM hot_items WHERE platform = :p AND is_disabled = FALSE"),
+                            {"p": platform},
+                        )
+                        total_in_db = r.fetchone()[0] or 0
+            except Exception as e:
+                logger.warning(f"[get_trending] 查询 {platform} 平台 total_in_db 失败: {e}")
+                total_in_db = len(items)
+
+        # 非X平台：后台异步把数据 upsert 到 hot_items 表（真正不阻塞响应）
+        # 集成热点分类器：若上游未带 category，调用 HotpointClassifier 标注
+        # ⚠️ 必须用 asyncio.create_task 后台执行，否则 500 条 × (AI分类1-5s + DB写入) = 数分钟阻塞
+        if platform != "x" and items:
+            asyncio.create_task(_background_upsert_hot_items(platform, items))
 
         return {
             "source": "hotpoint",
@@ -360,6 +418,62 @@ async def _trending_from_hotpoint(platform: str, limit: int, keyword: str, has_v
         }
     except Exception as e:
         return {"source": "error", "platform": platform, "total": 0, "items": [], "error": str(e)}
+
+
+async def _background_upsert_hot_items(platform: str, items: List[Dict[str, Any]]) -> None:
+    """后台异步把热点数据 upsert 到 hot_items 表 + 集成热点分类器
+
+    ⚠️ 此函数通过 asyncio.create_task 后台调用，绝不阻塞 HTTP 响应。
+    之前的实现在请求路径中串行 await classifier.classify + store.upsert，
+    导致 500 条数据 × (AI分类1-5s + DB写入) = 数分钟阻塞，切换平台极慢。
+    """
+    try:
+        from api.services.hotpoint.hot_items_store import get_hot_items_store
+        from api.services.hotpoint.hotpoint_classifier import get_hotpoint_classifier
+        store = get_hot_items_store()
+        classifier = get_hotpoint_classifier()
+
+        # 预检 AI 冷却状态，冷却中跳过分类（静默降级）
+        ai_in_cooldown = False
+        try:
+            from api.services.ai_agent_client import is_ai_in_cooldown
+            ai_in_cooldown = is_ai_in_cooldown()
+        except Exception:
+            pass
+
+        for it in items:
+            try:
+                title = (it.get("content", "") or "")[:500]
+                content = it.get("content", "")
+                category = ""
+                recommended_platforms = ""
+                # 仅在 AI 未冷却时调用分类器
+                if title and not ai_in_cooldown:
+                    try:
+                        classification = await classifier.classify(title, content)
+                        category = classification.category
+                        if classification.recommended_platforms:
+                            recommended_platforms = ",".join(classification.recommended_platforms)
+                    except Exception as ce:
+                        logger.debug(f"[bg_upsert] hotpoint classify 跳过(非致命): {ce}")
+                await store.upsert({
+                    "platform": platform,
+                    "source_id": it.get("post_id", "")[:128],
+                    "title": title,
+                    "content": content,
+                    "url": it.get("post_url", ""),
+                    "video_url": it.get("video_url", ""),
+                    "username": (it.get("username", "") or "")[:128],
+                    "heat_value": int(it.get("likes_count", "0") or 0),
+                    "source_keyword": platform,
+                    "category": category,
+                    "recommended_platforms": recommended_platforms,
+                })
+            except Exception:
+                continue
+        logger.info(f"[bg_upsert] {platform} 后台入库完成, 共 {len(items)} 条, AI冷却={ai_in_cooldown}")
+    except Exception as e:
+        logger.warning(f"[bg_upsert] {platform} 后台入库失败(非致命): {e}")
 
 
 async def _persist_x_posts_from_hotpoint(items: List[Dict[str, Any]]) -> int:
@@ -445,37 +559,93 @@ async def _get_platforms_cached():
 
 @router.post("/breakdown")
 async def generate_breakdown(req: BreakdownRequest):
-    """生成或获取视频拆解"""
-    from api.services import ai_agent_client
+    """生成或获取视频拆解（支持所有平台）
 
-    # 先查数据库是否已有拆解
+    - X 平台：从 XTwitterPost/XTwitterTrendingPost 表查帖子内容
+    - 非 X 平台（抖音/小红书/B站等）：直接使用请求中的 post_url/content/video_url，
+      不依赖数据库查表（这些平台的帖子不在 X 专属表中）
+    """
+    from api.services import ai_agent_client
+    from api.services.hotpoint_fetcher import normalize_platform_id
+
+    norm_platform = normalize_platform_id(req.platform)
+
+    # 先查数据库是否已有拆解（所有平台共用 XTwitterVideoBreakdown 表，post_id 唯一）
     async with get_session() as session:
         stmt = select(XTwitterVideoBreakdown).where(XTwitterVideoBreakdown.post_id == req.post_id)
         result = await session.execute(stmt)
         existing = result.scalar_one_or_none()
+
+        # 如果已有缓存且不是强制刷新，则返回缓存
         if existing and not req.force_refresh:
-            return {
-                "source": "cache",
-                "post_id": req.post_id,
-                "script": existing.script,
-                "storyboards": existing.storyboards,
-                "key_points": existing.key_points,
-                "suggested_comments": existing.suggested_comments,
-            }
+            # X 平台额外检查是否有视频URL（无视频的帖子不适合拆解）
+            if norm_platform == "x":
+                post = await _get_post_by_id(session, req.post_id)
+                if post and not post.video_url:
+                    pass  # 有缓存但无视频，继续重新生成
+                else:
+                    def _parse_json_list(value: str) -> list:
+                        if not value:
+                            return []
+                        try:
+                            import json
+                            return json.loads(value)
+                        except (TypeError, ValueError):
+                            return []
 
-    # 查推文内容
-    async with get_session() as session:
-        post = await _get_post_by_id(session, req.post_id)
-    if not post:
-        raise HTTPException(404, f"推文 {req.post_id} 不存在")
+                    return {
+                        "source": "cache",
+                        "post_id": req.post_id,
+                        "script": existing.script,
+                        "storyboards": _parse_json_list(existing.storyboards),
+                        "key_points": _parse_json_list(existing.key_points),
+                        "suggested_comments": _parse_json_list(existing.suggested_comments),
+                    }
+            else:
+                # 非 X 平台：直接返回缓存
+                def _parse_json_list(value: str) -> list:
+                    if not value:
+                        return []
+                    try:
+                        import json
+                        return json.loads(value)
+                    except (TypeError, ValueError):
+                        return []
 
-    post_dict = {
-        "post_id": post.post_id,
-        "post_url": post.post_url,
-        "content": post.content,
-        "video_url": post.video_url,
-        "username": post.username,
-    }
+                return {
+                    "source": "cache",
+                    "post_id": req.post_id,
+                    "script": existing.script,
+                    "storyboards": _parse_json_list(existing.storyboards),
+                    "key_points": _parse_json_list(existing.key_points),
+                    "suggested_comments": _parse_json_list(existing.suggested_comments),
+                }
+
+    # 获取帖子内容用于 AI 拆解
+    if norm_platform == "x":
+        # X 平台：从数据库查帖子
+        async with get_session() as session:
+            post = await _get_post_by_id(session, req.post_id)
+        if not post:
+            raise HTTPException(404, f"推文 {req.post_id} 不存在")
+        post_dict = {
+            "post_id": post.post_id,
+            "post_url": post.post_url,
+            "content": post.content,
+            "video_url": post.video_url,
+            "username": post.username,
+        }
+    else:
+        # 非 X 平台：直接使用请求中的数据（前端已持有帖子信息）
+        if not req.content and not req.post_url:
+            raise HTTPException(400, f"非X平台拆解需要提供 post_url 和 content")
+        post_dict = {
+            "post_id": req.post_id,
+            "post_url": req.post_url,
+            "content": req.content,
+            "video_url": req.video_url,
+            "username": req.username or norm_platform,
+        }
 
     # 调用 AI 生成拆解
     try:
@@ -495,7 +665,7 @@ async def generate_breakdown(req: BreakdownRequest):
         else:
             new_bd = XTwitterVideoBreakdown(
                 post_id=req.post_id,
-                post_url=post.post_url,
+                post_url=post_dict["post_url"],
                 script=parsed["script"],
                 storyboards=json.dumps(parsed["storyboard_items"], ensure_ascii=False),
                 key_points=json.dumps(parsed["key_points"], ensure_ascii=False),
@@ -526,13 +696,14 @@ async def generate_explainer_video(
         AI6700VideoError,
         build_explainer_prompt,
         choose_seedance_model,
+        extract_video_frames,
         normalize_media_urls,
         submit_explainer_video,
     )
     from config.onellm_config import load_onellm_config
     owner_user_id = str(current_user["id"])
     idempotency_key = str(req.idempotency_key)
-    request_hash = _explainer_request_hash(req.post_id)
+    request_hash = _explainer_request_hash(req.post_id, req.platform, req.custom_prompt)
 
     async with _explainer_submission_lock(owner_user_id, idempotency_key):
         task = await _find_explainer_intent(owner_user_id, idempotency_key)
@@ -557,8 +728,24 @@ async def generate_explainer_video(
                 return _explainer_task_response(task)
 
         if task is None:
+            from api.services.hotpoint_fetcher import normalize_platform_id
+            norm_platform = normalize_platform_id(req.platform)
+
             async with get_session() as session:
-                post = await _get_post_by_id(session, req.post_id)
+                if norm_platform == "x":
+                    post = await _get_post_by_id(session, req.post_id)
+                else:
+                    # 非 X 平台：从请求数据构造 post-like 对象（不依赖 X 专属表）
+                    class _NonXPost:
+                        pass
+                    post = _NonXPost()
+                    post.post_id = req.post_id
+                    post.post_url = req.post_url
+                    post.content = req.content
+                    post.video_url = req.video_url
+                    post.image_urls = []
+                    post.username = req.username or norm_platform
+
                 breakdown_result = await session.execute(
                     select(XTwitterVideoBreakdown).where(
                         XTwitterVideoBreakdown.post_id == req.post_id
@@ -566,19 +753,43 @@ async def generate_explainer_video(
                 )
                 breakdown = breakdown_result.scalar_one_or_none()
 
-            if not post:
+            if norm_platform == "x" and not post:
                 raise HTTPException(404, f"推文 {req.post_id} 不存在")
             if not breakdown:
                 raise HTTPException(400, "请先完成视频拆解，再生成解说视频")
 
             image_urls = normalize_media_urls(getattr(post, "image_urls", None))
             video_urls = normalize_media_urls(getattr(post, "video_url", None))
-            prompt = build_explainer_prompt(
-                post_content=post.content or "",
-                script=breakdown.script or "",
-                storyboards=_stored_list(breakdown.storyboards),
-                key_points=_stored_list(breakdown.key_points),
-            )
+
+            if not image_urls:
+                video_url_to_use = ""
+                if video_urls:
+                    video_url_to_use = video_urls[0]
+                elif post.post_url:
+                    video_url_to_use = f"{post.post_url}/video/1"
+
+                if video_url_to_use:
+                    logger.info(f"[generate_explainer_video] Extracting frames from video: {video_url_to_use}")
+                    try:
+                        frames = await extract_video_frames(video_url_to_use, max_frames=3)
+                        if frames:
+                            image_urls = frames
+                            logger.info(f"[generate_explainer_video] Extracted {len(frames)} frames as reference images")
+                        else:
+                            logger.warning(f"[generate_explainer_video] Failed to extract frames from video")
+                    except Exception as e:
+                        logger.warning(f"[generate_explainer_video] Error extracting frames: {e}")
+
+            # 用户自定义内容优先，否则用拆解上下文构建 prompt
+            if req.custom_prompt and req.custom_prompt.strip():
+                prompt = req.custom_prompt.strip()
+            else:
+                prompt = build_explainer_prompt(
+                    post_content=post.content or "",
+                    script=breakdown.script or "",
+                    storyboards=_stored_list(breakdown.storyboards),
+                    key_points=_stored_list(breakdown.key_points),
+                )
             submission_payload = json.dumps(
                 {
                     "prompt": prompt,
@@ -872,6 +1083,7 @@ async def send_comment(req: SendCommentRequest):
     # 保存到数据库
     async with get_session() as session:
         sc = XTwitterSentComment(
+            platform=req.platform,
             post_id=req.post_id,
             post_url=req.post_url,
             post_content=post_content[:500],
@@ -909,6 +1121,40 @@ async def send_comment(req: SendCommentRequest):
 
 # ==================== 已发评论列表 + 回复 ====================
 
+_sent_comment_column_ensured = False
+
+async def _ensure_sent_comment_platform_column():
+    """确保 x_twitter_sent_comment 表有 platform 列（兼容历史数据的自动迁移）
+
+    首次调用时执行 ALTER TABLE ADD COLUMN IF NOT EXISTS，
+    将 platform 列添加到已有表中，默认值 'x'（历史数据都是 X 平台）。
+    后续调用直接跳过（_sent_comment_column_ensured = True）。
+    """
+    global _sent_comment_column_ensured
+    if _sent_comment_column_ensured:
+        return
+    try:
+        from database.db_session import get_async_engine
+        import config
+        from sqlalchemy import text as sql_text
+        engine = get_async_engine(config.SAVE_DATA_OPTION)
+        if engine:
+            async with engine.begin() as conn:
+                await conn.execute(sql_text(
+                    "ALTER TABLE x_twitter_sent_comment "
+                    "ADD COLUMN IF NOT EXISTS platform VARCHAR(32) DEFAULT 'x'"
+                ))
+                # 为已有数据设置默认平台为 x（仅更新 NULL 行）
+                await conn.execute(sql_text(
+                    "UPDATE x_twitter_sent_comment SET platform = 'x' "
+                    "WHERE platform IS NULL"
+                ))
+            _sent_comment_column_ensured = True
+            logger.info("[sent_comment] platform 列已确保存在（迁移完成）")
+    except Exception as e:
+        logger.warning(f"[sent_comment] 确保 platform 列失败(非致命): {e}")
+
+
 @router.get("/comments")
 async def list_sent_comments(
     page: int = Query(1, ge=1),
@@ -917,12 +1163,25 @@ async def list_sent_comments(
     keyword: str = Query("", description="搜索关键词（匹配评论内容或推文内容）"),
     start_ts: int = Query(0, description="开始时间戳"),
     end_ts: int = Query(0, description="结束时间戳"),
+    platform: str = Query("", description="按平台筛选: x/dy/xhs/bili/wb/ks（空=全部）"),
 ):
-    """获取已发评论列表"""
+    """获取已发评论列表（按平台过滤）"""
+    # 兼容历史数据：确保 platform 列存在（首次调用时自动迁移）
+    await _ensure_sent_comment_platform_column()
+
+    # 平台别名归一化（x_twitter → x, xhs → xiaohongshu 等）
+    from api.services.hotpoint_fetcher import normalize_platform_id
+    norm_platform = normalize_platform_id(platform) if platform else ""
+
     async with get_session() as session:
         stmt = select(XTwitterSentComment).order_by(desc(XTwitterSentComment.add_ts))
         count_stmt = select(func.count(XTwitterSentComment.id))
-        
+
+        # 按平台过滤（核心修复：切换平台时只显示对应平台的评论）
+        if norm_platform:
+            stmt = stmt.where(XTwitterSentComment.platform == norm_platform)
+            count_stmt = count_stmt.where(XTwitterSentComment.platform == norm_platform)
+
         if status:
             stmt = stmt.where(XTwitterSentComment.sent_status == status)
             count_stmt = count_stmt.where(XTwitterSentComment.sent_status == status)
@@ -965,6 +1224,7 @@ async def list_sent_comments(
         "items": [
             {
                 "id": sc.id,
+                "platform": sc.platform or "x",
                 "post_id": sc.post_id,
                 "post_url": sc.post_url,
                 "post_content": sc.post_content,
@@ -1196,48 +1456,130 @@ async def ai_health():
 
 # ==================== 统计 ====================
 
+@router.get("/monitor/platforms")
+async def monitor_platforms_overview():
+    """多平台监控总览：返回所有 15 个平台（7 国内 + 8 国外）的数据采集状态
+
+    返回每个平台的：展示名、区域、颜色、DB 条数、缓存条数、缓存年龄、最近采集信息
+    """
+    import time as _time
+    from api.services.hotpoint_fetcher import PLATFORMS
+    # 兼容：hotpoint_fetcher 的 _CACHE 是 {platform: (timestamp, items)}
+    from api.services import hotpoint_fetcher as _hp
+
+    overview = []
+    # 查询 hot_items 表中各平台的条数（非 X 平台）
+    platform_counts: Dict[str, int] = {}
+    try:
+        from database.db_session import get_async_engine
+        import config
+        from sqlalchemy import text as sql_text
+        engine = get_async_engine(config.SAVE_DATA_OPTION)
+        if engine:
+            async with engine.connect() as conn:
+                r = await conn.execute(
+                    sql_text(
+                        "SELECT platform, COUNT(*) FROM hot_items "
+                        "WHERE is_disabled = FALSE GROUP BY platform"
+                    )
+                )
+                for row in r.fetchall():
+                    platform_counts[row[0]] = int(row[1] or 0)
+    except Exception as e:
+        logger.warning(f"[monitor_platforms] 查询 hot_items 统计失败: {e}")
+
+    # X 平台查 XTwitterPost 表
+    x_count = 0
+    try:
+        async with get_session() as session:
+            x_count = (await session.execute(select(func.count(XTwitterPost.id)))).scalar() or 0
+    except Exception:
+        pass
+
+    now = _time.time()
+    for pid, meta in PLATFORMS.items():
+        cache_count = 0
+        cache_age = -1
+        if pid in _hp._CACHE:
+            ts, cached_items = _hp._CACHE[pid]
+            cache_count = len(cached_items)
+            cache_age = int(now - ts)
+
+        db_count = x_count if pid == "x" else platform_counts.get(pid, 0)
+        overview.append({
+            "id": pid,
+            "name": meta.get("name", pid),
+            "region": meta.get("region", ""),
+            "color": meta.get("color", "#666"),
+            "home": meta.get("home", ""),
+            "db_count": db_count,
+            "cache_count": cache_count,
+            "cache_age_seconds": cache_age,
+        })
+
+    return {
+        "platforms": overview,
+        "total_platforms": len(overview),
+        "domestic_count": sum(1 for p in overview if p["region"] == "china"),
+        "global_count": sum(1 for p in overview if p["region"] == "global"),
+    }
+
+
 @router.get("/stats")
-async def get_stats():
-    """工作台统计数据
+async def get_stats(
+    platform: str = Query("", description="按平台筛选统计: x/dy/xhs/bili/wb/ks（空=全部）"),
+):
+    """工作台统计数据（按平台过滤）
 
     优化:用条件聚合(case when)把 5 次 COUNT 查询合并为 2 次
     (sent_comment 表 1 次 + reply 表 1 次)
     并加 15 秒 TTL 缓存(多个面板同时打开时减少重复查询)
     """
-    return await _get_stats_cached()
+    # 兼容历史数据：确保 platform 列存在
+    await _ensure_sent_comment_platform_column()
+    from api.services.hotpoint_fetcher import normalize_platform_id
+    norm_platform = normalize_platform_id(platform) if platform else ""
+    return await _get_stats_cached(norm_platform)
 
 
 @ttl_cache(ttl_seconds=15)
-async def _get_stats_cached():
-    """统计数据缓存层(15 秒 TTL)"""
+async def _get_stats_cached(norm_platform: str = ""):
+    """统计数据缓存层(15 秒 TTL)，按平台过滤"""
     async with get_session() as session:
         # 已发评论统计(总数 + 成功数 一次查询)
-        sent_row = (await session.execute(
-            select(
-                func.count(XTwitterSentComment.id).label("total"),
-                func.sum(case(
-                    (XTwitterSentComment.sent_status == "success", 1),
-                    else_=0,
-                )).label("success"),
-            )
-        )).one()
+        sent_query = select(
+            func.count(XTwitterSentComment.id).label("total"),
+            func.sum(case(
+                (XTwitterSentComment.sent_status == "success", 1),
+                else_=0,
+            )).label("success"),
+        )
+        if norm_platform:
+            sent_query = sent_query.where(XTwitterSentComment.platform == norm_platform)
+        sent_row = (await session.execute(sent_query)).one()
         total_sent = sent_row.total or 0
         success_sent = int(sent_row.success or 0)
 
         # 回复统计(总数 + AI 已回 + 待处理 一次查询)
-        reply_row = (await session.execute(
-            select(
-                func.count(XTwitterReply.id).label("total"),
-                func.sum(case(
-                    (XTwitterReply.auto_reply_status == "sent", 1),
-                    else_=0,
-                )).label("auto_replied"),
-                func.sum(case(
-                    (XTwitterReply.auto_reply_status == "pending", 1),
-                    else_=0,
-                )).label("pending"),
-            )
-        )).one()
+        # 通过 JOIN sent_comment 表按平台过滤回复
+        reply_query = select(
+            func.count(XTwitterReply.id).label("total"),
+            func.sum(case(
+                (XTwitterReply.auto_reply_status == "sent", 1),
+                else_=0,
+            )).label("auto_replied"),
+            func.sum(case(
+                (XTwitterReply.auto_reply_status == "pending", 1),
+                else_=0,
+            )).label("pending"),
+        )
+        if norm_platform:
+            reply_query = reply_query.join(
+                XTwitterSentComment,
+                XTwitterReply.sent_comment_id == XTwitterSentComment.id,
+                isouter=True,
+            ).where(XTwitterSentComment.platform == norm_platform)
+        reply_row = (await session.execute(reply_query)).one()
         total_replies = reply_row.total or 0
         auto_replied = int(reply_row.auto_replied or 0)
         pending_replies = int(reply_row.pending or 0)
@@ -1548,3 +1890,621 @@ async def cookie_pool_test():
     except Exception as e:
         mark_cookie_failure(cookie, str(e))
         return {"success": False, "message": f"测试失败: {e}"}
+
+
+# ==================== X 发布文案生成 ====================
+
+class GenerateXPostContentRequest(BaseModel):
+    post_id: str = Field(..., description="推文ID")
+    count: int = Field(3, ge=1, le=10, description="生成文案数量")
+
+
+@router.post("/x-post-content")
+async def generate_x_post_content(req: GenerateXPostContentRequest):
+    """根据视频拆解生成适合发布到 X 的文案"""
+    from api.services import ai_agent_client
+
+    async with get_session() as session:
+        post = await _get_post_by_id(session, req.post_id)
+        breakdown_result = await session.execute(
+            select(XTwitterVideoBreakdown).where(XTwitterVideoBreakdown.post_id == req.post_id)
+        )
+        breakdown = breakdown_result.scalar_one_or_none()
+
+    if not post:
+        raise HTTPException(404, f"推文 {req.post_id} 不存在")
+    if not breakdown:
+        raise HTTPException(400, "请先完成视频拆解")
+
+    breakdown_text = f"""【脚本分析】\n{breakdown.script}\n\n【分镜拆解】\n{breakdown.storyboards}\n\n【关键要点】\n{breakdown.key_points}"""
+
+    post_dict = {
+        "post_id": post.post_id,
+        "content": post.content,
+        "username": post.username,
+        "video_url": post.video_url,
+    }
+
+    contents = await ai_agent_client.generate_x_post_content(post_dict, breakdown_text, req.count)
+
+    return {"post_id": req.post_id, "contents": contents}
+
+
+# ==================== 发布视频到 X ====================
+
+class PublishToXRequest(BaseModel):
+    post_id: str = Field(..., description="原推文ID")
+    content: str = Field(..., description="发布文案")
+    video_url: str = Field(None, description="视频URL（可选）")
+    auto_monitor: bool = Field(True, description="是否自动监控发布后的评论")
+
+
+async def _do_publish_to_x(cookies_str: str, content: str, video_url: str = None, server_base_url: str = "http://localhost:8000"):
+    """执行实际的发布操作
+
+    使用 X 的媒体上传 API + GraphQL CreateTweet 直接发布，绕过不可靠的 UI 文件上传。
+    流程：
+    1. 用 Playwright 打开 x.com，拦截 bearer token + 提取 ct0 (CSRF)
+    2. 如有视频：通过分块上传 API (INIT→APPEND→FINALIZE→STATUS) 上传视频，获得 media_id
+    3. 提取 CreateTweet queryId（JS 搜索 → UI 拦截 → 硬编码兜底）
+    4. 用 GraphQL CreateTweet 发布推文（带 media_ids）
+    """
+    import os
+    import re
+    import base64
+    import tempfile
+    import httpx
+    import json as _json
+    from playwright.async_api import async_playwright
+
+    if video_url and not video_url.startswith(("http://", "https://")):
+        video_url = server_base_url.rstrip("/") + "/" + video_url.lstrip("/")
+
+    cookie_list = []
+    for pair in cookies_str.split(";"):
+        pair = pair.strip()
+        if not pair or "=" not in pair:
+            continue
+        k, v = pair.split("=", 1)
+        cookie_list.append({
+            "name": k.strip(),
+            "value": v.strip(),
+            "domain": ".x.com",
+            "path": "/",
+            "httpOnly": False,
+            "secure": True,
+            "sameSite": "Lax",
+        })
+
+    browser = None
+    context = None
+    page = None
+    video_path = None
+    p = None
+    try:
+        p = await async_playwright().start()
+        browser = await p.chromium.launch(headless=True, args=[
+            "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
+            "--disable-blink-features=AutomationControlled",
+            "--disable-gpu", "--disable-software-rasterizer",
+        ], timeout=60000)
+
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800},
+            locale="en-US",
+        )
+        await context.add_cookies(cookie_list)
+
+        page = await context.new_page()
+        page.set_default_timeout(60000)
+
+        # ========== 1. 打开 x.com 获取 bearer token + ct0 ==========
+        bearer_token = {"value": None}
+
+        def _on_request(req):
+            auth = req.headers.get("authorization", "")
+            if auth.startswith("Bearer ") and not bearer_token["value"]:
+                bearer_token["value"] = auth[7:]
+
+        page.on("request", _on_request)
+
+        logger.info("[publish_to_x] 打开 x.com 获取认证信息...")
+        await page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=30000)
+        await asyncio.sleep(8)
+
+        all_cookies = await context.cookies()
+        ct0 = next((c["value"] for c in all_cookies if c["name"] == "ct0"), None)
+        logger.info(f"[publish_to_x] ct0={'有' if ct0 else '无'}, bearer={'有' if bearer_token['value'] else '无'}")
+
+        if not ct0 or not bearer_token["value"]:
+            raise RuntimeError(f"缺少认证信息: ct0={'有' if ct0 else '无'}, bearer={'有' if bearer_token['value'] else '无'}")
+
+        bearer = bearer_token["value"]
+
+        # ========== 2. 上传视频（如有）==========
+        media_id = None
+        if video_url:
+            logger.info(f"[publish_to_x] 下载视频: {video_url}")
+            async with httpx.AsyncClient() as http_client:
+                response = await http_client.get(video_url, timeout=60.0)
+                if response.status_code != 200:
+                    raise RuntimeError(f"下载视频失败: HTTP {response.status_code}")
+                video_bytes = response.content
+            logger.info(f"[publish_to_x] 视频下载成功，大小: {len(video_bytes)} 字节")
+
+            # INIT
+            init_result = await page.evaluate("""async (params) => {
+                const body = new URLSearchParams();
+                body.append('command', 'INIT');
+                body.append('total_bytes', params.total_bytes);
+                body.append('media_type', 'video/mp4');
+                const r = await fetch('https://upload.x.com/i/media/upload.json', {
+                    method: 'POST',
+                    headers: {'authorization': 'Bearer ' + params.bearer, 'x-csrf-token': params.ct0, 'content-type': 'application/x-www-form-urlencoded'},
+                    body: body.toString(), credentials: 'include',
+                });
+                return {status: r.status, body: await r.text()};
+            }""", {"total_bytes": len(video_bytes), "bearer": bearer, "ct0": ct0})
+
+            if init_result["status"] not in (200, 202):
+                raise RuntimeError(f"媒体上传 INIT 失败: {init_result['status']} {init_result['body'][:200]}")
+
+            init_data = _json.loads(init_result["body"])
+            media_id = init_data.get("media_id_string")
+            logger.info(f"[publish_to_x] INIT 成功, media_id={media_id}")
+
+            # APPEND (分块上传，每块 1MB)
+            chunk_size = 1024 * 1024
+            total_chunks = (len(video_bytes) + chunk_size - 1) // chunk_size
+            for seg_idx in range(total_chunks):
+                start = seg_idx * chunk_size
+                end = min(start + chunk_size, len(video_bytes))
+                chunk_b64 = base64.b64encode(video_bytes[start:end]).decode("ascii")
+
+                append_result = await page.evaluate("""async (params) => {
+                    const bin = atob(params.chunk_b64);
+                    const arr = new Uint8Array(bin.length);
+                    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+                    const blob = new Blob([arr], {type: 'application/octet-stream'});
+                    const body = new FormData();
+                    body.append('command', 'APPEND');
+                    body.append('media_id', params.media_id);
+                    body.append('segment_index', params.seg_idx);
+                    body.append('media', blob);
+                    const r = await fetch('https://upload.x.com/i/media/upload.json', {
+                        method: 'POST',
+                        headers: {'authorization': 'Bearer ' + params.bearer, 'x-csrf-token': params.ct0},
+                        body: body, credentials: 'include',
+                    });
+                    return {status: r.status, body: await r.text()};
+                }""", {"media_id": media_id, "seg_idx": seg_idx, "chunk_b64": chunk_b64, "bearer": bearer, "ct0": ct0})
+
+                if append_result["status"] != 204:
+                    raise RuntimeError(f"媒体上传 APPEND 块 {seg_idx} 失败: {append_result['status']} {append_result['body'][:200]}")
+                logger.info(f"[publish_to_x] APPEND 块 {seg_idx + 1}/{total_chunks} 成功")
+
+            # FINALIZE
+            finalize_result = await page.evaluate("""async (params) => {
+                const body = new URLSearchParams();
+                body.append('command', 'FINALIZE');
+                body.append('media_id', params.media_id);
+                const r = await fetch('https://upload.x.com/i/media/upload.json', {
+                    method: 'POST',
+                    headers: {'authorization': 'Bearer ' + params.bearer, 'x-csrf-token': params.ct0, 'content-type': 'application/x-www-form-urlencoded'},
+                    body: body.toString(), credentials: 'include',
+                });
+                return {status: r.status, body: await r.text()};
+            }""", {"media_id": media_id, "bearer": bearer, "ct0": ct0})
+
+            if finalize_result["status"] not in (200, 202):
+                raise RuntimeError(f"媒体上传 FINALIZE 失败: {finalize_result['status']} {finalize_result['body'][:200]}")
+
+            finalize_data = _json.loads(finalize_result["body"])
+            processing_info = finalize_data.get("processing_info", {})
+            logger.info(f"[publish_to_x] FINALIZE 成功, processing_info={processing_info}")
+
+            # STATUS 轮询等待处理完成
+            if processing_info.get("state") != "succeeded":
+                for i in range(60):
+                    await asyncio.sleep(2)
+                    status_result = await page.evaluate("""async (params) => {
+                        const r = await fetch('https://upload.x.com/i/media/upload.json?command=STATUS&media_id=' + params.media_id, {
+                            method: 'GET',
+                            headers: {'authorization': 'Bearer ' + params.bearer, 'x-csrf-token': params.ct0},
+                            credentials: 'include',
+                        });
+                        return {status: r.status, body: await r.text()};
+                    }""", {"media_id": media_id, "bearer": bearer, "ct0": ct0})
+
+                    status_data = _json.loads(status_result["body"])
+                    state = status_data.get("processing_info", {}).get("state", "unknown")
+                    progress = status_data.get("processing_info", {}).get("progress_percent", 0)
+                    logger.info(f"[publish_to_x] 视频处理: state={state}, progress={progress}%")
+
+                    if state == "succeeded":
+                        break
+                    if state == "failed":
+                        raise RuntimeError(f"视频处理失败: {status_data}")
+
+        # ========== 3. 提取 CreateTweet queryId ==========
+        query_id = None
+
+        # 方法1: 搜索 JS bundle
+        try:
+            query_id = await asyncio.wait_for(page.evaluate("""async () => {
+                const resources = performance.getEntriesByType('resource')
+                    .filter(r => r.name.endsWith('.js') && r.transferSize > 50000)
+                    .sort((a, b) => b.transferSize - a.transferSize).slice(0, 15).map(r => r.name);
+                const patterns = [
+                    /queryId["']?\\s*[:=]\\s*["']([A-Za-z0-9_-]{15,30})["'][\\s\\S]{0,300}CreateTweet/,
+                    /CreateTweet[\\s\\S]{0,300}queryId["']?\\s*[:=]\\s*["']([A-Za-z0-9_-]{15,30})["']/,
+                    /["']([A-Za-z0-9_-]{15,30})["']\\s*[,}]\\s*["']?operationName["']?\\s*[:=]\\s*["']CreateTweet["']/,
+                ];
+                for (const url of resources) {
+                    try {
+                        const r = await fetch(url);
+                        const text = await r.text();
+                        if (!text.includes('CreateTweet')) continue;
+                        for (const p of patterns) { const m = text.match(p); if (m) return m[1]; }
+                    } catch(e) {}
+                }
+                return null;
+            }"""), timeout=30)
+            if query_id:
+                logger.info(f"[publish_to_x] 从 JS bundle 提取 queryId: {query_id}")
+        except Exception as e:
+            logger.warning(f"[publish_to_x] JS 搜索 queryId 失败: {e}")
+
+        # 方法2: UI 拦截
+        if not query_id:
+            captured_url = {"value": None}
+            async def _capture_route(route):
+                captured_url["value"] = route.request.url
+                await route.abort()
+            await page.route("**/graphql/**/CreateTweet**", _capture_route)
+            try:
+                await page.goto("https://x.com/home", wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(3)
+                compose_btn = await page.query_selector('[data-testid="SideNav_NewTweet_Button"], a[href="/compose/post"]')
+                if compose_btn:
+                    await compose_btn.click()
+                    await asyncio.sleep(3)
+                else:
+                    await page.goto("https://x.com/compose/tweet", wait_until="domcontentloaded", timeout=30000)
+                    await asyncio.sleep(5)
+                textarea = await page.query_selector('[data-testid="tweetTextarea_0"]')
+                if textarea:
+                    await textarea.click()
+                    await textarea.fill("test")
+                    await asyncio.sleep(1)
+                    send_btn = await page.query_selector('[data-testid="tweetButton"]')
+                    if send_btn:
+                        await page.evaluate('(btn) => btn.click()', send_btn)
+                        await asyncio.sleep(5)
+                if captured_url["value"]:
+                    m = re.search(r'/graphql/([^/]+)/CreateTweet', captured_url["value"])
+                    if m:
+                        query_id = m.group(1)
+                        logger.info(f"[publish_to_x] 从 UI 拦截提取 queryId: {query_id}")
+            except Exception as e:
+                logger.warning(f"[publish_to_x] UI 拦截 queryId 失败: {e}")
+            finally:
+                try:
+                    await page.unroute("**/graphql/**/CreateTweet**")
+                except Exception:
+                    pass
+
+        # 方法3: 硬编码兜底
+        if not query_id:
+            query_id = "hIL9XdleMYEtVXOZVbr8Bg"
+            logger.warning(f"[publish_to_x] 使用硬编码 queryId: {query_id}")
+
+        # ========== 4. GraphQL CreateTweet 发布推文 ==========
+        logger.info(f"[publish_to_x] 通过 GraphQL 发布推文 (media_id={media_id})...")
+
+        create_result = await page.evaluate("""async (params) => {
+            const features = {
+                "communities_web_enable_tweet_community_results_fetch": true,
+                "c9s_tweet_anatomy_moderator_badge_enabled": true,
+                "tweetypie_unmention_optimization_enabled": true,
+                "responsive_web_edit_tweet_api_enabled": true,
+                "graphql_is_translatable_rweb_tweet_is_translatable_enabled": true,
+                "view_counts_everywhere_api_enabled": true,
+                "longform_notetweets_consumption_enabled": true,
+                "responsive_web_twitter_article_tweet_consumption_enabled": true,
+                "tweet_awards_web_tipping_enabled": false,
+                "creator_subscriptions_quote_tweet_enabled": true,
+                "longform_notetweets_rich_text_read_enabled": true,
+                "longform_notetweets_inline_media_enabled": true,
+                "articles_preview_enabled": true,
+                "rweb_video_timestamps_enabled": true,
+                "rweb_tipjar_consumption_enabled": true,
+                "responsive_web_graphql_exclude_directive_enabled": true,
+                "verified_phone_label_enabled": false,
+                "freedom_of_speech_not_reach_fetch_enabled": true,
+                "standardized_nudges_misinfo": true,
+                "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": true,
+                "responsive_web_graphql_skip_user_profile_image_extensions_enabled": false,
+                "responsive_web_graphql_timeline_navigation_enabled": true,
+                "responsive_web_enhance_cards_enabled": false
+            };
+            const media_entities = params.media_id
+                ? [{"media_id": params.media_id, "tagged_users": []}]
+                : [];
+            const variables = {
+                "tweet_text": params.content,
+                "media": {"media_entities": media_entities, "possibly_sensitive": false},
+                "semantic_annotation_ids": [],
+                "disallowed_reply_options": null,
+                "semantic_annotation_options": {"source": "Htl"}
+            };
+            const body = JSON.stringify({
+                variables: JSON.stringify(variables),
+                features: JSON.stringify(features),
+                queryId: params.query_id,
+            });
+            const url = 'https://api.x.com/graphql/' + params.query_id + '/CreateTweet';
+            const r = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'authorization': 'Bearer ' + params.bearer,
+                    'x-csrf-token': params.ct0,
+                    'content-type': 'application/json',
+                    'x-twitter-active-user': 'yes',
+                    'x-twitter-auth-type': 'OAuth2Session',
+                    'x-twitter-client-language': 'en',
+                },
+                body: body, credentials: 'include',
+            });
+            return {status: r.status, body: await r.text()};
+        }""", {"content": content, "media_id": media_id, "query_id": query_id, "bearer": bearer, "ct0": ct0})
+
+        logger.info(f"[publish_to_x] CreateTweet status={create_result['status']}")
+
+        if create_result["status"] != 200:
+            raise RuntimeError(f"CreateTweet 失败: {create_result['status']} {create_result['body'][:300]}")
+
+        # 解析响应获取 tweet_id (多路径解析，应对 X 响应结构变化)
+        new_tweet_id = ""
+        new_tweet_url = ""
+        try:
+            data = _json.loads(create_result["body"])
+            logger.info(f"[publish_to_x] 响应体(前500字符): {create_result['body'][:500]}")
+        except Exception as e:
+            logger.warning(f"[publish_to_x] JSON 解析失败: {e}, body={create_result['body'][:300]}")
+            data = {}
+
+        # 检查 GraphQL 错误（X 返回 HTTP 200 但响应体可能包含 errors）
+        # 注意：必须在 try-except 之外检查，确保错误能正确传播
+        gql_errors = data.get("errors", []) if isinstance(data, dict) else []
+        if gql_errors:
+            error_msgs = [e.get("message", str(e)) for e in gql_errors]
+            combined = "; ".join(error_msgs)
+            logger.error(f"[publish_to_x] GraphQL 返回错误: {combined}")
+            raise RuntimeError(f"X API 拒绝发布: {combined}")
+
+        # 多路径解析 tweet_id
+        try:
+            # 路径1: data.create_tweet.tweet_results.result.rest_id (标准路径)
+            tweet_result = data.get("data", {}).get("create_tweet", {}).get("tweet_results", {})
+            tweet = tweet_result.get("result", {}) if isinstance(tweet_result, dict) else {}
+            new_tweet_id = tweet.get("rest_id", "") if isinstance(tweet, dict) else ""
+
+            # 路径2: data.create_tweet.tweet_results.result.legacy.id_str
+            if not new_tweet_id and isinstance(tweet, dict):
+                new_tweet_id = tweet.get("legacy", {}).get("id_str", "")
+
+            # 路径3: data.create_tweet.tweet_results.result.core.id_str
+            if not new_tweet_id and isinstance(tweet, dict):
+                new_tweet_id = tweet.get("core", {}).get("id_str", "")
+
+            # 路径4: 深度搜索 — 在整个响应中查找第一个 tweet ID (19位数字)
+            if not new_tweet_id:
+                import re as _re
+                id_matches = _re.findall(r'"(?:rest_id|id_str)"\s*:\s*"?(\d{15,25})"?', create_result["body"])
+                if id_matches:
+                    new_tweet_id = id_matches[0]
+                    logger.info(f"[publish_to_x] 通过深度搜索提取 tweet_id={new_tweet_id}")
+
+            if new_tweet_id:
+                new_tweet_url = f"https://x.com/i/status/{new_tweet_id}"
+                logger.info(f"[publish_to_x] 发布成功! tweet_id={new_tweet_id}")
+        except Exception as e:
+            logger.warning(f"[publish_to_x] tweet_id 解析失败: {e}")
+
+        # 如果响应中没有 tweet_id，导航到用户主页获取最新推文
+        if not new_tweet_id:
+            logger.info("[publish_to_x] 响应中无 tweet_id，检查用户主页...")
+            try:
+                username = os.getenv("X_TWITTER_MY_USERNAME", "GreyCheng90328")
+                await page.goto(f"https://x.com/{username}", wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(8)  # 等待足够长确保新推文已加载
+
+                # 收集所有推文链接，按出现顺序去重
+                tweet_links = await page.query_selector_all('article[data-testid="tweet"] a[href*="/status/"]')
+                seen_ids = set()
+                candidate_ids = []
+                for link in tweet_links:
+                    href = await link.get_attribute("href")
+                    if href and "/status/" in href:
+                        tid = href.split("/status/")[1].split("/")[0].split("?")[0]
+                        if tid not in seen_ids:
+                            seen_ids.add(tid)
+                            candidate_ids.append((tid, href))
+
+                # 第一个出现的推文 ID 就是最新发布的推文
+                if candidate_ids:
+                    new_tweet_id, href = candidate_ids[0]
+                    new_tweet_url = f"https://x.com{href}" if href.startswith("/") else href
+                    logger.info(f"[publish_to_x] 从主页获取最新 tweet_id={new_tweet_id} (共 {len(candidate_ids)} 条候选)")
+                else:
+                    logger.warning("[publish_to_x] 主页未找到推文链接")
+            except Exception as e:
+                logger.warning(f"[publish_to_x] 检查主页失败: {e}")
+
+        return {
+            "success": True,
+            "tweet_id": new_tweet_id,
+            "tweet_url": new_tweet_url,
+            "video_path": video_path,
+        }
+
+    finally:
+        if video_path and os.path.exists(video_path):
+            try:
+                os.unlink(video_path)
+            except Exception:
+                pass
+        try:
+            if page:
+                await page.close()
+        except Exception:
+            pass
+        try:
+            if context:
+                await context.close()
+        except Exception:
+            pass
+        try:
+            if browser:
+                await browser.close()
+        except Exception:
+            pass
+        try:
+            if p:
+                await p.stop()
+        except Exception:
+            pass
+
+
+@router.post("/publish-x")
+async def publish_to_x(req: PublishToXRequest, request: Request = None):
+    """发布视频/文案到 X（Twitter）"""
+    
+    cookies_str = os.getenv("X_TWITTER_COOKIES", "")
+    if not cookies_str:
+        raise HTTPException(400, "X_TWITTER_COOKIES 未配置，无法发布")
+
+    if "auth_token" not in cookies_str and "ct0" not in cookies_str:
+        raise HTTPException(400, "Cookie 中缺少 auth_token 或 ct0，无法登录")
+
+    max_retries = 3
+    last_error = ""
+    
+    server_base_url = "http://localhost:8000"
+    if request:
+        server_base_url = f"{request.url.scheme}://{request.url.hostname}"
+        if request.url.port and request.url.port not in (80, 443):
+            server_base_url += f":{request.url.port}"
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"[publish_to_x] 第 {attempt}/{max_retries} 次尝试发布")
+            result = await _do_publish_to_x(cookies_str, req.content, req.video_url, server_base_url)
+            
+            if result.get("success", False):
+                new_tweet_id = result.get("tweet_id", "")
+                new_tweet_url = result.get("tweet_url", "")
+                
+                if req.auto_monitor and new_tweet_id:
+                    async with get_session() as session:
+                        existing = (await session.execute(
+                            select(XTwitterMonitoredPost).where(XTwitterMonitoredPost.post_id == new_tweet_id)
+                        )).scalar_one_or_none()
+
+                        if existing:
+                            existing.monitoring = 1
+                            existing.last_modify_ts = _ts()
+                        else:
+                            new_post = XTwitterMonitoredPost(
+                                post_id=new_tweet_id,
+                                post_url=new_tweet_url,
+                                post_content=req.content[:500],
+                                post_username="",
+                                monitoring=1,
+                                add_ts=_ts(),
+                                last_modify_ts=_ts(),
+                            )
+                            session.add(new_post)
+                        await session.commit()
+
+                return {
+                    "success": True,
+                    "message": "发布成功",
+                    "tweet_id": new_tweet_id,
+                    "tweet_url": new_tweet_url,
+                    "auto_monitor": req.auto_monitor and bool(new_tweet_id),
+                    "attempts": attempt,
+                }
+            
+            last_error = "发布返回失败"
+            
+        except Exception as e:
+            last_error = str(e)
+            logger.error(f"[publish_to_x] 第 {attempt}/{max_retries} 次尝试失败: {e}")
+            if attempt < max_retries:
+                await asyncio.sleep(5)
+
+    # 所有重试都失败 → 发送发布失败预警到 alert_center
+    try:
+        from api.services.alert.alert_center import emit_publish_failure
+        await emit_publish_failure(
+            platform="x_twitter",
+            account_label="X_TWITTER_COOKIES(env)",
+            error_message=last_error,
+            content_preview=req.content[:200] if req.content else "",
+            post_id=req.post_id if hasattr(req, "post_id") else "",
+        )
+    except Exception as ae:
+        logger.warning(f"[publish_to_x] 发送发布失败预警异常(非致命): {ae}")
+
+    raise HTTPException(500, f"发布失败，已重试 {max_retries} 次: {last_error}")
+
+
+# ==================== 文件上传 ====================
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+@router.post("/upload-video")
+async def upload_video(file: UploadFile = File(...)):
+    """上传视频文件"""
+    try:
+        file_ext = os.path.splitext(file.filename)[1] if file.filename else ".mp4"
+        if not file_ext.lower() in (".mp4", ".mov", ".avi", ".mkv", ".webm"):
+            raise HTTPException(400, "不支持的文件格式，仅支持 MP4/MOV/AVI/MKV/WEBM")
+
+        file_hash = hashlib.md5(file.filename.encode() + str(time.time()).encode()).hexdigest()[:8]
+        filename = f"{file_hash}_{file.filename}{file_ext}" if not file.filename.endswith(file_ext) else f"{file_hash}_{file.filename}"
+        file_path = os.path.join(UPLOAD_DIR, filename)
+
+        contents = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(contents)
+
+        file_url = f"/api/x-workbench/download-video/{filename}"
+        
+        logger.info(f"[upload_video] Uploaded video: {filename}, size: {len(contents)} bytes")
+        
+        return {
+            "success": True,
+            "filename": filename,
+            "file_path": file_path,
+            "file_url": file_url,
+            "size": len(contents),
+        }
+    except Exception as e:
+        logger.error(f"[upload_video] Failed: {e}")
+        raise HTTPException(500, f"上传失败: {e}")
+
+
+@router.get("/download-video/{filename}")
+async def download_video(filename: str):
+    """下载已上传的视频文件"""
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(404, "文件不存在")
+    
+    return FileResponse(file_path, media_type="video/mp4", filename=filename)

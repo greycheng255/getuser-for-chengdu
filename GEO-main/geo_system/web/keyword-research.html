@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>关键词研究 - GEO系统</title>
+    <link rel="stylesheet" href="styles.css?v=2">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #333; }
+        
+        .container { display: flex; min-height: 100vh; }
+        
+        .sidebar { width: 260px; background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%); color: #fff; padding: 24px 0; position: fixed; height: 100vh; overflow-y: auto; }
+        .sidebar-header { padding: 0 24px 24px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .sidebar-header h1 { font-size: 1.25rem; margin-bottom: 4px; }
+        .sidebar-header p { font-size: 0.75rem; color: rgba(255,255,255,0.6); }
+        
+        .nav-menu { list-style: none; padding: 16px 0; }
+        .nav-item { padding: 14px 24px; cursor: pointer; display: flex; align-items: center; gap: 12px; transition: all 0.2s; border-left: 3px solid transparent; }
+        .nav-item:hover, .nav-item.active { background: rgba(255,255,255,0.1); border-left-color: #667eea; }
+        .nav-item .nav-icon { font-size: 1.25rem; }
+        
+        .main-content { flex: 1; margin-left: 260px; padding: 32px; }
+        
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
+        .page-title { font-size: 1.75rem; font-weight: 700; color: #1a1a2e; }
+        
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; transition: all 0.3s; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(102,126,234,0.4); }
+        .btn-secondary { background: #fff; color: #667eea; padding: 12px 24px; border: 1px solid #667eea; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
+        .btn-secondary:hover { background: #f8f9ff; }
+        
+        /* 搜索框 */
+        .search-section { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); margin-bottom: 24px; }
+        .search-box { display: flex; gap: 12px; }
+        .search-input-wrapper { flex: 1; position: relative; }
+        .search-input { width: 100%; padding: 14px 16px 14px 48px; border: 2px solid #e5e7eb; border-radius: 10px; font-size: 1rem; transition: all 0.2s; }
+        .search-input:focus { outline: none; border-color: #667eea; }
+        .search-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); font-size: 1.25rem; }
+        .industry-select { padding: 14px 16px; border: 2px solid #e5e7eb; border-radius: 10px; font-size: 1rem; min-width: 160px; }
+        
+        /* 标签页 */
+        .tabs { display: flex; gap: 8px; margin-bottom: 24px; background: white; padding: 8px; border-radius: 12px; }
+        .tab { padding: 12px 24px; border: none; background: transparent; border-radius: 8px; cursor: pointer; font-size: 0.9rem; color: #6b7280; transition: all 0.2s; }
+        .tab.active { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .tab:hover:not(.active) { background: #f3f4f6; }
+        
+        .panel { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); display: none; }
+        .panel.active { display: block; }
+        
+        /* 统计卡片 */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 12px; padding: 20px; }
+        .stat-value { font-size: 2rem; font-weight: 700; margin-bottom: 4px; }
+        .stat-label { font-size: 0.85rem; opacity: 0.9; }
+        
+        /* 关键词表格 */
+        .keyword-table { width: 100%; border-collapse: collapse; }
+        .keyword-table th { text-align: left; padding: 12px 16px; background: #f9fafb; font-weight: 600; font-size: 0.85rem; color: #6b7280; border-bottom: 2px solid #e5e7eb; }
+        .keyword-table td { padding: 16px; border-bottom: 1px solid #e5e7eb; }
+        .keyword-table tr:hover { background: #f9fafb; }
+        .keyword-name { font-weight: 600; color: #1a1a2e; }
+        .keyword-badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 500; }
+        .badge-hot { background: #fee2e2; color: #dc2626; }
+        .badge-warm { background: #fef3c7; color: #d97706; }
+        .badge-normal { background: #e5e7eb; color: #6b7280; }
+        
+        .metric-bar { width: 100px; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px; }
+        .metric-fill { height: 100%; border-radius: 4px; }
+        .metric-value { font-size: 0.85rem; color: #6b7280; }
+        
+        .action-btn { padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.8rem; margin-right: 4px; }
+        .action-btn.detail { background: #dbeafe; color: #2563eb; }
+        .action-btn.optimize { background: #d1fae5; color: #059669; }
+        
+        /* 词云 */
+        .wordcloud-container { min-height: 400px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 16px; padding: 40px; }
+        .wordcloud-item { padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: all 0.3s; }
+        .wordcloud-item:hover { transform: scale(1.1); }
+        
+        /* 趋势图 */
+        .chart-container { height: 300px; margin-top: 20px; }
+        
+        /* 相关词 */
+        .related-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 16px; }
+        .related-item { padding: 12px 16px; background: #f3f4f6; border-radius: 8px; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; text-align: center; }
+        .related-item:hover { background: #e5e7eb; transform: translateY(-2px); }
+        .related-item .volume { font-size: 0.75rem; color: #6b7280; margin-top: 4px; }
+        
+        /* 详情模态框 */
+        .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; border-radius: 16px; padding: 32px; width: 90%; max-width: 800px; max-height: 90vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+        .modal-title { font-size: 1.25rem; font-weight: 600; }
+        .modal-close { width: 32px; height: 32px; border: none; background: #f3f4f6; border-radius: 8px; cursor: pointer; font-size: 1.25rem; }
+        
+        /* 加载动画 */
+        .loading { display: none; text-align: center; padding: 60px; }
+        .loading.active { display: block; }
+        .spinner { width: 40px; height: 40px; border: 3px solid #f3f4f6; border-top-color: #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .toast { position: fixed; bottom: 24px; right: 24px; background: #1a1a2e; color: white; padding: 16px 24px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); z-index: 2000; transform: translateY(100px); opacity: 0; transition: all 0.3s; }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.success { border-left: 4px solid #10b981; }
+        .toast.error { border-left: 4px solid #ef4444; }
+        
+        .empty-state { text-align: center; padding: 60px 20px; color: #6b7280; }
+        .empty-state-icon { font-size: 4rem; margin-bottom: 16px; }
+        .empty-state-text { font-size: 1.1rem; margin-bottom: 24px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>🚀 GEO系统</h1>
+                <p>AI搜索时代的内容优化</p>
+            </div>
+            <nav>
+                <ul class="nav-menu">
+                    <li class="nav-item" onclick="window.location.href='index.html'"><span class="nav-icon">🏠</span><span>首页</span></li>
+                    <li class="nav-item" onclick="window.location.href='projects.html'"><span class="nav-icon">📁</span><span>我的项目</span></li>
+                    <li class="nav-item" onclick="window.location.href='ai-tasks.html'"><span class="nav-icon">🤖</span><span>AI任务</span></li>
+                    <li class="nav-item" onclick="window.location.href='content-calendar.html'"><span class="nav-icon">📅</span><span>内容日历</span></li>
+                    <li class="nav-item" onclick="window.location.href='content-generator.html'"><span class="nav-icon">✍️</span><span>内容生成</span></li>
+                    <li class="nav-item" onclick="window.location.href='content-analyzer.html'"><span class="nav-icon">🔍</span><span>内容分析</span></li>
+                    <li class="nav-item" onclick="window.location.href='analytics-dashboard.html'"><span class="nav-icon">📈</span><span>数据报表</span></li>
+                    <li class="nav-item" onclick="window.location.href='competitor-analysis.html'"><span class="nav-icon">🎯</span><span>竞品分析</span></li>
+                    <li class="nav-item active" onclick="window.location.href='keyword-research.html'"><span class="nav-icon">🔑</span><span>关键词研究</span></li>
+                    <li class="nav-item" onclick="window.location.href='sentiment-monitor.html'"><span class="nav-icon">💬</span><span>舆情监控</span></li>
+                    <li class="nav-item" onclick="window.location.href='brand-diagnosis.html'"><span class="nav-icon">🏥</span><span>品牌诊断</span></li>
+                    <li class="nav-item" onclick="window.location.href='publish-manager.html'"><span class="nav-icon">📤</span><span>发布管理</span></li>
+                    <li class="nav-item" onclick="window.location.href='monitoring-dashboard.html'"><span class="nav-icon">📊</span><span>效果监控</span></li>
+                </ul>
+            </nav>
+        </aside>
+        
+        <main class="main-content">
+            <div class="page-header">
+                <h1 class="page-title">🔑 关键词研究</h1>
+                <button class="btn-primary" onclick="exportKeywords()">📥 导出关键词</button>
+            </div>
+            
+            <!-- 搜索框 -->
+            <div class="search-section">
+                <div class="search-box">
+                    <div class="search-input-wrapper">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="searchKeyword" class="search-input" placeholder="输入种子关键词，如：定制家具" onkeypress="if(event.key==='Enter')searchKeywords()">
+                    </div>
+                    <select id="industryFilter" class="industry-select">
+                        <option value="">全行业</option>
+                        <option value="定制家具">定制家具</option>
+                        <option value="智能家居">智能家居</option>
+                        <option value="家居用品">家居用品</option>
+                    </select>
+                    <button class="btn-primary" onclick="searchKeywords()">搜索</button>
+                </div>
+            </div>
+            
+            <!-- 统计卡片 -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalKeywords">0</div>
+                    <div class="stat-label">关键词总数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="totalVolume">0</div>
+                    <div class="stat-label">月搜索总量</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="avgDifficulty">--</div>
+                    <div class="stat-label">平均难度</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="highOpportunity">0</div>
+                    <div class="stat-label">高机会关键词</div>
+                </div>
+            </div>
+            
+            <!-- 标签页 -->
+            <div class="tabs">
+                <button class="tab active" data-tab="list">关键词列表</button>
+                <button class="tab" data-tab="wordcloud">词云视图</button>
+                <button class="tab" data-tab="trends">趋势分析</button>
+            </div>
+            
+            <!-- 关键词列表 -->
+            <div class="panel active" id="listPanel">
+                <table class="keyword-table">
+                    <thead>
+                        <tr>
+                            <th>关键词</th>
+                            <th>搜索量</th>
+                            <th>难度</th>
+                            <th>CPC</th>
+                            <th>机会</th>
+                            <th>趋势</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="keywordTableBody">
+                    </tbody>
+                </table>
+                <div class="loading" id="tableLoading">
+                    <div class="spinner"></div>
+                    <div>加载中...</div>
+                </div>
+                <div class="empty-state" id="tableEmpty" style="display: none;">
+                    <div class="empty-state-icon">🔑</div>
+                    <div class="empty-state-text">输入关键词开始研究</div>
+                    <button class="btn-primary" onclick="searchKeywords()">搜索关键词</button>
+                </div>
+            </div>
+            
+            <!-- 词云视图 -->
+            <div class="panel" id="wordcloudPanel">
+                <div class="wordcloud-container" id="wordcloudContainer">
+                </div>
+                <div class="empty-state" id="wordcloudEmpty">
+                    <div class="empty-state-icon">☁️</div>
+                    <div class="empty-state-text">搜索关键词后显示词云</div>
+                </div>
+            </div>
+            
+            <!-- 趋势分析 -->
+            <div class="panel" id="trendsPanel">
+                <h3 style="margin-bottom: 16px;">📈 关键词搜索趋势</h3>
+                <div class="chart-container">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- 关键词详情模态框 -->
+    <div class="modal" id="keywordModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modalKeywordTitle">关键词详情</h2>
+                <button class="modal-close" onclick="closeKeywordModal()">×</button>
+            </div>
+            <div id="keywordModalContent">
+            </div>
+        </div>
+    </div>
+    
+    <div class="toast" id="toast"></div>
+    
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        let allKeywords = [];
+        let trendChart = null;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            initTabs();
+            loadRecentKeywords();
+        });
+        
+        function initTabs() {
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', function() {
+                    const tabName = this.dataset.tab;
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+                    this.classList.add('active');
+                    document.getElementById(`${tabName}Panel`).classList.add('active');
+                });
+            });
+        }
+        
+        async function searchKeywords() {
+            const keyword = document.getElementById('searchKeyword').value.trim();
+            const industry = document.getElementById('industryFilter').value;
+            
+            if (!keyword) {
+                showToast('请输入关键词', 'error');
+                return;
+            }
+            
+            const loadingEl = document.getElementById('tableLoading');
+            const emptyEl = document.getElementById('tableEmpty');
+            const tbody = document.getElementById('keywordTableBody');
+            
+            loadingEl.classList.add('active');
+            emptyEl.style.display = 'none';
+            tbody.innerHTML = '';
+            
+            try {
+                const params = new URLSearchParams({ keyword, industry: industry || undefined });
+                const resp = await fetch(`${API_BASE}/keywords/research?${params}`);
+                const data = await resp.json();
+                
+                if (data.success) {
+                    allKeywords = data.keywords || [];
+                    renderKeywordTable();
+                    renderWordcloud();
+                    updateStats();
+                    
+                    if (allKeywords.length > 0) {
+                        renderTrendChart(keyword);
+                    }
+                } else {
+                    showToast(data.error || '搜索失败', 'error');
+                }
+            } catch (err) {
+                console.error('搜索关键词失败:', err);
+                showToast('搜索失败', 'error');
+            } finally {
+                loadingEl.classList.remove('active');
+                if (allKeywords.length === 0) {
+                    emptyEl.style.display = 'block';
+                }
+            }
+        }
+        
+        function renderKeywordTable() {
+            const tbody = document.getElementById('keywordTableBody');
+            
+            if (allKeywords.length === 0) {
+                tbody.innerHTML = '';
+                return;
+            }
+            
+            tbody.innerHTML = allKeywords.map(k => {
+                const difficulty = k.difficulty || 50;
+                const difficultyClass = difficulty > 70 ? 'hot' : difficulty > 40 ? 'warm' : 'normal';
+                const difficultyColor = difficulty > 70 ? '#ef4444' : difficulty > 40 ? '#f59e0b' : '#10b981';
+                const opportunity = k.opportunity || calculateOpportunity(k);
+                const opportunityClass = opportunity > 70 ? 'hot' : opportunity > 40 ? 'warm' : 'normal';
+                const opportunityColor = opportunity > 70 ? '#10b981' : opportunity > 40 ? '#f59e0b' : '#6b7280';
+                
+                return `
+                    <tr>
+                        <td><span class="keyword-name">${k.keyword}</span></td>
+                        <td>${formatNumber(k.search_volume || 0)}</td>
+                        <td>
+                            <span class="metric-bar"><span class="metric-fill" style="width:${difficulty}%;background:${difficultyColor}"></span></span>
+                            <span class="metric-value">${difficulty.toFixed(0)}</span>
+                        </td>
+                        <td>¥${(k.cpc || 0).toFixed(2)}</td>
+                        <td>
+                            <span class="metric-bar"><span class="metric-fill" style="width:${opportunity}%;background:${opportunityColor}"></span></span>
+                            <span class="metric-value">${opportunity.toFixed(0)}</span>
+                        </td>
+                        <td>${getTrendIcon(k.trend)}</td>
+                        <td>
+                            <button class="action-btn detail" onclick="showKeywordDetail('${k.keyword}')">详情</button>
+                            <button class="action-btn optimize" onclick="useKeyword('${k.keyword}')">使用</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        function renderWordcloud() {
+            const container = document.getElementById('wordcloudContainer');
+            const emptyEl = document.getElementById('wordcloudEmpty');
+            
+            if (allKeywords.length === 0) {
+                container.innerHTML = '';
+                emptyEl.style.display = 'block';
+                return;
+            }
+            
+            emptyEl.style.display = 'none';
+            
+            const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe', '#43e97b', '#38f9d7'];
+            
+            container.innerHTML = allKeywords.slice(0, 50).map((k, i) => {
+                const volume = k.search_volume || 1000;
+                const maxVol = Math.max(...allKeywords.map(x => x.search_volume || 1000));
+                const size = 0.8 + (volume / maxVol) * 1.2;
+                const color = colors[i % colors.length];
+                
+                return `
+                    <div class="wordcloud-item" style="font-size:${size}rem;color:${color};background:${color}15" onclick="showKeywordDetail('${k.keyword}')">
+                        ${k.keyword}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function renderTrendChart(seedKeyword) {
+            const ctx = document.getElementById('trendChart');
+            
+            if (trendChart) {
+                trendChart.destroy();
+            }
+            
+            // 模拟12个月趋势数据
+            const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+            const baseVolume = Math.floor(Math.random() * 5000) + 2000;
+            const trend = Math.random() > 0.3 ? 1 : -1;
+            
+            const data = months.map((_, i) => {
+                const seasonFactor = 1 + 0.2 * Math.sin((i / 12) * Math.PI * 2);
+                const growth = 1 + (trend * i * 0.02);
+                return Math.floor(baseVolume * seasonFactor * growth);
+            });
+            
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: months,
+                    datasets: [{
+                        label: seedKeyword,
+                        data: data,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, position: 'top' }
+                    },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+        
+        function updateStats() {
+            document.getElementById('totalKeywords').textContent = allKeywords.length;
+            document.getElementById('totalVolume').textContent = formatNumber(allKeywords.reduce((s, k) => s + (k.search_volume || 0), 0));
+            
+            const avgDiff = allKeywords.length > 0 
+                ? allKeywords.reduce((s, k) => s + (k.difficulty || 50), 0) / allKeywords.length 
+                : 0;
+            document.getElementById('avgDifficulty').textContent = avgDiff.toFixed(0);
+            
+            const highOpp = allKeywords.filter(k => calculateOpportunity(k) > 60).length;
+            document.getElementById('highOpportunity').textContent = highOpp;
+        }
+        
+        function calculateOpportunity(keyword) {
+            const volume = keyword.search_volume || 0;
+            const difficulty = keyword.difficulty || 50;
+            const cpc = keyword.cpc || 1;
+            
+            // 机会 = 高搜索量 + 低难度 + 高CPC
+            return Math.min(100, (volume / 10000) * 30 + (100 - difficulty) * 0.4 + (cpc / 10) * 20);
+        }
+        
+        function showKeywordDetail(keywordName) {
+            const keyword = allKeywords.find(k => k.keyword === keywordName);
+            if (!keyword) return;
+            
+            document.getElementById('modalKeywordTitle').textContent = keywordName;
+            
+            const related = allKeywords.filter(k => k.keyword !== keywordName).slice(0, 8);
+            
+            document.getElementById('keywordModalContent').innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 24px;">
+                    <div style="padding: 16px; background: #f9fafb; border-radius: 8px;">
+                        <div style="font-size: 0.85rem; color: #6b7280;">月搜索量</div>
+                        <div style="font-size: 1.5rem; font-weight: 700;">${formatNumber(keyword.search_volume || 0)}</div>
+                    </div>
+                    <div style="padding: 16px; background: #f9fafb; border-radius: 8px;">
+                        <div style="font-size: 0.85rem; color: #6b7280;">优化难度</div>
+                        <div style="font-size: 1.5rem; font-weight: 700;">${(keyword.difficulty || 50).toFixed(0)}</div>
+                    </div>
+                    <div style="padding: 16px; background: #f9fafb; border-radius: 8px;">
+                        <div style="font-size: 0.85rem; color: #6b7280;">CPC出价</div>
+                        <div style="font-size: 1.5rem; font-weight: 700;">¥${(keyword.cpc || 0).toFixed(2)}</div>
+                    </div>
+                    <div style="padding: 16px; background: #f9fafb; border-radius: 8px;">
+                        <div style="font-size: 0.85rem; color: #6b7280;">机会指数</div>
+                        <div style="font-size: 1.5rem; font-weight: 700;">${calculateOpportunity(keyword).toFixed(0)}</div>
+                    </div>
+                </div>
+                
+                <h4 style="margin-bottom: 12px;">相关关键词</h4>
+                <div class="related-grid">
+                    ${related.map(k => `
+                        <div class="related-item" onclick="showKeywordDetail('${k.keyword}')">
+                            ${k.keyword}
+                            <div class="volume">搜索量: ${formatNumber(k.search_volume || 0)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <div style="margin-top: 24px; display: flex; gap: 12px;">
+                    <button class="btn-primary" style="flex:1" onclick="useKeyword('${keywordName}')">✍️ 使用该关键词生成内容</button>
+                </div>
+            `;
+            
+            document.getElementById('keywordModal').classList.add('active');
+        }
+        
+        function closeKeywordModal() {
+            document.getElementById('keywordModal').classList.remove('active');
+        }
+        
+        async function useKeyword(keywordName) {
+            closeKeywordModal();
+            showToast(`已将"${keywordName}"加入内容生成`, 'success');
+            // 跳转到内容生成页面
+            window.location.href = `content-generator.html?keyword=${encodeURIComponent(keywordName)}`;
+        }
+        
+        async function loadRecentKeywords() {
+            try {
+                const resp = await fetch(`${API_BASE}/keywords`);
+                const data = await resp.json();
+                if (data.success && data.keywords) {
+                    allKeywords = data.keywords;
+                    renderKeywordTable();
+                    updateStats();
+                }
+            } catch (err) {
+                console.error('加载历史关键词失败:', err);
+            }
+        }
+        
+        function exportKeywords() {
+            if (allKeywords.length === 0) {
+                showToast('没有可导出的关键词', 'error');
+                return;
+            }
+            
+            const headers = ['关键词', '搜索量', '难度', 'CPC', '机会指数'];
+            const rows = allKeywords.map(k => [
+                k.keyword,
+                k.search_volume || 0,
+                (k.difficulty || 50).toFixed(0),
+                (k.cpc || 0).toFixed(2),
+                calculateOpportunity(k).toFixed(0)
+            ]);
+            
+            const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `关键词研究_${new Date().toLocaleDateString()}.csv`;
+            a.click();
+            
+            showToast('导出成功', 'success');
+        }
+        
+        function formatNumber(num) {
+            if (num >= 10000) return (num / 10000).toFixed(1) + 'w';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+            return num.toString();
+        }
+        
+        function getTrendIcon(trend) {
+            if (trend === 'up') return '📈';
+            if (trend === 'down') return '📉';
+            return '➡️';
+        }
+        
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+    </script>
+</body>
+</html>

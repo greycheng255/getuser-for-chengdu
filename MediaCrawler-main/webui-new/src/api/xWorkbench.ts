@@ -34,6 +34,8 @@ export interface CrawlStatus {
   error: string;
   crawled_count: number;
   stage: 'idle' | 'starting' | 'crawling' | 'saving' | 'done' | 'failed' | 'cancelled';
+  platform?: string;
+  platform_name?: string;
 }
 
 export interface TrendingResp {
@@ -141,6 +143,30 @@ export interface MonitorStatus {
   daily_limit: number;
   batch_size: number;
   monitor_ttl_days: number;
+}
+
+// ==================== 自动化流水线类型 ====================
+
+export interface AutoPipelineTask {
+  id: number;
+  task_id: string;
+  post_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  current_step: number;
+  step_name: string;
+  step_detail: string;
+  breakdown_id: number | null;
+  video_task_id: string;
+  video_url: string;
+  video_status: string;
+  candidate_contents: string[];
+  selected_content: string;
+  tweet_id: string;
+  tweet_url: string;
+  error_msg: string;
+  skip_video: number;
+  add_ts: number;
+  update_ts: number;
 }
 
 // ==================== Cookie 池相关类型 ====================
@@ -347,6 +373,29 @@ export interface BatchBreakdownResp {
   results: BatchBreakdownResult[];
 }
 
+// ==================== X 发布文案类型 ====================
+
+export interface XPostContentResp {
+  post_id: string;
+  contents: string[];
+}
+
+export interface PublishToXResp {
+  success: boolean;
+  message: string;
+  tweet_id: string;
+  tweet_url: string;
+  auto_monitor: boolean;
+}
+
+export interface UploadVideoResp {
+  success: boolean;
+  filename: string;
+  file_path: string;
+  file_url: string;
+  size: number;
+}
+
 // ==================== WebSocket 事件类型 ====================
 
 export interface WorkbenchWSEvent {
@@ -365,6 +414,24 @@ export interface BatchBreakdownProgressEvent {
 
 // ==================== API 方法 ====================
 
+export interface PlatformMonitorInfo {
+  id: string;
+  name: string;
+  region: string;
+  color: string;
+  home: string;
+  db_count: number;
+  cache_count: number;
+  cache_age_seconds: number;
+}
+
+export interface PlatformsOverviewResp {
+  platforms: PlatformMonitorInfo[];
+  total_platforms: number;
+  domestic_count: number;
+  global_count: number;
+}
+
 export const xWorkbenchApi = {
   // 热点推文
   getTrending: (params?: { limit?: number; keyword?: string; has_video?: boolean; platform?: string }) =>
@@ -374,9 +441,13 @@ export const xWorkbenchApi = {
   getPlatforms: () =>
     request.get<any, { platforms: PlatformInfo[]; error?: string }>('/x-workbench/platforms'),
 
-  // X 采集 - 单次触发
-  crawlOnce: (keywords: string, max_posts = 20) =>
-    request.post<any, { success: boolean; message: string; keywords: string }>('/x-workbench/crawl/once', { keywords, max_posts }),
+  // 多平台监控总览（15 个平台的采集状态）
+  getMonitorPlatforms: () =>
+    request.get<any, PlatformsOverviewResp>('/x-workbench/monitor/platforms'),
+
+  // 采集 - 单次触发（支持所有平台，platform 默认 x）
+  crawlOnce: (keywords: string, max_posts = 20, platform = 'x') =>
+    request.post<any, { success: boolean; message: string; keywords: string; platform?: string }>('/x-workbench/crawl/once', { keywords, max_posts, platform }),
 
   // X 采集 - 状态查询
   crawlStatus: () =>
@@ -400,15 +471,34 @@ export const xWorkbenchApi = {
   scheduledStop: () =>
     request.post<any, { success: boolean; message: string }>('/x-workbench/crawl/scheduled/stop'),
 
-  // 视频拆解
-  generateBreakdown: (post_id: string, force_refresh = false) =>
-    request.post<any, BreakdownResp>('/x-workbench/breakdown', { post_id, force_refresh }),
+  // 视频拆解（支持所有平台，非X平台需传 post_url/content 等）
+  generateBreakdown: (params: {
+    post_id: string;
+    force_refresh?: boolean;
+    platform?: string;
+    post_url?: string;
+    content?: string;
+    username?: string;
+    video_url?: string;
+  }) =>
+    request.post<any, BreakdownResp>('/x-workbench/breakdown', params),
 
-  // 使用拆解上下文生成低成本 Seedance 解说视频
-  generateExplainerVideo: (post_id: string, idempotency_key: string) =>
+  // 使用拆解上下文生成低成本 Seedance 解说视频（支持所有平台 + 自定义内容）
+  generateExplainerVideo: (
+    post_id: string,
+    idempotency_key: string,
+    options?: {
+      platform?: string;
+      post_url?: string;
+      content?: string;
+      video_url?: string;
+      username?: string;
+      custom_prompt?: string;
+    },
+  ) =>
     request.post<any, ExplainerVideoCreateResp>(
       '/x-workbench/explainer-video',
-      { post_id, idempotency_key },
+      { post_id, idempotency_key, ...(options || {}) },
       { skipRetry: true },
     ),
 
@@ -421,11 +511,11 @@ export const xWorkbenchApi = {
     request.post<any, GenerateCommentsResp>('/x-workbench/generate-comments', { post_id, count }),
 
   // 发送评论
-  sendComment: (data: { post_id: string; post_url: string; content: string; real_send?: boolean }) =>
+  sendComment: (data: { post_id: string; post_url: string; content: string; real_send?: boolean; platform?: string }) =>
     request.post<any, SendCommentResp>('/x-workbench/comments/send', data),
 
-  // 已发评论列表
-  listComments: (params?: { page?: number; page_size?: number; status?: string; keyword?: string; start_ts?: number; end_ts?: number }) =>
+  // 已发评论列表（按平台过滤）
+  listComments: (params?: { page?: number; page_size?: number; status?: string; keyword?: string; start_ts?: number; end_ts?: number; platform?: string }) =>
     request.get<any, { total: number; page: number; page_size: number; items: SentComment[] }>(
       '/x-workbench/comments',
       { params }
@@ -463,7 +553,7 @@ export const xWorkbenchApi = {
   aiHealth: () => request.get<any, any>('/x-workbench/ai/health'),
 
   // 统计
-  getStats: () => request.get<any, WorkbenchStats>('/x-workbench/stats'),
+  getStats: (platform?: string) => request.get<any, WorkbenchStats>('/x-workbench/stats', { params: platform ? { platform } : {} }),
 
   // ==================== Cookie 池管理 ====================
 
@@ -631,6 +721,41 @@ export const xWorkbenchApi = {
   // 批量视频拆解
   batchBreakdown: (post_ids: string[]) =>
     request.post<any, BatchBreakdownResp>('/x-workbench/batch/breakdown', { post_ids }),
+
+  // 生成 X 发布文案
+  generateXPostContent: (post_id: string, count = 3) =>
+    request.post<any, XPostContentResp>('/x-workbench/x-post-content', { post_id, count }),
+
+  // 发布视频/文案到 X
+  publishToX: (data: { post_id: string; content: string; video_url?: string; auto_monitor?: boolean }) =>
+    request.post<any, PublishToXResp>('/x-workbench/publish-x', data),
+
+  // 上传视频文件
+  uploadVideo: (file: File): Promise<UploadVideoResp> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request.post('/x-workbench/upload-video', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }) as Promise<UploadVideoResp>;
+  },
+
+  // ==================== 自动化流水线 ====================
+
+  // 启动一键自动发布流水线
+  startAutoPipeline: (post_id: string, skip_video = false) =>
+    request.post<any, { success: boolean; task_id: string; message: string }>('/x-workbench/auto-pipeline', { post_id, skip_video }),
+
+  // 查询流水线任务状态
+  getAutoPipelineStatus: (task_id: string) =>
+    request.get<any, { success: boolean; task: AutoPipelineTask }>(`/x-workbench/auto-pipeline/${task_id}`),
+
+  // 取消流水线任务
+  cancelAutoPipeline: (task_id: string) =>
+    request.post<any, { success: boolean; message: string }>(`/x-workbench/auto-pipeline/${task_id}/cancel`),
+
+  // 查询流水线任务列表
+  listAutoPipelines: (limit = 20) =>
+    request.get<any, { success: boolean; total: number; tasks: AutoPipelineTask[] }>('/x-workbench/auto-pipeline', { params: { limit } }),
 };
 
 // ==================== 内部辅助:文件下载 ====================

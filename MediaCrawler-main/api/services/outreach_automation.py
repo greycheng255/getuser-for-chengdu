@@ -20,11 +20,16 @@ from playwright.async_api import async_playwright, BrowserContext, Page, Timeout
 import config
 from tools.cdp_browser import CDPBrowserManager
 from tools import utils
-from database.db_session import get_async_engine
 from database.models import OutreachRecord, OutreachTaskModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, desc
+
+
+def _get_engine():
+    """获取异步数据库引擎（公共方法，消除重复导入）"""
+    from database.db_session import get_async_engine
+    return get_async_engine(config.SAVE_DATA_OPTION)
 
 
 # ==================== 数据模型 ====================
@@ -2398,7 +2403,7 @@ async def _click_pm_button_xhs(page: Page, user_id: str = "") -> bool:
         try:
             await page.screenshot(path="/tmp/xhs_no_pm_button.png")
             utils.logger.info("[OutreachAutomation] Debug screenshot saved to /tmp/xhs_no_pm_button.png")
-        except:
+        except Exception:
             pass
 
         return False

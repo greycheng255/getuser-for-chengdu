@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>主动发布 - GEO系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 24px 0;
+            margin-bottom: 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header .subtitle { color: #a0a0a0; font-size: 0.95rem; margin-top: 4px; }
+
+        .header-actions { display: flex; gap: 12px; align-items: center; }
+
+        .user-info { color: #a0a0a0; font-size: 0.95rem; }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            color: #fff;
+        }
+
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4); }
+
+        .btn-secondary { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); }
+        .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); }
+
+        .btn-success { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+        .btn-danger { background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .layout { display: grid; grid-template-columns: 380px 1fr; gap: 24px; }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(10px);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group { margin-bottom: 16px; }
+
+        .form-group label {
+            display: block;
+            font-size: 0.85rem;
+            color: #b0b0b0;
+            margin-bottom: 6px;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 0.9rem;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(0, 0, 0, 0.35);
+        }
+
+        .form-group textarea { resize: vertical; min-height: 80px; }
+
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+        .platform-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .platform-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .platform-checkbox:hover { background: rgba(0, 0, 0, 0.35); }
+
+        .platform-checkbox.selected {
+            background: rgba(102, 126, 234, 0.25);
+            border-color: #667eea;
+        }
+
+        .platform-checkbox input { accent-color: #667eea; }
+
+        .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 14px;
+            text-align: center;
+        }
+
+        .stat-card .num { font-size: 1.6rem; font-weight: 700; color: #667eea; }
+        .stat-card .label { font-size: 0.8rem; color: #a0a0a0; margin-top: 4px; }
+
+        .filter-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 6px 14px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            color: #b0b0b0;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .filter-btn:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+        .filter-btn.active { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; border-color: transparent; }
+
+        .task-list { display: flex; flex-direction: column; gap: 12px; }
+
+        .task-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            transition: all 0.2s;
+        }
+
+        .task-card:hover { background: rgba(255, 255, 255, 0.07); }
+
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 10px;
+            gap: 12px;
+        }
+
+        .task-title { font-size: 1.05rem; font-weight: 600; flex: 1; word-break: break-word; }
+        .task-topic { color: #a0a0a0; font-size: 0.85rem; margin-top: 4px; }
+
+        .task-status {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .status-pending { background: rgba(158, 158, 158, 0.2); color: #9E9E9E; }
+        .status-generating, .status-generating_images, .status-publishing { background: rgba(33, 150, 243, 0.2); color: #64B5F6; }
+        .status-success { background: rgba(0, 188, 212, 0.2); color: #4DD0E1; }
+        .status-partial { background: rgba(76, 175, 80, 0.2); color: #81C784; }
+        .status-failed { background: rgba(244, 67, 54, 0.2); color: #E57373; }
+        .status-cancelled { background: rgba(96, 125, 139, 0.2); color: #B0BEC5; }
+
+        .task-meta {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            font-size: 0.8rem;
+            color: #a0a0a0;
+            margin-bottom: 10px;
+        }
+
+        .task-meta span { display: inline-flex; align-items: center; gap: 4px; }
+
+        .task-content-preview {
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 0.85rem;
+            color: #c0c0c0;
+            margin-bottom: 10px;
+            max-height: 100px;
+            overflow-y: auto;
+            line-height: 1.5;
+        }
+
+        .task-platforms { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+
+        .platform-tag {
+            padding: 3px 8px;
+            background: rgba(102, 126, 234, 0.15);
+            color: #a5b4fc;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+
+        .platform-tag.success { background: rgba(76, 175, 80, 0.15); color: #81C784; }
+        .platform-tag.failed { background: rgba(244, 67, 54, 0.15); color: #E57373; }
+
+        .task-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        .task-actions .btn { padding: 6px 12px; font-size: 0.8rem; }
+
+        .empty-state { text-align: center; padding: 60px 20px; color: #a0a0a0; }
+        .empty-state .icon { font-size: 3rem; margin-bottom: 12px; opacity: 0.5; }
+
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal-overlay.active { display: flex; }
+
+        .modal {
+            background: linear-gradient(135deg, #1f1c3a 0%, #2a2654 100%);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 16px;
+            padding: 28px;
+            max-width: 800px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 { font-size: 1.3rem; }
+        .modal-close {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            color: #fff;
+            cursor: pointer;
+            font-size: 1.1rem;
+        }
+
+        .modal-body { font-size: 0.92rem; line-height: 1.6; }
+
+        .detail-row { margin-bottom: 14px; }
+        .detail-row .label { color: #a0a0a0; font-size: 0.85rem; margin-bottom: 4px; }
+        .detail-row .value { color: #e0e0e0; word-break: break-word; }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 0.9rem;
+            z-index: 2000;
+            opacity: 0;
+            transform: translateX(20px);
+            transition: all 0.3s;
+        }
+
+        .toast.show { opacity: 1; transform: translateX(0); }
+        .toast.success { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+        .toast.error { background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%); }
+        .toast.info { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; }
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>🚀 主动发布</h1>
+                <div class="subtitle">输入主题，AI自动生成文章+配图，一键发布到多个平台</div>
+            </div>
+            <div class="header-actions">
+                <span class="user-info" id="currentUser">加载中...</span>
+                <button class="btn btn-secondary" onclick="goBack()">← 返回</button>
+                <button class="btn btn-secondary" onclick="logout()">退出</button>
+            </div>
+        </div>
+
+        <div class="stats-row" id="statsRow">
+            <div class="stat-card"><div class="num" id="statTotal">0</div><div class="label">总任务</div></div>
+            <div class="stat-card"><div class="num" id="statSuccess">0</div><div class="label">成功发布</div></div>
+            <div class="stat-card"><div class="num" id="statPending">0</div><div class="label">待执行</div></div>
+            <div class="stat-card"><div class="num" id="statFailed">0</div><div class="label">失败</div></div>
+        </div>
+
+        <div class="layout">
+            <!-- 左侧：创建任务 -->
+            <div class="card">
+                <div class="card-title">📝 创建主动发布任务</div>
+
+                <div class="form-group">
+                    <label>主题 / 标题 *</label>
+                    <input type="text" id="topicInput" placeholder="例如：客厅装修避坑指南">
+                </div>
+
+                <div class="form-group">
+                    <label>关键词（逗号分隔）</label>
+                    <input type="text" id="keywordsInput" placeholder="客厅装修,避坑,设计">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>品牌名称</label>
+                        <input type="text" id="brandInput" placeholder="织然家具">
+                    </div>
+                    <div class="form-group">
+                        <label>行业</label>
+                        <input type="text" id="industryInput" placeholder="定制家具">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>官网域名</label>
+                    <input type="text" id="domainInput" placeholder="www.zhiranhome.com">
+                </div>
+
+                <div class="form-group">
+                    <label>字数要求</label>
+                    <select id="wordCountSelect">
+                        <option value="800">短文 (~800字)</option>
+                        <option value="1500" selected>标准 (~1500字)</option>
+                        <option value="2500">长文 (~2500字)</option>
+                        <option value="4000">深度 (~4000字)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>目标平台 *</label>
+                    <div class="platform-grid" id="platformGrid"></div>
+                </div>
+
+                <button class="btn btn-primary" style="width:100%; padding:12px;" id="createBtn" onclick="createTask()">
+                    创建任务
+                </button>
+                <div style="margin-top:8px; font-size:0.8rem; color:#a0a0a0;">
+                    创建后点击"执行"按钮启动AI生成与发布
+                </div>
+            </div>
+
+            <!-- 右侧：任务列表 -->
+            <div class="card">
+                <div class="card-title">📋 任务列表</div>
+
+                <div class="filter-bar" id="filterBar">
+                    <button class="filter-btn active" data-filter="all">全部</button>
+                    <button class="filter-btn" data-filter="pending">待执行</button>
+                    <button class="filter-btn" data-filter="generating">生成中</button>
+                    <button class="filter-btn" data-filter="publishing">发布中</button>
+                    <button class="filter-btn" data-filter="success">成功</button>
+                    <button class="filter-btn" data-filter="partial">部分成功</button>
+                    <button class="filter-btn" data-filter="failed">失败</button>
+                </div>
+
+                <div class="task-list" id="taskList">
+                    <div class="empty-state">
+                        <div class="icon">📭</div>
+                        <div>暂无主动发布任务</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 任务详情弹窗 -->
+    <div class="modal-overlay" id="detailModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modalTitle">任务详情</h2>
+                <button class="modal-close" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const API_BASE_URL = (typeof API_HOST !== 'undefined' && API_HOST) ? API_HOST :
+            (window.location.protocol + '//' + window.location.hostname + ':5001') + '/api';
+
+        let currentFilter = 'all';
+        let allPlatforms = [];
+        let executingTasks = new Set();
+
+        // 平台显示名映射
+        const PLATFORM_NAMES = {
+            website_blog: '🌐 官网博客',
+            website_faq: '❓ 官网FAQ',
+            xiaohongshu: '📕 小红书',
+            zhihu: '📚 知乎',
+            weibo: '📢 微博',
+            wechat_public: '💬 微信公众号',
+            toutiao: '📰 今日头条',
+            baijiahao: '📝 百家号',
+            bilibili: '📺 B站',
+            csdn: '💻 CSDN',
+            juejin: '⛏️ 掘金',
+            jianshu: '📖 简书'
+        };
+
+        const STATUS_NAMES = {
+            pending: '待执行',
+            generating: '生成内容中',
+            generating_images: '生成图片中',
+            publishing: '发布中',
+            success: '全部成功',
+            partial: '部分成功',
+            failed: '失败',
+            cancelled: '已取消'
+        };
+
+        function checkAuth() {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                window.location.href = 'login.html';
+                return false;
+            }
+            return true;
+        }
+
+        function authHeaders() {
+            return { 'Authorization': `Bearer ${localStorage.getItem('access_token')}`, 'Content-Type': 'application/json' };
+        }
+
+        function goBack() { window.location.href = 'index.html'; }
+
+        function logout() {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('username');
+            window.location.href = 'login.html';
+        }
+
+        function showToast(msg, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        async function getCurrentUser() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/profile`, { headers: authHeaders() });
+                if (response.status === 401) {
+                    localStorage.removeItem('access_token');
+                    alert('登录已过期，请重新登录');
+                    window.location.href = 'login.html';
+                    return;
+                }
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('currentUser').textContent = `👤 ${data.data.username}`;
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function loadPlatforms() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/publish/platforms`);
+                const data = await response.json();
+                if (data.success) {
+                    allPlatforms = data.platforms || [];
+                    renderPlatformGrid();
+                }
+            } catch (e) {
+                // 兜底：使用内置平台列表
+                allPlatforms = [
+                    { id: 'website_blog', name: '官网博客', icon: '🌐', configured: true },
+                    { id: 'website_faq', name: '官网FAQ', icon: '❓', configured: true },
+                    { id: 'xiaohongshu', name: '小红书', icon: '📕', configured: false },
+                    { id: 'zhihu', name: '知乎', icon: '📚', configured: false }
+                ];
+                renderPlatformGrid();
+            }
+        }
+
+        function renderPlatformGrid() {
+            const grid = document.getElementById('platformGrid');
+            grid.innerHTML = allPlatforms.map(p => `
+                <label class="platform-checkbox" data-platform="${p.id}">
+                    <input type="checkbox" value="${p.id}">
+                    <span>${p.icon || ''} ${p.name}</span>
+                </label>
+            `).join('');
+
+            grid.querySelectorAll('.platform-checkbox').forEach(cb => {
+                cb.addEventListener('click', function(e) {
+                    if (e.target.tagName === 'INPUT') return;
+                    this.classList.toggle('selected');
+                    this.querySelector('input').checked = this.classList.contains('selected');
+                });
+            });
+
+            // 默认勾选官网博客
+            const defaultCb = grid.querySelector('[data-platform="website_blog"]');
+            if (defaultCb) {
+                defaultCb.classList.add('selected');
+                defaultCb.querySelector('input').checked = true;
+            }
+        }
+
+        function getSelectedPlatforms() {
+            const checkboxes = document.querySelectorAll('#platformGrid input:checked');
+            return Array.from(checkboxes).map(cb => cb.value);
+        }
+
+        async function createTask() {
+            const topic = document.getElementById('topicInput').value.trim();
+            if (!topic) { showToast('请输入主题', 'error'); return; }
+
+            const platforms = getSelectedPlatforms();
+            if (platforms.length === 0) { showToast('请至少选择一个目标平台', 'error'); return; }
+
+            const keywordsStr = document.getElementById('keywordsInput').value.trim();
+            const keywords = keywordsStr ? keywordsStr.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [];
+
+            const payload = {
+                topic: topic,
+                keywords: keywords,
+                brand_name: document.getElementById('brandInput').value.trim(),
+                industry: document.getElementById('industryInput').value.trim(),
+                domain: document.getElementById('domainInput').value.trim(),
+                word_count: parseInt(document.getElementById('wordCountSelect').value),
+                target_platforms: platforms
+            };
+
+            const btn = document.getElementById('createBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading-spinner"></span>创建中...';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/active-publish/tasks`, {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.status === 401) {
+                    localStorage.removeItem('access_token');
+                    alert('登录已过期，请重新登录');
+                    window.location.href = 'login.html';
+                    return;
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    showToast('任务创建成功，点击"执行"启动AI生成与发布', 'success');
+                    document.getElementById('topicInput').value = '';
+                    document.getElementById('keywordsInput').value = '';
+                    await loadTasks();
+                    await loadStats();
+                } else {
+                    showToast(data.error || '创建失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误：' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '创建任务';
+            }
+        }
+
+        async function loadTasks() {
+            const list = document.getElementById('taskList');
+            try {
+                let url = `${API_BASE_URL}/active-publish/tasks`;
+                if (currentFilter !== 'all') url += `?status=${currentFilter}`;
+
+                const response = await fetch(url, { headers: authHeaders() });
+                if (response.status === 401) {
+                    localStorage.removeItem('access_token');
+                    window.location.href = 'login.html';
+                    return;
+                }
+                const data = await response.json();
+                if (data.success) {
+                    renderTasks(data.tasks || []);
+                } else {
+                    list.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><div>${data.error || '加载失败'}</div></div>`;
+                }
+            } catch (e) {
+                list.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><div>网络错误：${e.message}</div></div>`;
+            }
+        }
+
+        function renderTasks(tasks) {
+            const list = document.getElementById('taskList');
+            if (!tasks.length) {
+                list.innerHTML = '<div class="empty-state"><div class="icon">📭</div><div>暂无主动发布任务</div></div>';
+                return;
+            }
+
+            list.innerHTML = tasks.map(t => {
+                const statusClass = `status-${t.status}`;
+                const statusName = STATUS_NAMES[t.status] || t.status;
+                const platforms = (t.target_platforms || []).map(p => {
+                    const result = t.platform_results?.[p];
+                    let cls = '';
+                    if (result?.success) cls = 'success';
+                    else if (result && !result.success) cls = 'failed';
+                    return `<span class="platform-tag ${cls}">${PLATFORM_NAMES[p] || p}</span>`;
+                }).join('');
+
+                const isRunning = ['generating', 'generating_images', 'publishing'].includes(t.status);
+                const isTerminal = ['success', 'partial', 'failed', 'cancelled'].includes(t.status);
+                const canExecute = t.status === 'pending';
+                const canCancel = !isTerminal && t.status !== 'pending';
+
+                const execBtnLabel = executingTasks.has(t.id)
+                    ? '<span class="loading-spinner"></span>执行中...'
+                    : '▶ 执行';
+
+                return `
+                    <div class="task-card">
+                        <div class="task-header">
+                            <div>
+                                <div class="task-title">${escapeHtml(t.title || t.topic)}</div>
+                                <div class="task-topic">主题：${escapeHtml(t.topic)}</div>
+                            </div>
+                            <span class="task-status ${statusClass}">${statusName}</span>
+                        </div>
+
+                        ${t.content_preview ? `<div class="task-content-preview">${escapeHtml(t.content_preview)}</div>` : ''}
+
+                        <div class="task-meta">
+                            <span>📅 ${formatTime(t.created_at)}</span>
+                            <span>📝 ${t.word_count}字</span>
+                            ${t.image_count ? `<span>🖼️ ${t.image_count}张图</span>` : ''}
+                            ${t.error_message ? `<span style="color:#E57373;">⚠️ ${escapeHtml(t.error_message.substring(0, 50))}</span>` : ''}
+                        </div>
+
+                        ${platforms ? `<div class="task-platforms">${platforms}</div>` : ''}
+
+                        <div class="task-actions">
+                            <button class="btn btn-success" onclick="executeTask(${t.id})" ${!canExecute || executingTasks.has(t.id) ? 'disabled' : ''}>
+                                ${execBtnLabel}
+                            </button>
+                            <button class="btn btn-secondary" onclick="viewTask(${t.id})">👁 详情</button>
+                            ${canCancel ? `<button class="btn btn-danger" onclick="cancelTask(${t.id})">取消</button>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function executeTask(taskId) {
+            if (executingTasks.has(taskId)) return;
+            executingTasks.add(taskId);
+            renderTasks(await fetchTasksSilent());
+
+            showToast('开始执行任务，AI生成中，请稍候...', 'info');
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/active-publish/tasks/${taskId}/execute`, {
+                    method: 'POST',
+                    headers: authHeaders()
+                });
+
+                if (response.status === 401) {
+                    localStorage.removeItem('access_token');
+                    window.location.href = 'login.html';
+                    return;
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    showToast('任务执行完成：' + (data.message || '成功'), 'success');
+                } else {
+                    showToast(data.error || '执行失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误：' + e.message, 'error');
+            } finally {
+                executingTasks.delete(taskId);
+                await loadTasks();
+                await loadStats();
+            }
+        }
+
+        async function fetchTasksSilent() {
+            try {
+                let url = `${API_BASE_URL}/active-publish/tasks`;
+                if (currentFilter !== 'all') url += `?status=${currentFilter}`;
+                const response = await fetch(url, { headers: authHeaders() });
+                const data = await response.json();
+                return data.success ? (data.tasks || []) : [];
+            } catch (e) { return []; }
+        }
+
+        async function cancelTask(taskId) {
+            if (!confirm('确定要取消此任务吗？')) return;
+            try {
+                const response = await fetch(`${API_BASE_URL}/active-publish/tasks/${taskId}/cancel`, {
+                    method: 'POST',
+                    headers: authHeaders()
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showToast('任务已取消', 'info');
+                    await loadTasks();
+                    await loadStats();
+                } else {
+                    showToast(data.error || '取消失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误：' + e.message, 'error');
+            }
+        }
+
+        async function viewTask(taskId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/active-publish/tasks/${taskId}`, { headers: authHeaders() });
+                const data = await response.json();
+                if (data.success) {
+                    renderTaskDetail(data.task);
+                } else {
+                    showToast(data.error || '加载失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误：' + e.message, 'error');
+            }
+        }
+
+        function renderTaskDetail(t) {
+            document.getElementById('modalTitle').textContent = t.title || t.topic;
+            const body = document.getElementById('modalBody');
+
+            const platformsHtml = (t.target_platforms || []).map(p => {
+                const result = t.platform_results?.[p];
+                let status = '未执行';
+                let color = '#a0a0a0';
+                if (result?.success) { status = '✅ 成功'; color = '#81C784'; }
+                else if (result && !result.success) { status = '❌ 失败：' + (result.error || ''); color = '#E57373'; }
+                return `<div style="margin-bottom:6px;"><span style="color:#a5b4fc;">${PLATFORM_NAMES[p] || p}</span>：<span style="color:${color};">${escapeHtml(status)}</span></div>`;
+            }).join('');
+
+            body.innerHTML = `
+                <div class="detail-row"><div class="label">主题</div><div class="value">${escapeHtml(t.topic)}</div></div>
+                <div class="detail-row"><div class="label">标题</div><div class="value">${escapeHtml(t.title || '-')}</div></div>
+                <div class="detail-row"><div class="label">状态</div><div class="value">${STATUS_NAMES[t.status] || t.status}</div></div>
+                <div class="detail-row"><div class="label">关键词</div><div class="value">${(t.keywords || []).join('、') || '-'}</div></div>
+                <div class="detail-row"><div class="label">品牌 / 行业 / 域名</div><div class="value">${escapeHtml(t.brand_name || '-')} / ${escapeHtml(t.industry || '-')} / ${escapeHtml(t.domain || '-')}</div></div>
+                <div class="detail-row"><div class="label">字数 / 图片数</div><div class="value">${t.word_count}字 / ${t.image_count || 0}张</div></div>
+                <div class="detail-row"><div class="label">创建时间</div><div class="value">${formatTime(t.created_at)}</div></div>
+                <div class="detail-row"><div class="label">完成时间</div><div class="value">${t.completed_at ? formatTime(t.completed_at) : '-'}</div></div>
+                ${t.error_message ? `<div class="detail-row"><div class="label">错误信息</div><div class="value" style="color:#E57373;">${escapeHtml(t.error_message)}</div></div>` : ''}
+                ${platformsHtml ? `<div class="detail-row"><div class="label">平台发布结果</div><div class="value">${platformsHtml}</div></div>` : ''}
+                ${t.content ? `<div class="detail-row"><div class="label">生成内容</div><div class="value" style="white-space:pre-wrap; max-height:400px; overflow-y:auto; background:rgba(0,0,0,0.25); padding:12px; border-radius:8px;">${escapeHtml(t.content)}</div></div>` : ''}
+            `;
+
+            document.getElementById('detailModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('detailModal').classList.remove('active');
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/active-publish/stats`, { headers: authHeaders() });
+                const data = await response.json();
+                if (data.success) {
+                    const stats = data.stats || {};
+                    const dist = stats.status_distribution || {};
+                    document.getElementById('statTotal').textContent = stats.total || 0;
+                    document.getElementById('statSuccess').textContent = stats.success_count || 0;
+                    document.getElementById('statPending').textContent = (dist.pending || 0);
+                    document.getElementById('statFailed').textContent = (dist.failed || 0);
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+        }
+
+        function formatTime(isoStr) {
+            if (!isoStr) return '-';
+            try {
+                const d = new Date(isoStr);
+                return d.toLocaleString('zh-CN', { hour12: false });
+            } catch (e) { return isoStr; }
+        }
+
+        // 筛选按钮
+        document.getElementById('filterBar').addEventListener('click', e => {
+            if (e.target.classList.contains('filter-btn')) {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                currentFilter = e.target.dataset.filter;
+                loadTasks();
+            }
+        });
+
+        // 关闭弹窗（点击遮罩）
+        document.getElementById('detailModal').addEventListener('click', e => {
+            if (e.target.id === 'detailModal') closeModal();
+        });
+
+        // 初始化
+        (async function init() {
+            if (!checkAuth()) return;
+            await getCurrentUser();
+            await loadPlatforms();
+            await loadTasks();
+            await loadStats();
+        })();
+    </script>
+</body>
+</html>

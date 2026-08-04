@@ -1,0 +1,2152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI任务管理 - GEO系统</title>
+    <link rel="stylesheet" href="styles.css?v=3">
+    <link rel="stylesheet" href="design-system.css?v=1">
+    <link rel="stylesheet" href="js/batch-operations.css?v=1">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <style>
+        .ai-tasks-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .page-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .page-title::before {
+            content: '🤖';
+            font-size: 1.75rem;
+        }
+
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            border: 1px solid #e2e8f0;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.875rem;
+        }
+
+        .filter-btn:hover {
+            background: #f1f5f9;
+        }
+
+        .brand-filter-select {
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            background: white;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            margin-left: auto;
+            min-width: 160px;
+        }
+
+        .brand-filter-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .brand-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .brand-badge.no-brand {
+            background: #94a3b8;
+        }
+
+        .brand-section {
+            margin-bottom: 32px;
+        }
+
+        .brand-section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .brand-section-title::before {
+            content: '🏷️';
+            font-size: 1.125rem;
+        }
+
+        .brand-section-count {
+            background: #e0e7ff;
+            color: #4338ca;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .filter-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: transparent;
+        }
+
+        .tasks-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 20px;
+        }
+
+        .task-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+            border: 1px solid #e2e8f0;
+        }
+
+        .task-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .task-type {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .task-type.article {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .task-type.faq {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .task-type.schema {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .task-type.landing_page {
+            background: #fce7f3;
+            color: #9d174d;
+        }
+
+        .task-type.social {
+            background: #e0e7ff;
+            color: #3730a3;
+        }
+
+        .task-type.xiaohongshu {
+            background: #ffe4e6;
+            color: #be123c;
+        }
+
+        .task-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .task-status.pending {
+            background: #f1f5f9;
+            color: #64748b;
+        }
+
+        .task-status.generating {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .task-status.completed {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .task-status.failed {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .task-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+
+        .task-description {
+            font-size: 0.875rem;
+            color: #64748b;
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+
+        .task-meta {
+            display: flex;
+            gap: 16px;
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-bottom: 16px;
+        }
+
+        .task-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .task-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .header-actions .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+
+        .header-actions .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .header-actions .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+        }
+
+        .task-checkbox {
+            margin-right: 12px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .task-card.selected {
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+        }
+
+        .btn-secondary {
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+
+        .btn-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .btn-danger:hover {
+            background: #fecaca;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #64748b;
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 16px;
+        }
+
+        .empty-state-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #1e293b;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #e2e8f0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 模态框样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #64748b;
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        /* 发布平台选择样式 */
+        .platform-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .platform-option {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: white;
+        }
+
+        .platform-option:hover {
+            border-color: #667eea;
+            background: #f8fafc;
+        }
+
+        .platform-option.selected {
+            border-color: #667eea;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+        }
+
+        .platform-option input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: #667eea;
+        }
+
+        .platform-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            flex-shrink: 0;
+        }
+
+        .platform-info {
+            flex: 1;
+        }
+
+        .platform-name {
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 0.95rem;
+        }
+
+        .platform-desc {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        .platform-option.selected .platform-name {
+            color: #667eea;
+        }
+
+        /* 发布结果样式 */
+        .publish-result-success {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+        }
+
+        .publish-result-error {
+            background: #fef2f2;
+            border: 1px solid #fca5a5;
+        }
+
+        .publish-result-warning {
+            background: #fffbeb;
+            border: 1px solid #fcd34d;
+        }
+
+        .publish-result-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .publish-result-item:last-child {
+            border-bottom: none;
+        }
+
+        .prompt-box {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 16px;
+            font-family: monospace;
+            font-size: 0.875rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            max-height: 60vh;
+            overflow-y: auto;
+            color: #1e293b;
+        }
+
+        .output-box {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 4px 12px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+
+        .relative {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <span>🚀</span>
+                <span>GEO系统</span>
+            </div>
+            <p class="tagline">AI搜索时代的内容优化</p>
+        </div>
+
+        <nav class="nav-menu">
+            <a href="index.html" class="nav-item">
+                <span class="nav-icon">🏠</span>
+                <span>首页</span>
+            </a>
+            <a href="projects.html" class="nav-item">
+                <span class="nav-icon">📁</span>
+                <span>我的项目</span>
+            </a>
+            <a href="ai-tasks.html" class="nav-item active">
+                <span class="nav-icon">🤖</span>
+                <span>AI任务</span>
+            </a>
+            <a href="content-generator.html" class="nav-item">
+                <span class="nav-icon">✍️</span>
+                <span>内容生成</span>
+            </a>
+            <a href="content-analyzer.html" class="nav-item">
+                <span class="nav-icon">🔍</span>
+                <span>内容分析</span>
+            </a>
+            <a href="content-optimizer.html" class="nav-item">
+                <span class="nav-icon">⚡</span>
+                <span>内容优化</span>
+            </a>
+            <a href="analytics-dashboard.html" class="nav-item">
+                <span class="nav-icon">📈</span>
+                <span>数据报表</span>
+            </a>
+            <a href="metrics-tracker.html" class="nav-item">
+                <span class="nav-icon">📊</span>
+                <span>数据监测</span>
+            </a>
+            <a href="roi-calculator.html" class="nav-item">
+                <span class="nav-icon">💰</span>
+                <span>ROI计算</span>
+            </a>
+            <a href="authority-builder.html" class="nav-item">
+                <span class="nav-icon">🏛️</span>
+                <span>信源建设</span>
+            </a>
+            <a href="platform-accounts.html" class="nav-item">
+                <span class="nav-icon">🔐</span>
+                <span>平台账号</span>
+            </a>
+            <a href="geo_optimizer.html" class="nav-item">
+                <span class="nav-icon">🎯</span>
+                <span>GEO优化专家</span>
+            </a>
+            <a href="website_diagnose.html" class="nav-item">
+                <span class="nav-icon">🔎</span>
+                <span>网站诊断</span>
+            </a>
+        </nav>
+
+        <div class="user-info">
+            <span id="currentUser">加载中...</span>
+            <button onclick="logout()" class="btn-logout">退出</button>
+        </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <main class="main-content">
+        <div class="ai-tasks-container">
+            <div class="page-header">
+                <h1 class="page-title">AI任务管理</h1>
+                <div class="header-actions">
+                    <button class="btn-primary" onclick="selectAllPending()">
+                        <span>☑️</span>
+                        <span>全选待处理</span>
+                    </button>
+                    <button class="btn-primary" onclick="batchExecute()" id="batchExecuteBtn" disabled>
+                        <span>🚀</span>
+                        <span>批量执行</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="filter-bar">
+                <button class="filter-btn active" data-filter="all">全部任务</button>
+                <button class="filter-btn" data-filter="pending">待处理</button>
+                <button class="filter-btn" data-filter="generating">生成中</button>
+                <button class="filter-btn" data-filter="completed">已完成</button>
+                <button class="filter-btn" data-filter="failed">失败</button>
+                <select id="brandFilter" class="brand-filter-select" onchange="onBrandFilterChange()">
+                    <option value="all">全部品牌</option>
+                </select>
+            </div>
+
+            <div id="tasksContainer" class="tasks-grid">
+                <div class="empty-state">
+                    <div class="loading-spinner" style="width: 40px; height: 40px;"></div>
+                    <p style="margin-top: 16px;">加载中...</p>
+                </div>
+            </div>
+            <div id="debugInfo" style="margin-top: 20px; padding: 10px; background: #1e293b; border-radius: 8px; font-size: 12px; color: #94a3b8; display: none;">
+                <strong>调试信息:</strong>
+                <pre id="debugContent"></pre>
+            </div>
+        </div>
+    </main>
+
+    <!-- 任务详情模态框 -->
+    <div id="taskModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalTitle">任务详情</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- 动态内容 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 发布平台选择模态框 -->
+    <div id="publishModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 class="modal-title">📤 发布到平台</h3>
+                <button class="modal-close" onclick="closePublishModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: #64748b; margin-bottom: 20px;">请选择要发布的平台：</p>
+                
+                <div class="platform-grid" id="platformGrid">
+                    <!-- 平台选项 -->
+                </div>
+
+                <div class="publish-options" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="selectAllPlatforms" onchange="toggleAllPlatforms()">
+                        <span>全选所有平台</span>
+                    </label>
+                </div>
+
+                <div id="publishProgress" style="display: none; margin-top: 20px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span id="publishStatus">正在发布...</span>
+                        <span id="publishPercent">0%</span>
+                    </div>
+                    <div style="background: #e2e8f0; border-radius: 4px; height: 8px; overflow: hidden;">
+                        <div id="publishProgressBar" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                </div>
+
+                <div id="publishResult" style="display: none; margin-top: 20px; padding: 16px; border-radius: 8px;"></div>
+
+                <div class="modal-actions" style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                    <button class="btn-secondary" onclick="closePublishModal()">取消</button>
+                    <button class="btn-primary" id="confirmPublishBtn" onclick="confirmPublish()">
+                        <span id="publishBtnText">确认发布</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 动态获取API地址，支持环境变量配置
+        // 优先级：1. API_HOST环境变量 2. 当前页面origin(端口改为5000)
+        const API_BASE_URL = (typeof API_HOST !== 'undefined' && API_HOST) ? API_HOST : 
+            (window.location.protocol + '//' + window.location.hostname + ':5001') + '/api';
+        let currentFilter = 'all';
+        let tasks = [];
+        let selectedTasks = new Set();
+
+        // 检查登录状态
+        function checkAuth() {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                window.location.href = 'login.html';
+                return false;
+            }
+            return true;
+        }
+
+        // 获取当前用户
+        async function getCurrentUser() {
+            try {
+                const url = `${API_BASE_URL}/auth/profile`;
+                console.log('获取用户信息, URL:', url);
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+                console.log('用户信息响应状态:', response.status);
+
+                // 处理 401 未授权错误
+                if (response.status === 401) {
+                    console.log('Token 已过期，需要重新登录');
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('username');
+                    alert('登录已过期，请重新登录');
+                    window.location.href = 'login.html';
+                    return;
+                }
+
+                const data = await response.json();
+                console.log('用户信息响应:', data);
+                if (data.success) {
+                    document.getElementById('currentUser').textContent = `👤 ${data.data.username}`;
+                }
+            } catch (error) {
+                console.error('获取用户信息失败:', error);
+                // 不显示错误提示，避免干扰用户
+            }
+        }
+
+        // 加载任务列表
+        async function loadTasks() {
+            try {
+                // 使用字符串拼接URL，避免new URL构造问题
+                let urlStr = `${API_BASE_URL}/ai-tasks`;
+                if (currentFilter !== 'all') {
+                    urlStr += `?status=${encodeURIComponent(currentFilter)}`;
+                }
+
+                const token = localStorage.getItem('access_token');
+                console.log('加载任务，URL:', urlStr);
+                console.log('Token:', token ? '存在' : '不存在');
+
+                // 显示调试信息
+                const debugInfo = document.getElementById('debugInfo');
+                const debugContent = document.getElementById('debugContent');
+                if (debugInfo && debugContent) {
+                    debugInfo.style.display = 'block';
+                    debugContent.textContent = `URL: ${urlStr}\nToken: ${token ? token.substring(0, 20) + '...' : '无'}`;
+                }
+
+                if (!token) {
+                    showError('未登录，请先登录');
+                    setTimeout(() => {
+                        window.location.href = 'login.html';
+                    }, 2000);
+                    return;
+                }
+
+                const response = await fetch(urlStr, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                console.log('响应状态:', response.status);
+
+                // 处理 401 未授权错误
+                if (response.status === 401) {
+                    console.log('Token 已过期，需要重新登录');
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('username');
+                    alert('登录已过期，请重新登录');
+                    window.location.href = 'login.html';
+                    return;
+                }
+
+                const data = await response.json();
+                console.log('响应数据:', data);
+
+                if (debugContent) {
+                    debugContent.textContent += `\n状态码: ${response.status}\n任务数: ${data.data ? data.data.length : 0}`;
+                }
+
+                if (data.success) {
+                    tasks = data.data || [];
+                    console.log('任务数量:', tasks.length);
+                    renderTasks();
+                } else {
+                    showError(data.message || '加载失败');
+                }
+            } catch (error) {
+                console.error('加载任务失败:', error);
+                // 只在手动刷新时显示错误提示，避免初始加载时的干扰
+                if (error.message && error.message.includes('Failed to construct')) {
+                    showError('API地址配置错误，请检查网络设置: ' + error.message);
+                } else {
+                    showError('网络错误，请稍后重试: ' + error.message);
+                }
+            }
+        }
+
+        // 当前品牌筛选
+        let currentBrandFilter = 'all';
+
+        // 渲染单个任务卡片 HTML
+        function renderTaskCard(task) {
+            const brandName = task.brand_name || '';
+            const brandClass = brandName ? '' : 'no-brand';
+            const brandText = brandName ? `🏷️ ${brandName}` : '🏷️ 未关联品牌';
+            // 标题前自动加品牌前缀（若 title 不以品牌名开头）
+            const displayTitle = (() => {
+                if (!brandName) return task.title;
+                if (task.title.startsWith(brandName)) return task.title;
+                return `${brandName} · ${task.title}`;
+            })();
+            return `
+                <div class="task-card ${selectedTasks.has(task.id) ? 'selected' : ''}" data-task-id="${task.id}">
+                    <div class="brand-badge ${brandClass}" title="${brandName ? '所属品牌：' + brandName : '未关联品牌'}">${brandText}</div>
+                    <div class="task-header">
+                        <div style="display: flex; align-items: center;">
+                            ${task.status === 'pending' ? `
+                                <input type="checkbox" class="task-checkbox"
+                                    data-task-id="${task.id}"
+                                    ${selectedTasks.has(task.id) ? 'checked' : ''}
+                                    onchange="toggleTaskSelection(${task.id})"
+                                    onclick="event.stopPropagation()">
+                            ` : ''}
+                            <span class="task-type ${task.task_type}">
+                                ${getTaskTypeIcon(task.task_type)} ${getTaskTypeName(task.task_type)}
+                            </span>
+                        </div>
+                        <span class="task-status ${task.status}">
+                            ${getStatusIcon(task.status)} ${getStatusName(task.status)}
+                        </span>
+                    </div>
+                    <h3 class="task-title">${displayTitle}</h3>
+                    <p class="task-description">${task.description}</p>
+                    <div class="task-meta">
+                        <span class="task-meta-item">📅 ${formatDate(task.created_at)}</span>
+                        ${task.completed_at ? `<span class="task-meta-item">✅ ${formatDate(task.completed_at)}</span>` : ''}
+                    </div>
+                    <div class="task-actions">
+                        ${task.status === 'pending' ? `
+                            <button class="btn-small btn-primary" onclick="executeTask(${task.id})">
+                                开始生成
+                            </button>
+                        ` : ''}
+                        <button class="btn-small btn-secondary" onclick="viewTaskPrompt(${task.id})">
+                            查看提示词
+                        </button>
+                        ${task.status === 'failed' ? `
+                            <button class="btn-small btn-warning" onclick="retryTask(${task.id})">
+                                重新执行
+                            </button>
+                        ` : ''}
+                        ${task.status === 'completed' ? `
+                            <button class="btn-small btn-secondary" onclick="viewTaskOutput(${task.id})">
+                                查看结果
+                            </button>
+                            ${task.task_type === 'xiaohongshu' ? `
+                                <button class="btn-small btn-primary" onclick="publishXiaohongshu(${task.id}, event)" title="发布到小红书" style="background: #ff2442; color: white;">
+                                    📕 发小红书
+                                </button>
+                            ` : `
+                                <button class="btn-small btn-primary" onclick="publishTask(${task.id})" title="一键发布到各平台">
+                                    📤 发布
+                                </button>
+                                <button class="btn-small" onclick="publishToPlatform(${task.id}, 'zhihu')" title="发布到知乎" style="background: #0084ff; color: white;">
+                                    知
+                                </button>
+                                <button class="btn-small" onclick="publishToPlatform(${task.id}, 'weibo')" title="发布到微博" style="background: #e6162d; color: white;">
+                                    🌊
+                                </button>
+                                <button class="btn-small" onclick="publishToPlatform(${task.id}, 'bilibili')" title="发布到B站" style="background: #fb7299; color: white;">
+                                    📺
+                                </button>
+                                <button class="btn-small" onclick="publishToPlatform(${task.id}, 'douyin')" title="发布到抖音" style="background: #000; color: white;">
+                                    🎵
+                                </button>
+                            `}
+                        ` : ''}
+                        <button class="btn-small btn-danger" onclick="deleteTask(${task.id})">
+                            删除
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 更新品牌筛选下拉框
+        function updateBrandFilter() {
+            const select = document.getElementById('brandFilter');
+            if (!select) return;
+            const brands = new Set();
+            tasks.forEach(t => {
+                if (t.brand_name) brands.add(t.brand_name);
+            });
+            // 保留当前选择
+            const current = currentBrandFilter;
+            let html = '<option value="all">全部品牌</option>';
+            Array.from(brands).sort().forEach(brand => {
+                html += `<option value="${brand}" ${brand === current ? 'selected' : ''}>${brand}</option>`;
+            });
+            // 未关联品牌的任务也算一组
+            const hasNoBrand = tasks.some(t => !t.brand_name);
+            if (hasNoBrand) {
+                html += `<option value="__no_brand__" value="__no_brand__" ${current === '__no_brand__' ? 'selected' : ''}>未关联品牌</option>`;
+            }
+            select.innerHTML = html;
+        }
+
+        function onBrandFilterChange() {
+            const select = document.getElementById('brandFilter');
+            currentBrandFilter = select.value;
+            renderTasks();
+        }
+
+        // 渲染任务列表
+        function renderTasks() {
+            const container = document.getElementById('tasksContainer');
+
+            // 先更新品牌筛选下拉框
+            updateBrandFilter();
+
+            if (tasks.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1 / -1;">
+                        <div class="empty-state-icon">📋</div>
+                        <div class="empty-state-title">暂无任务</div>
+                        <p>从优化方案生成AI任务，让AI帮你生产内容</p>
+                        <a href="projects.html" class="btn-primary" style="display: inline-block; margin-top: 16px; padding: 10px 20px; text-decoration: none; border-radius: 8px;">查看我的项目</a>
+                    </div>
+                `;
+                return;
+            }
+
+            // 按品牌筛选
+            let filtered = tasks;
+            if (currentBrandFilter === '__no_brand__') {
+                filtered = tasks.filter(t => !t.brand_name);
+            } else if (currentBrandFilter !== 'all') {
+                filtered = tasks.filter(t => t.brand_name === currentBrandFilter);
+            }
+
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1 / -1;">
+                        <div class="empty-state-icon">🔍</div>
+                        <div class="empty-state-title">当前品牌下暂无任务</div>
+                        <p>切换其他品牌或查看全部任务</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // 按品牌分组（"全部品牌"模式下分组展示，否则只展示一组）
+            const shouldGroup = currentBrandFilter === 'all';
+            if (!shouldGroup) {
+                // 单一品牌模式：直接平铺渲染，但卡片仍带 brand-badge
+                container.className = 'tasks-grid';
+                container.innerHTML = filtered.map(renderTaskCard).join('');
+                return;
+            }
+
+            // 分组模式：按 brand_name 分组
+            container.className = '';  // 移除 tasks-grid 的 grid 布局，用分组块代替
+            const groups = {};
+            filtered.forEach(t => {
+                const key = t.brand_name || '__no_brand__';
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(t);
+            });
+
+            let html = '';
+            Object.keys(groups).sort().forEach(key => {
+                const groupTasks = groups[key];
+                const displayName = key === '__no_brand__' ? '未关联品牌' : key;
+                html += `
+                    <div class="brand-section">
+                        <div class="brand-section-title">
+                            ${displayName}
+                            <span class="brand-section-count">${groupTasks.length} 个任务</span>
+                        </div>
+                        <div class="tasks-grid">
+                            ${groupTasks.map(renderTaskCard).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+        }
+
+        // 获取任务类型图标
+        function getTaskTypeIcon(type) {
+            const icons = {
+                'article': '📝',
+                'faq': '❓',
+                'schema': '📋',
+                'landing_page': '🎯',
+                'social': '💬',
+                'xiaohongshu': '📕',
+                'weibo': '📱',
+                'zhihu': '💡',
+                'wechat': '💬'
+            };
+            return icons[type] || '📄';
+        }
+
+        // 获取任务类型名称
+        function getTaskTypeName(type) {
+            const names = {
+                'article': '文章生成',
+                'faq': 'FAQ生成',
+                'schema': 'Schema标记',
+                'landing_page': '落地页',
+                'social': '社媒内容',
+                'xiaohongshu': '小红书',
+                'weibo': '微博',
+                'zhihu': '知乎',
+                'wechat': '公众号'
+            };
+            return names[type] || type;
+        }
+
+        // 获取状态图标
+        function getStatusIcon(status) {
+            const icons = {
+                'pending': '⏳',
+                'generating': '🔄',
+                'completed': '✅',
+                'failed': '❌'
+            };
+            return icons[status] || '⏳';
+        }
+
+        // 获取状态名称
+        function getStatusName(status) {
+            const names = {
+                'pending': '待处理',
+                'generating': '生成中',
+                'completed': '已完成',
+                'failed': '失败'
+            };
+            return names[status] || status;
+        }
+
+        // 格式化日期
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('zh-CN', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // 切换任务选择
+        function toggleTaskSelection(taskId) {
+            if (selectedTasks.has(taskId)) {
+                selectedTasks.delete(taskId);
+            } else {
+                selectedTasks.add(taskId);
+            }
+            updateBatchButton();
+            renderTasks();
+        }
+
+        // 全选待处理任务
+        function selectAllPending() {
+            const pendingTasks = tasks.filter(t => t.status === 'pending');
+            if (pendingTasks.length === 0) {
+                alert('没有待处理的任务');
+                return;
+            }
+
+            // 如果已经全选了，则取消全选
+            const allPendingSelected = pendingTasks.every(t => selectedTasks.has(t.id));
+            if (allPendingSelected) {
+                pendingTasks.forEach(t => selectedTasks.delete(t.id));
+            } else {
+                pendingTasks.forEach(t => selectedTasks.add(t.id));
+            }
+
+            updateBatchButton();
+            renderTasks();
+        }
+
+        // 更新批量执行按钮状态
+        function updateBatchButton() {
+            const btn = document.getElementById('batchExecuteBtn');
+            btn.disabled = selectedTasks.size === 0;
+            btn.innerHTML = `<span>🚀</span><span>批量执行 (${selectedTasks.size})</span>`;
+        }
+
+        // 批量执行任务
+        async function batchExecute() {
+            if (selectedTasks.size === 0) {
+                alert('请先选择要执行的任务');
+                return;
+            }
+
+            if (!confirm(`确定要批量执行 ${selectedTasks.size} 个任务吗？\n\n注意：这将调用AI服务生成内容，可能需要一些时间。`)) {
+                return;
+            }
+
+            const taskIds = Array.from(selectedTasks);
+
+            try {
+                const btn = document.getElementById('batchExecuteBtn');
+                btn.disabled = true;
+                btn.innerHTML = '<span>⏳</span><span>执行中...</span>';
+
+                const response = await fetch(`${API_BASE_URL}/ai-tasks/batch-execute`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ task_ids: taskIds })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert(`✅ ${data.message}\n\n成功: ${data.data.success} 个\n失败: ${data.data.failed} 个`);
+                    selectedTasks.clear();
+                    updateBatchButton();
+                    loadTasks();
+                } else {
+                    alert('❌ ' + (data.message || '批量执行失败'));
+                    btn.disabled = false;
+                    updateBatchButton();
+                }
+            } catch (error) {
+                console.error('批量执行失败:', error);
+                alert('网络错误，请稍后重试');
+                const btn = document.getElementById('batchExecuteBtn');
+                btn.disabled = false;
+                updateBatchButton();
+            }
+        }
+
+        // 执行任务
+        async function executeTask(taskId) {
+            if (!confirm('确定要开始生成内容吗？')) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/ai-tasks/${taskId}/execute`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('✅ 内容生成成功！');
+                    loadTasks();
+                } else {
+                    alert('❌ ' + (data.message || '生成失败'));
+                }
+            } catch (error) {
+                console.error('执行任务失败:', error);
+                alert('网络错误，请稍后重试');
+            }
+        }
+
+        // 发布到小红书
+        async function publishXiaohongshu(taskId, evt) {
+            if (!confirm('确定要发布到小红书吗？\n\n这将自动：\n1. 生成配图\n2. 登录小红书创作者平台\n3. 发布笔记\n\n整个过程约需1-3分钟，请耐心等待。')) return;
+
+            const btn = evt ? evt.target : null;
+            const originalText = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.innerHTML = '⏳ 发布中...';
+                btn.disabled = true;
+            }
+            console.log(`[publishXiaohongshu] 开始发布任务 ${taskId} 到小红书`);
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/ai-tasks/${taskId}/publish-xiaohongshu`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+                console.log(`[publishXiaohongshu] 收到响应 status=${response.status}`);
+
+                const data = await response.json();
+                console.log(`[publishXiaohongshu] 响应数据:`, data);
+
+                if (data.success) {
+                    alert(`🎉 小红书笔记发布成功！\n\n标题：${data.title || 'N/A'}\n${data.note_url ? '链接：' + data.note_url : ''}`);
+                    loadTasks();
+                } else {
+                    let errorMsg = data.error || data.message || '发布失败';
+                    if (data.debug_info && data.debug_info.length > 0) {
+                        errorMsg += '\n\n调试信息：\n' + data.debug_info.join('\n');
+                    }
+                    alert('❌ ' + errorMsg);
+                }
+            } catch (error) {
+                console.error('[publishXiaohongshu] 发布到小红书失败:', error);
+                alert('网络错误，请稍后重试: ' + error.message);
+            } finally {
+                if (btn) {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }
+            }
+        }
+
+        // 发布到指定平台（知乎/微博/B站/抖音）
+        async function publishToPlatform(taskId, platform) {
+            const platformNames = {
+                zhihu: '知乎', weibo: '微博', bilibili: 'B站', douyin: '抖音'
+            };
+            const platformName = platformNames[platform] || platform;
+            if (!confirm(`确定要发布到${platformName}吗？\n\n这将使用扫码登录的 Cookie 自动发布，约需 1-3 分钟。`)) return;
+
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '⏳';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/platform-accounts/${platform}/publish`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ task_id: taskId })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert(`🎉 ${platformName}发布成功！\n\n${data.message || ''}${data.url ? '\n链接：' + data.url : ''}`);
+                } else {
+                    let errorMsg = data.error || '发布失败';
+                    if (data.debug_info && data.debug_info.length > 0) {
+                        errorMsg += '\n\n调试信息：\n' + data.debug_info.slice(-5).join('\n');
+                    }
+                    alert('❌ ' + errorMsg);
+                }
+            } catch (error) {
+                console.error(`${platformName}发布失败:`, error);
+                alert('网络错误，请稍后重试');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // 查看任务提示词
+        async function viewTaskPrompt(taskId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/ai-tasks/${taskId}/prompt`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const promptText = data.data.prompt || '';
+                    const escapedPrompt = escapeHtml(promptText);
+                    
+                    document.getElementById('modalTitle').textContent = 'AI提示词';
+                    const modalBody = document.getElementById('modalBody');
+                    modalBody.innerHTML = `
+                        <div class="relative">
+                            <button class="copy-btn">复制</button>
+                            <div class="prompt-box">${escapedPrompt}</div>
+                        </div>
+                        <p style="margin-top: 16px; color: #64748b; font-size: 0.875rem;">
+                            💡 提示：你可以复制此提示词，粘贴到ChatGPT、Claude等AI工具中使用
+                        </p>
+                    `;
+                    
+                    // 使用 DOM 方式设置复制按钮的事件和数据
+                    const copyBtn = modalBody.querySelector('.copy-btn');
+                    copyBtn.addEventListener('click', function() {
+                        copyToClipboard(this, promptText);
+                    });
+                    
+                    document.getElementById('taskModal').classList.add('show');
+                } else {
+                    alert(data.message || '获取提示词失败');
+                }
+            } catch (error) {
+                console.error('获取提示词失败:', error);
+                alert('网络错误，请稍后重试');
+            }
+        }
+
+        // 查看任务输出
+        async function viewTaskOutput(taskId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/ai-tasks/${taskId}/result`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.data) {
+                    const result = data.data;
+                    let content = '';
+                    
+                    // 根据任务类型展示不同格式的结果
+                    if (result.content) {
+                        content = result.content;
+                    } else if (result.schema_code) {
+                        content = result.schema_code;
+                    } else if (result.faq_data) {
+                        content = JSON.stringify(result.faq_data, null, 2);
+                    } else {
+                        content = JSON.stringify(result, null, 2);
+                    }
+                    
+                    const escapedContent = escapeHtml(content);
+                    
+                    document.getElementById('modalTitle').textContent = '生成结果';
+                    const modalBody = document.getElementById('modalBody');
+                    modalBody.innerHTML = `
+                        <div class="relative">
+                            <button class="copy-btn">复制</button>
+                            <div class="prompt-box">${escapedContent}</div>
+                        </div>
+                    `;
+                    
+                    // 使用 DOM 方式设置复制按钮的事件
+                    const copyBtn = modalBody.querySelector('.copy-btn');
+                    copyBtn.addEventListener('click', function() {
+                        copyToClipboard(this, content);
+                    });
+                    
+                    document.getElementById('taskModal').classList.add('show');
+                } else {
+                    alert('暂无生成结果');
+                }
+            } catch (error) {
+                console.error('获取结果失败:', error);
+                alert('获取结果失败，请稍后重试');
+            }
+        }
+
+        // 重新执行任务
+        async function retryTask(taskId) {
+            if (!confirm('确定要重新执行此任务吗？')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/ai-tasks/${taskId}/retry`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('任务已重新提交，正在执行中...');
+                    loadTasks();
+                } else {
+                    alert(data.message || '重新执行失败');
+                }
+            } catch (error) {
+                console.error('重新执行任务失败:', error);
+                alert('网络错误，请稍后重试');
+            }
+        }
+
+        // 删除任务
+        async function deleteTask(taskId) {
+            if (!confirm('确定要删除这个任务吗？此操作不可恢复。')) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/ai-tasks/${taskId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    loadTasks();
+                } else {
+                    alert(data.message || '删除失败');
+                }
+            } catch (error) {
+                console.error('删除任务失败:', error);
+                alert('网络错误，请稍后重试');
+            }
+        }
+
+        // 关闭模态框
+        function closeModal() {
+            document.getElementById('taskModal').classList.remove('show');
+        }
+
+        // 复制到剪贴板
+        async function copyToClipboard(btn, text) {
+            try {
+                // 尝试使用现代 Clipboard API
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(text);
+                    btn.textContent = '已复制!';
+                    setTimeout(() => btn.textContent = '复制', 2000);
+                    return;
+                }
+                
+                // 降级方案：使用 textarea 复制
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.left = '-999999px';
+                textarea.style.top = '-999999px';
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                
+                const successful = document.execCommand('copy');
+                document.body.removeChild(textarea);
+                
+                if (successful) {
+                    btn.textContent = '已复制!';
+                    setTimeout(() => btn.textContent = '复制', 2000);
+                } else {
+                    alert('复制失败，请手动复制');
+                }
+            } catch (err) {
+                console.error('复制失败:', err);
+                alert('复制失败，请手动复制');
+            }
+        }
+
+        // HTML转义并处理换行
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;')
+                .replace(/\\n/g, '\n')  // 先处理JSON转义的\\n为\n
+                .replace(/\n/g, '<br>'); // 再将\n转为<br>
+        }
+
+        // 显示错误
+        function showError(message) {
+            document.getElementById('tasksContainer').innerHTML = `
+                <div class="empty-state" style="grid-column: 1 / -1;">
+                    <div class="empty-state-icon">⚠️</div>
+                    <div class="empty-state-title">加载失败</div>
+                    <p>${message}</p>
+                    <button onclick="loadTasks()" class="btn-primary" style="margin-top: 16px;">重试</button>
+                </div>
+            `;
+        }
+
+        // 平台配置
+        const PLATFORMS = [
+            { id: 'website_blog', name: '官网博客', desc: '企业官网文章', icon: '🌐', color: '#3b82f6' },
+            { id: 'website_faq', name: '官网FAQ', desc: '常见问题解答', icon: '❓', color: '#10b981' },
+            { id: 'zhihu', name: '知乎', desc: '知识分享平台', icon: '📚', color: '#0084ff' },
+            { id: 'xiaohongshu', name: '小红书', desc: '生活方式社区', icon: '📕', color: '#fe2c55' },
+            { id: 'weibo', name: '微博', desc: '社交媒体平台', icon: '🌊', color: '#e6162d' },
+            { id: 'wechat', name: '微信公众号', desc: '微信内容平台', icon: '💬', color: '#07c160' },
+            { id: 'toutiao', name: '今日头条', desc: '资讯推荐平台', icon: '📰', color: '#f04142' },
+            { id: 'douyin', name: '抖音', desc: '短视频平台', icon: '🎵', color: '#000000' }
+        ];
+
+        let currentPublishTaskId = null;
+
+        // 打开发布模态框
+        function publishTask(taskId) {
+            currentPublishTaskId = taskId;
+            
+            // 渲染平台选项
+            const platformGrid = document.getElementById('platformGrid');
+            platformGrid.innerHTML = PLATFORMS.map(platform => `
+                <div class="platform-option" onclick="togglePlatform('${platform.id}', event)" id="platform-${platform.id}">
+                    <input type="checkbox" id="checkbox-${platform.id}" value="${platform.id}" 
+                           onclick="event.stopPropagation(); onCheckboxClick('${platform.id}')">
+                    <div class="platform-icon" style="background: ${platform.color}20; color: ${platform.color};">
+                        ${platform.icon}
+                    </div>
+                    <div class="platform-info">
+                        <div class="platform-name">${platform.name}</div>
+                        <div class="platform-desc">${platform.desc}</div>
+                    </div>
+                </div>
+            `).join('');
+
+            // 重置状态
+            document.getElementById('selectAllPlatforms').checked = false;
+            document.getElementById('selectAllPlatforms').indeterminate = false;
+            document.getElementById('publishProgress').style.display = 'none';
+            document.getElementById('publishResult').style.display = 'none';
+            document.getElementById('confirmPublishBtn').disabled = false;
+            document.getElementById('publishBtnText').textContent = '确认发布';
+            document.getElementById('publishResult').className = '';
+
+            // 显示模态框
+            document.getElementById('publishModal').classList.add('show');
+        }
+
+        // 切换平台选择
+        function togglePlatform(platformId, event) {
+            // 如果点击的是复选框本身，不要处理（让复选框自己的事件处理）
+            if (event && event.target.type === 'checkbox') {
+                return;
+            }
+            
+            const checkbox = document.getElementById(`checkbox-${platformId}`);
+            const option = document.getElementById(`platform-${platformId}`);
+            
+            // 切换复选框状态
+            checkbox.checked = !checkbox.checked;
+            
+            // 更新选中样式
+            if (checkbox.checked) {
+                option.classList.add('selected');
+            } else {
+                option.classList.remove('selected');
+            }
+            
+            updateSelectAllState();
+        }
+
+        // 全选/取消全选
+        function toggleAllPlatforms() {
+            const selectAll = document.getElementById('selectAllPlatforms').checked;
+            
+            PLATFORMS.forEach(platform => {
+                const checkbox = document.getElementById(`checkbox-${platform.id}`);
+                const option = document.getElementById(`platform-${platform.id}`);
+                
+                checkbox.checked = selectAll;
+                if (selectAll) {
+                    option.classList.add('selected');
+                } else {
+                    option.classList.remove('selected');
+                }
+            });
+        }
+
+        // 更新全选状态
+        function updateSelectAllState() {
+            const checkboxes = PLATFORMS.map(p => document.getElementById(`checkbox-${p.id}`));
+            const allChecked = checkboxes.every(cb => cb.checked);
+            const someChecked = checkboxes.some(cb => cb.checked);
+            
+            document.getElementById('selectAllPlatforms').checked = allChecked;
+            document.getElementById('selectAllPlatforms').indeterminate = someChecked && !allChecked;
+        }
+
+        // 处理复选框点击（用于复选框自己的onclick事件）
+        function onCheckboxClick(platformId) {
+            const checkbox = document.getElementById(`checkbox-${platformId}`);
+            const option = document.getElementById(`platform-${platformId}`);
+            
+            // 根据复选框状态更新样式
+            if (checkbox.checked) {
+                option.classList.add('selected');
+            } else {
+                option.classList.remove('selected');
+            }
+            
+            updateSelectAllState();
+        }
+
+        // 关闭发布模态框
+        function closePublishModal() {
+            document.getElementById('publishModal').classList.remove('show');
+            currentPublishTaskId = null;
+        }
+
+        // 确认发布
+        async function confirmPublish() {
+            if (!currentPublishTaskId) return;
+
+            // 获取选中的平台
+            const selectedPlatforms = PLATFORMS
+                .filter(p => document.getElementById(`checkbox-${p.id}`).checked)
+                .map(p => p.id);
+
+            if (selectedPlatforms.length === 0) {
+                showPublishResult('error', '请至少选择一个发布平台');
+                return;
+            }
+
+            // 禁用按钮，显示进度
+            document.getElementById('confirmPublishBtn').disabled = true;
+            document.getElementById('publishBtnText').textContent = '发布中...';
+            document.getElementById('publishProgress').style.display = 'block';
+            document.getElementById('publishResult').style.display = 'none';
+
+            // 模拟进度
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 90) progress = 90;
+                updatePublishProgress(progress, '正在发布到各平台...');
+            }, 300);
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/ai-tasks/${currentPublishTaskId}/publish`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    },
+                    body: JSON.stringify({ platforms: selectedPlatforms })
+                });
+
+                clearInterval(progressInterval);
+
+                const data = await response.json();
+
+                // 检查实际的发布结果
+                const publishResult = data.publish_result || {};
+                const platformResults = publishResult.results || {};
+                
+                // 判断是否有平台成功发布
+                const hasSuccess = Object.values(platformResults).some(r => r.success);
+                const allSuccess = Object.values(platformResults).every(r => r.success);
+                
+                if (data.success && hasSuccess) {
+                    updatePublishProgress(100, '发布完成！');
+                    showPublishResult('mixed', platformResults, selectedPlatforms);
+                    document.getElementById('publishBtnText').textContent = allSuccess ? '发布成功' : '部分成功';
+                } else {
+                    updatePublishProgress(0, '发布失败');
+                    // 全部失败时使用 error 类型显示详细错误（包括调试信息）
+                    showPublishResult('error', platformResults, selectedPlatforms, platformResults);
+                    document.getElementById('confirmPublishBtn').disabled = false;
+                    document.getElementById('publishBtnText').textContent = '重新发布';
+                }
+            } catch (error) {
+                clearInterval(progressInterval);
+                updatePublishProgress(0, '发布失败');
+                showPublishResult('error', '网络错误，请检查网络连接后重试');
+                document.getElementById('confirmPublishBtn').disabled = false;
+                document.getElementById('publishBtnText').textContent = '重新发布';
+            }
+        }
+
+        // 更新发布进度
+        function updatePublishProgress(percent, status) {
+            document.getElementById('publishProgressBar').style.width = `${percent}%`;
+            document.getElementById('publishPercent').textContent = `${Math.round(percent)}%`;
+            document.getElementById('publishStatus').textContent = status;
+        }
+
+        // 显示发布结果
+        function showPublishResult(type, result, selectedPlatforms = [], platformDetails = {}) {
+            const resultDiv = document.getElementById('publishResult');
+            resultDiv.style.display = 'block';
+            
+            if (type === 'mixed') {
+                // 部分成功部分失败
+                resultDiv.className = 'publish-result-warning';
+                
+                const platformResults = selectedPlatforms.map(platformId => {
+                    const platform = PLATFORMS.find(p => p.id === platformId);
+                    const detail = platformDetails[platformId] || {};
+                    const isSuccess = detail.success;
+                    const errorMsg = detail.error || '';
+                    const postUrl = detail.url || detail.article_url || detail.note_url || '';
+                    
+                    return `
+                        <div class="publish-result-item" style="margin-bottom: 8px; padding: 8px; border-radius: 6px; background: ${isSuccess ? '#f0fdf4' : '#fef2f2'};">
+                            <span>${platform?.icon || '📤'}</span>
+                            <span style="flex: 1;">${platform?.name || platformId}</span>
+                            <span style="color: ${isSuccess ? '#10b981' : '#ef4444'}; font-weight: 500;">
+                                ${isSuccess ? '✓ 发布成功' : '✗ 发布失败'}
+                            </span>
+                            ${isSuccess && postUrl ? `<a href="${postUrl}" target="_blank" style="margin-left: 8px; color: #3b82f6; font-size: 0.8rem; text-decoration: none;">查看原文 ↗</a>` : ''}
+                            ${!isSuccess && errorMsg ? `<div style="width: 100%; margin-top: 4px; font-size: 0.75rem; color: #ef4444;">${errorMsg}</div>` : ''}
+                        </div>
+                    `;
+                }).join('');
+
+                const successCount = Object.values(platformDetails).filter(r => r.success).length;
+                const totalCount = selectedPlatforms.length;
+
+                resultDiv.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: #d97706; font-weight: 600;">
+                        <span>⚠️</span>
+                        <span>发布结果：${successCount}/${totalCount} 个平台成功</span>
+                    </div>
+                    ${platformResults}
+                `;
+            } else if (type === 'success') {
+                resultDiv.className = 'publish-result-success';
+                
+                const platformResults = selectedPlatforms.map(platformId => {
+                    const platform = PLATFORMS.find(p => p.id === platformId);
+                    const detail = platformDetails[platformId] || {};
+                    const postUrl = detail.url || detail.article_url || detail.note_url || '';
+                    return `
+                        <div class="publish-result-item">
+                            <span>${platform?.icon || '📤'}</span>
+                            <span style="flex: 1;">${platform?.name || platformId}</span>
+                            <span style="color: #10b981; font-weight: 500;">✓ 发布成功</span>
+                            ${postUrl ? `<a href="${postUrl}" target="_blank" style="margin-left: 8px; color: #3b82f6; font-size: 0.8rem; text-decoration: none;">查看原文 ↗</a>` : ''}
+                        </div>
+                    `;
+                }).join('');
+
+                resultDiv.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: #166534; font-weight: 600;">
+                        <span>✅</span>
+                        <span>内容已成功发布到以下平台</span>
+                    </div>
+                    ${platformResults}
+                `;
+            } else {
+                resultDiv.className = 'publish-result-error';
+                
+                // 如果有平台详情，显示每个平台的错误
+                if (Object.keys(platformDetails).length > 0) {
+                    const platformResults = selectedPlatforms.map(platformId => {
+                        const platform = PLATFORMS.find(p => p.id === platformId);
+                        const detail = platformDetails[platformId] || {};
+                        const errorMsg = detail.error || '未知错误';
+                        
+                        return `
+                            <div class="publish-result-item" style="margin-bottom: 8px; padding: 8px; border-radius: 6px; background: #fef2f2;">
+                                <span>${platform?.icon || '📤'}</span>
+                                <span style="flex: 1;">${platform?.name || platformId}</span>
+                                <span style="color: #ef4444; font-weight: 500;">✗ 发布失败</span>
+                                <div style="width: 100%; margin-top: 4px; font-size: 0.75rem; color: #ef4444;">${errorMsg}</div>
+                                ${detail.debug_info ? `<div style="width: 100%; margin-top: 8px; padding: 8px; background: #f3f4f6; border-radius: 4px; font-size: 0.7rem; color: #6b7280; white-space: pre-wrap; font-family: monospace;">${detail.debug_info.join('\n')}</div>` : ''}
+                            </div>
+                        `;
+                    }).join('');
+                    
+                    resultDiv.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: #991b1b; font-weight: 600;">
+                            <span>❌</span>
+                            <span>发布失败</span>
+                        </div>
+                        ${platformResults}
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 8px; color: #991b1b;">
+                            <span>❌</span>
+                            <span>${result}</span>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        // 退出登录
+        function logout() {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('username');
+            window.location.href = 'login.html';
+        }
+
+        // 筛选按钮事件
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentFilter = btn.dataset.filter;
+                loadTasks();
+            });
+        });
+
+        // 点击模态框外部关闭
+        document.getElementById('taskModal').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                closeModal();
+            }
+        });
+
+        // 点击发布模态框外部关闭
+        document.getElementById('publishModal').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                closePublishModal();
+            }
+        });
+
+        // 初始化
+        if (checkAuth()) {
+            getCurrentUser();
+            loadTasks();
+        }
+
+        // ==================== 批量操作和数据导出 ====================
+        
+        // 当前任务数据缓存
+        let currentTasksData = [];
+
+        // 导出数据
+        function exportTasks(format) {
+            if (currentTasksData.length === 0) {
+                alert('暂无数据可导出');
+                return;
+            }
+
+            const columns = [
+                { key: 'id', label: '任务ID' },
+                { key: 'task_type', label: '任务类型' },
+                { key: 'status', label: '状态' },
+                { key: 'platforms', label: '平台' },
+                { key: 'created_at', label: '创建时间' },
+                { key: 'completed_at', label: '完成时间' }
+            ];
+
+            const timestamp = new Date().toISOString().slice(0, 10);
+            const filename = `AI任务_${timestamp}`;
+
+            switch(format) {
+                case 'csv':
+                    DataExporter.exportToCSV(currentTasksData, `${filename}.csv`, columns);
+                    break;
+                case 'json':
+                    DataExporter.exportToJSON(currentTasksData, `${filename}.json`);
+                    break;
+                case 'excel':
+                    DataExporter.exportToExcel(currentTasksData, `${filename}.xls`, columns);
+                    break;
+            }
+        }
+
+        // 批量删除任务
+        async function batchDeleteTasks(taskIds) {
+            if (!confirm(`确定要删除选中的 ${taskIds.length} 个任务吗？此操作不可恢复。`)) {
+                return;
+            }
+
+            try {
+                let successCount = 0;
+                let failCount = 0;
+
+                for (const taskId of taskIds) {
+                    const response = await fetch(`${API_BASE_URL}/ai-tasks/${taskId}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                        }
+                    });
+
+                    if (response.ok) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                }
+
+                alert(`批量删除完成：成功 ${successCount} 个，失败 ${failCount} 个`);
+                loadTasks(); // 刷新列表
+            } catch (error) {
+                console.error('批量删除失败:', error);
+                alert('批量删除失败，请稍后重试');
+            }
+        }
+
+        // 批量重新生成
+        async function batchRegenerate(taskIds) {
+            if (!confirm(`确定要重新生成选中的 ${taskIds.length} 个任务吗？`)) {
+                return;
+            }
+
+            showMessage('正在重新生成任务...', 'info');
+
+            try {
+                let successCount = 0;
+                let failCount = 0;
+                let errorMessages = [];
+
+                for (const taskId of taskIds) {
+                    try {
+                        const response = await fetch(`${API_BASE_URL}/ai-tasks/${taskId}/retry`, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+
+                        const data = await response.json();
+
+                        if (response.ok && data.success) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                            errorMessages.push(`任务 ${taskId}: ${data.message || '未知错误'}`);
+                            console.error(`任务 ${taskId} 重新生成失败:`, data);
+                        }
+                    } catch (taskError) {
+                        failCount++;
+                        errorMessages.push(`任务 ${taskId}: ${taskError.message}`);
+                        console.error(`任务 ${taskId} 请求异常:`, taskError);
+                    }
+                }
+
+                if (failCount === 0) {
+                    showMessage(`批量重新生成完成：成功 ${successCount} 个`, 'success');
+                } else {
+                    showMessage(`批量重新生成完成：成功 ${successCount} 个，失败 ${failCount} 个`, 'warning');
+                    console.error('失败的详细信息:', errorMessages);
+                }
+
+                loadTasks(); // 刷新列表
+            } catch (error) {
+                console.error('批量重新生成失败:', error);
+                showMessage('批量重新生成失败，请稍后重试', 'error');
+            }
+        }
+
+        // 初始化批量操作
+        function initBatchOperations() {
+            const container = document.getElementById('tasksContainer');
+            if (!container) return;
+
+            // 添加批量操作工具栏
+            const toolbar = document.createElement('div');
+            toolbar.className = 'batch-toolbar';
+            toolbar.innerHTML = `
+                <div class="batch-toolbar-left">
+                    <label class="batch-checkbox-all">
+                        <input type="checkbox" id="selectAllTasks">
+                        <span>全选</span>
+                    </label>
+                    <span class="batch-selected-count" id="selectedTaskCount">已选择 0 项</span>
+                </div>
+                <div class="batch-toolbar-right">
+                    <button class="geo-btn geo-btn-secondary geo-btn-sm" onclick="batchRegenerateSelected()">
+                        <span>🔄</span>
+                        <span>重新生成</span>
+                    </button>
+                    <button class="geo-btn geo-btn-secondary geo-btn-sm" onclick="batchDeleteSelected()" style="color: #dc2626;">
+                        <span>🗑️</span>
+                        <span>删除</span>
+                    </button>
+                    <div class="export-dropdown">
+                        <button class="geo-btn geo-btn-secondary geo-btn-sm">
+                            <span>📥</span>
+                            <span>导出</span>
+                            <span>▼</span>
+                        </button>
+                        <div class="export-dropdown-content">
+                            <button class="export-dropdown-item" onclick="exportTasks('csv')">
+                                <span>📄</span> 导出CSV
+                            </button>
+                            <button class="export-dropdown-item" onclick="exportTasks('excel')">
+                                <span>📊</span> 导出Excel
+                            </button>
+                            <button class="export-dropdown-item" onclick="exportTasks('json')">
+                                <span>💾</span> 导出JSON
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 插入到任务容器之前
+            container.parentNode.insertBefore(toolbar, container);
+
+            // 全选功能
+            const selectAllCheckbox = toolbar.querySelector('#selectAllTasks');
+            selectAllCheckbox.addEventListener('change', (e) => {
+                const checkboxes = container.querySelectorAll('.task-checkbox');
+                checkboxes.forEach(cb => {
+                    cb.checked = e.target.checked;
+                    const taskCard = cb.closest('.task-card');
+                    if (e.target.checked) {
+                        taskCard.classList.add('batch-selected');
+                    } else {
+                        taskCard.classList.remove('batch-selected');
+                    }
+                });
+                updateSelectedCount();
+            });
+        }
+
+        // 更新选择计数
+        function updateSelectedCount() {
+            const selectedCount = document.querySelectorAll('.task-checkbox:checked').length;
+            const countEl = document.getElementById('selectedTaskCount');
+            if (countEl) {
+                countEl.textContent = `已选择 ${selectedCount} 项`;
+            }
+        }
+
+        // 批量操作快捷函数
+        function batchRegenerateSelected() {
+            const selectedIds = Array.from(document.querySelectorAll('.task-checkbox:checked'))
+                .map(cb => cb.dataset.taskId);
+            if (selectedIds.length === 0) {
+                alert('请先选择任务');
+                return;
+            }
+            batchRegenerate(selectedIds);
+        }
+
+        function batchDeleteSelected() {
+            const selectedIds = Array.from(document.querySelectorAll('.task-checkbox:checked'))
+                .map(cb => cb.dataset.taskId);
+            if (selectedIds.length === 0) {
+                alert('请先选择任务');
+                return;
+            }
+            batchDeleteTasks(selectedIds);
+        }
+
+        // 修改渲染任务函数，添加复选框和数据导出功能
+        const originalRenderTasks = renderTasks;
+        renderTasks = function(tasksData) {
+            // 保存数据供导出使用
+            currentTasksData = tasksData || tasks;
+
+            const container = document.getElementById('tasksContainer');
+            if (!container) {
+                console.error('tasksContainer element not found');
+                return;
+            }
+
+            // 调用原始渲染函数
+            originalRenderTasks();
+
+            // 初始化批量操作（如果还没有）
+            if (!document.querySelector('.batch-toolbar')) {
+                initBatchOperations();
+            }
+        };
+
+        // 任务选择切换
+        function toggleTaskSelection(checkbox) {
+            const taskCard = checkbox.closest('.task-card');
+            if (checkbox.checked) {
+                taskCard.classList.add('batch-selected');
+            } else {
+                taskCard.classList.remove('batch-selected');
+            }
+            updateSelectedCount();
+
+            // 更新全选状态
+            const allCheckboxes = document.querySelectorAll('.task-checkbox');
+            const checkedCheckboxes = document.querySelectorAll('.task-checkbox:checked');
+            const selectAllCheckbox = document.getElementById('selectAllTasks');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = checkedCheckboxes.length === allCheckboxes.length;
+                selectAllCheckbox.indeterminate = checkedCheckboxes.length > 0 && checkedCheckboxes.length < allCheckboxes.length;
+            }
+        }
+
+        // 添加任务卡片样式
+        const style = document.createElement('style');
+        style.textContent = `
+            .task-checkbox-wrapper {
+                position: absolute;
+                top: 12px;
+                left: 12px;
+            }
+            .task-checkbox {
+                width: 18px;
+                height: 18px;
+                cursor: pointer;
+                accent-color: #3b82f6;
+            }
+            .task-card {
+                position: relative;
+                padding-left: 44px;
+                transition: all 0.2s;
+            }
+            .task-card.batch-selected {
+                border-color: #3b82f6;
+                background: #eff6ff;
+                box-shadow: 0 0 0 2px #3b82f6;
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+    <script src="js/batch-operations.js"></script>
+</body>
+</html>

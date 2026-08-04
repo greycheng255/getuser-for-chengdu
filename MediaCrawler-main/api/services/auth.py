@@ -9,8 +9,9 @@
 import os
 import time
 import secrets
+import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import jwt
 import bcrypt
@@ -21,8 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 from database.user_models import UserModel
-from database.db_session import get_async_engine
-import config
+
+logger = logging.getLogger(__name__)
 
 # ============ 配置 ============
 # JWT 密钥: 优先读环境变量,否则首次启动生成并写入 .env
@@ -64,8 +65,15 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 # ============ 数据库会话 ============
+def _get_engine():
+    """获取异步数据库引擎（公共方法，消除重复导入）"""
+    from database.db_session import get_async_engine
+    import config
+    return get_async_engine(config.SAVE_DATA_OPTION)
+
+
 def _get_session_factory():
-    engine = get_async_engine(config.SAVE_DATA_OPTION)
+    engine = _get_engine()
     if not engine:
         return None
     return sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -109,6 +117,45 @@ def decode_token(token: str) -> Optional[dict]:
         return None
     except jwt.InvalidTokenError:
         return None
+
+
+# ============ 合规归档（任务 P2-9） ============
+async def _archive_user_operation(
+    action: str,
+    user_id: Optional[int],
+    *,
+    actor_ip: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """归档用户关键操作到 compliance_archive（ArchiveType.OPERATION）
+
+    覆盖场景：登录 / 注册 / 用户增删改。
+    容错：失败仅 log warning，不阻断主业务流程。
+    避免循环依赖：compliance_archive 不反向依赖 auth。
+    """
+    try:
+        from api.services.moderation.compliance_archive import (
+            ArchiveType,
+            get_compliance_archive_service,
+        )
+        meta: Dict[str, Any] = {
+            "action": action,
+            "user_id": user_id,
+            "ip": actor_ip or "unknown",
+        }
+        if metadata:
+            meta.update(metadata)
+        await get_compliance_archive_service().archive(
+            archive_type=ArchiveType.OPERATION.value,
+            platform="",
+            account_id=str(user_id) if user_id is not None else "",
+            target_url="",
+            content=f"user {action}",
+            metadata=meta,
+            owner_user_id=user_id,
+        )
+    except Exception as e:
+        logger.warning(f"[auth] 归档用户操作失败(忽略): {e}")
 
 
 # ============ 用户操作 ============
@@ -173,7 +220,7 @@ async def list_all_users() -> list:
         return [_user_to_dict(u) for u in result.scalars().all()]
 
 
-async def create_user(username: str, password: str, nickname: str = "", email: str = "", role: str = "operator") -> dict:
+async def create_user(username: str, password: str, nickname: str = "", email: str = "", role: str = "operator", *, actor_ip: Optional[str] = None) -> dict:
     factory = _get_session_factory()
     if not factory:
         raise RuntimeError("数据库不可用")
@@ -206,10 +253,15 @@ async def create_user(username: str, password: str, nickname: str = "", email: s
         session.add(u)
         await session.commit()
         await session.refresh(u)
+        # 合规归档：注册（任务 P2-9）
+        await _archive_user_operation(
+            "create_user", u.id, actor_ip=actor_ip,
+            metadata={"username": username, "role": u.role},
+        )
         return _user_to_dict(u)
 
 
-async def update_user(user_id: int, **fields) -> Optional[dict]:
+async def update_user(user_id: int, *, actor_ip: Optional[str] = None, **fields) -> Optional[dict]:
     factory = _get_session_factory()
     if not factory:
         return None
@@ -226,10 +278,15 @@ async def update_user(user_id: int, **fields) -> Optional[dict]:
     async with factory() as session:
         await session.execute(update(UserModel).where(UserModel.id == user_id).values(**updates))
         await session.commit()
+    # 合规归档：用户信息修改（任务 P2-9）
+    await _archive_user_operation(
+        "update_user", user_id, actor_ip=actor_ip,
+        metadata={"fields": list(updates.keys())},
+    )
     return await get_user_by_id(user_id)
 
 
-async def delete_user(user_id: int) -> bool:
+async def delete_user(user_id: int, *, actor_ip: Optional[str] = None) -> bool:
     factory = _get_session_factory()
     if not factory:
         return False
@@ -295,10 +352,15 @@ async def delete_user(user_id: int) -> bool:
             )
             await session.delete(u)
             await session.commit()
+            # 合规归档：删除用户（任务 P2-9）
+            await _archive_user_operation(
+                "delete_user", user_id, actor_ip=actor_ip,
+                metadata={"username": u.username},
+            )
             return True
 
 
-async def update_last_login(user_id: int):
+async def update_last_login(user_id: int, *, actor_ip: Optional[str] = None):
     factory = _get_session_factory()
     if not factory:
         return
@@ -307,6 +369,8 @@ async def update_last_login(user_id: int):
             update(UserModel).where(UserModel.id == user_id).values(last_login_ts=int(time.time() * 1000))
         )
         await session.commit()
+    # 合规归档：登录（任务 P2-9）
+    await _archive_user_operation("login", user_id, actor_ip=actor_ip)
 
 
 # ============ 依赖注入 ============
@@ -336,6 +400,47 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
 
 def is_admin(user: dict) -> bool:
     return user.get("role") == "admin"
+
+
+# ============ 细粒度 RBAC: require_permission / has_permission (阶段三 P2-6) ============
+
+
+async def has_permission(user: dict, permission_code: str) -> bool:
+    """判断用户是否拥有指定权限码(供前端菜单判断/业务层调用)
+
+    admin 角色直接返回 True;其他角色查 sys_role_permission 表判断。
+    """
+    try:
+        from .rbac import get_permission_service
+        svc = get_permission_service()
+        return await svc.has_permission(user, permission_code)
+    except Exception:
+        # 权限服务不可用时,fallback 到 admin 通过的老逻辑,保证可用性
+        return is_admin(user)
+
+
+def require_permission(permission_code: str):
+    """装饰器依赖: 校验当前用户是否拥有指定权限码
+
+    用法:
+        @router.post("/publish")
+        async def publish_endpoint(
+            _: dict = Depends(require_permission("publisher:multi-publish")),
+            current_user: dict = Depends(get_current_user),
+        ):
+            ...
+
+    admin 角色直接通过(拥有所有权限)。
+    operator/viewer 查询 sys_role_permission 表判断。
+    无权限抛 HTTPException(403, "权限不足")。
+    """
+    async def _dep(current_user: dict = Depends(get_current_user)) -> dict:
+        ok = await has_permission(current_user, permission_code)
+        if not ok:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
+        return current_user
+
+    return _dep
 
 
 def user_scope_filter(user: dict, model_cls):

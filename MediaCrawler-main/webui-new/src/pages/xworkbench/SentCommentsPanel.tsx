@@ -1,21 +1,6 @@
+import { message } from '../../utils/antdMessage';
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  Row,
-  Col,
-  Card,
-  Statistic,
-  List,
-  Input,
-  Tag,
-  Button,
-  Space,
-  Switch,
-  message,
-  Typography,
-  Select,
-  DatePicker,
-  Dropdown,
-} from 'antd';
+import { Row, Col, Card, Statistic, List, Input, Tag, Button, Space, Switch, Typography, Select, DatePicker, Dropdown } from 'antd';
 import type { Dayjs } from 'dayjs';
 import {
   TwitterOutlined,
@@ -38,6 +23,7 @@ import {
   type SentComment,
   type WorkbenchStats,
 } from '../../api/xWorkbench';
+import { usePlatform } from '../../context/PlatformContext';
 import RepliesModal from './RepliesModal';
 
 const { Text } = Typography;
@@ -47,6 +33,7 @@ const { Text } = Typography;
  * 展示已发评论列表 + 统计卡片 + 搜索筛选 + 回复管理
  */
 const SentCommentsPanel: React.FC = () => {
+  const { platform } = usePlatform();
   const [loading, setLoading] = useState(false);
   const [list, setList] = useState<SentComment[]>([]);
   const [total, setTotal] = useState(0);
@@ -70,7 +57,7 @@ const SentCommentsPanel: React.FC = () => {
     const key = `${kind}-${format}` as typeof exporting;
     setExporting(key);
     try {
-      const params: any = { format };
+      const params: any = { format, platform };
       if (statusFilter) params.status = statusFilter;
       if (dateRange && dateRange[0]) params.start_ts = dateRange[0].startOf('day').unix();
       if (dateRange && dateRange[1]) params.end_ts = dateRange[1].endOf('day').unix();
@@ -85,12 +72,12 @@ const SentCommentsPanel: React.FC = () => {
     } finally {
       setExporting(null);
     }
-  }, [statusFilter, dateRange]);
+  }, [statusFilter, dateRange, platform]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params: any = { page, page_size: pageSize };
+      const params: any = { page, page_size: pageSize, platform };
       if (statusFilter) params.status = statusFilter;
       if (searchKeyword) params.keyword = searchKeyword;
       if (dateRange && dateRange[0]) params.start_ts = dateRange[0].startOf('day').unix();
@@ -104,14 +91,14 @@ const SentCommentsPanel: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, statusFilter, searchKeyword, dateRange]);
+  }, [page, pageSize, statusFilter, searchKeyword, dateRange, platform]);
 
   const loadStats = useCallback(async () => {
     try {
-      const s = await xWorkbenchApi.getStats();
+      const s = await xWorkbenchApi.getStats(platform);
       setStats(s);
     } catch {}
-  }, []);
+  }, [platform]);
 
   // 防抖:keyword 输入停止 400ms 后,同步到 searchKeyword 并重置到第 1 页
   useEffect(() => {

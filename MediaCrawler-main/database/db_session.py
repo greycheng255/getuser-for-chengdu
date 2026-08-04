@@ -243,6 +243,7 @@ async def _migrate_owner_user_id(engine, db_type: str):
         "outreach_record",
         "outreach_task",
         "auto_outreach_job",
+        "lead_assignment",
     ]
     if db_type == "postgres":
         async with engine.begin() as conn:

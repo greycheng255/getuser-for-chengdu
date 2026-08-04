@@ -26,8 +26,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 from database.user_models import UserModel
-from database.db_session import get_async_engine
-import config
+
+
+def _get_engine():
+    """获取异步数据库引擎（公共方法，消除重复导入）"""
+    from database.db_session import get_async_engine
+    import config
+    return get_async_engine(config.SAVE_DATA_OPTION)
 
 
 # ============ 套餐配置 ============
@@ -126,7 +131,7 @@ def is_admin_plan_unlimited(user: dict) -> bool:
 # ============ 套餐状态查询 ============
 
 def _get_session_factory():
-    engine = get_async_engine(config.SAVE_DATA_OPTION)
+    engine = _get_engine()
     if not engine:
         return None
     return sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

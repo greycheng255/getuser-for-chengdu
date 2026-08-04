@@ -32,8 +32,203 @@ CLEANUP_HOURS = 24
 
 _trending_task: Optional[asyncio.Task] = None
 _trending_running = False
+# 最近一次直接爬取是否命中 Cloudflare 挑战页（用于 crawl_trending 短路策略 3，避免无谓串行重试）
+_last_cloudflare_hit: bool = False
 
 FALLBACK_KEYWORDS = ["AI", "technology", "programming", "machine learning", "GPT", "Gemini", "OpenAI", "编程副业", "编程兼职", "副业", "兼职", "deep learning", "artificial intelligence", "chatbot", "robot", "metaverse", "blockchain", "crypto", "bitcoin", "ethereum", "web3", "NFT", "virtual reality", "augmented reality", "自动驾驶", "新能源", "云计算", "大数据", "量子计算", "5G", "6G", "智能家居", "物联网", "边缘计算", "人工智能", "机器学习", "深度学习", "自然语言处理", "计算机视觉", "推荐系统"]
+
+# X.com tweet 元素的多级备用选择器（按优先级，应对页面结构变化）
+_TWEET_SELECTORS = [
+    'article[data-testid="tweet"]',
+    '[data-testid="tweet"]',
+    'article[role="article"]',
+    'div[data-testid="cellInnerDiv"] article',
+    'article',
+]
+
+# 单关键词搜索整体超时（秒），避免单个关键词卡死整个采集
+_PER_KEYWORD_TIMEOUT = 20.0
+# wait_for_selector 等待 tweet 元素首次出现的超时（秒）
+_TWEET_WAIT_TIMEOUT = 8000  # ms
+
+
+async def _is_cloudflare_challenge(page) -> bool:
+    """检测 Cloudflare 反爬挑战页（与 comment_reply_monitor 一致的快速失败策略）"""
+    try:
+        title = await page.title()
+    except Exception:
+        return False
+    if not title:
+        return False
+    t = title.lower()
+    return (
+        "just a moment" in t
+        or "checking your browser" in t
+        or "attention required" in t
+        or "ddos protection" in t
+    )
+
+
+async def _find_tweet_elements(page):
+    """按优先级依次尝试多个选择器，返回首个命中的元素列表与选择器名"""
+    for sel in _TWEET_SELECTORS:
+        try:
+            elements = await page.query_selector_all(sel)
+            if elements:
+                return elements, sel
+        except Exception:
+            continue
+    return [], None
+
+
+async def _parse_tweet_element(element) -> Optional[Dict[str, Any]]:
+    """解析单个 tweet 元素，提取内容/用户/互动数据。失败返回 None。"""
+    try:
+        post_data: Dict[str, Any] = {}
+
+        content_el = await element.query_selector('[data-testid="tweetText"]')
+        post_data["content"] = await content_el.inner_text() if content_el else ""
+
+        if not post_data["content"]:
+            return None
+
+        username_el = await element.query_selector('[data-testid="User-Name"] a span')
+        if not username_el:
+            username_el = await element.query_selector('a[href^="/"] span')
+        post_data["username"] = (await username_el.inner_text()).replace("@", "") if username_el else ""
+
+        nickname_el = await element.query_selector('[data-testid="User-Name"] a div span')
+        if not nickname_el:
+            nickname_el = await element.query_selector('[data-testid="User-Name"] span')
+        post_data["nickname"] = await nickname_el.inner_text() if nickname_el else ""
+
+        link_el = await element.query_selector('[data-testid="User-Name"] a')
+        href = await link_el.get_attribute("href") if link_el else ""
+        username_part = ""
+        if href and "/" in href:
+            username_part = href.split("/")[1]
+
+        post_id = ""
+        status_links = await element.query_selector_all('a[href*="/status/"]')
+        for link in status_links:
+            status_href = await link.get_attribute("href")
+            if status_href and "/status/" in status_href:
+                parts = status_href.split("/status/")
+                if len(parts) > 1:
+                    post_id = parts[1].split("?")[0].split("/")[0]
+                    break
+
+        if not post_id:
+            time_el = await element.query_selector('time')
+            time_href = await time_el.get_attribute("datetime") if time_el else ""
+            post_id = time_href.split(":")[0] if ":" in time_href else ""
+
+        post_data["post_id"] = post_id
+        post_data["post_url"] = f"https://x.com/{username_part}/status/{post_id}"
+
+        likes_el = await element.query_selector('[data-testid="like"] span')
+        post_data["likes_count"] = await likes_el.inner_text() if likes_el else "0"
+
+        retweets_el = await element.query_selector('[data-testid="retweet"] span')
+        post_data["retweets_count"] = await retweets_el.inner_text() if retweets_el else "0"
+
+        replies_el = await element.query_selector('[data-testid="reply"] span')
+        post_data["replies_count"] = await replies_el.inner_text() if replies_el else "0"
+
+        views_el = await element.query_selector('[data-testid="view"] span')
+        post_data["views_count"] = await views_el.inner_text() if views_el else "0"
+
+        time_el = await element.query_selector('time')
+        post_data["created_at"] = await time_el.get_attribute("datetime") if time_el else ""
+
+        video_el = await element.query_selector('[data-testid="video"]')
+        post_data["video_url"] = ""
+        if video_el:
+            video_src = await video_el.get_attribute("src")
+            post_data["video_url"] = video_src if video_src else ""
+
+        image_els = await element.query_selector_all('[data-testid="tweetImage"]')
+        post_data["image_url"] = ""
+        if image_els:
+            img_el = await image_els[0].query_selector("img")
+            if img_el:
+                post_data["image_url"] = await img_el.get_attribute("src") or ""
+
+        if post_data.get("post_id") and post_data.get("content"):
+            return post_data
+        return None
+    except Exception:
+        return None
+
+
+async def _search_one_keyword(page, search_url: str, all_posts: dict) -> None:
+    """搜索单个关键词并解析推文，结果累积到 all_posts（按 post_id 去重）。
+
+    优化点：
+    1. goto 后立即检测 Cloudflare 挑战页 → 抛出带 cloudflare 标记的异常，触发上层快速失败
+    2. 用 wait_for_selector 主动等待 tweet 元素加载（替代固定 sleep 5s）
+    3. 检测“没有结果”提示，提前结束
+    4. 滚动加载更多，使用多级备用选择器
+    """
+    await page.goto(search_url, wait_until="domcontentloaded")
+
+    # Cloudflare 挑战页快速失败
+    if await _is_cloudflare_challenge(page):
+        raise RuntimeError("cloudflare_challenge_detected")
+
+    # 主动等待 tweet 元素出现（最多 _TWEET_WAIT_TIMEOUT ms），替代固定 sleep 5s
+    try:
+        await page.wait_for_selector(
+            ', '.join(_TWEET_SELECTORS),
+            timeout=_TWEET_WAIT_TIMEOUT,
+        )
+    except Exception:
+        # 等待超时：可能是无结果页或反爬，进一步检查
+        html_content = await page.content()
+        if len(html_content) < 5000:
+            print(f"[x_trending] 页面内容过短({len(html_content)}字符)，可能为空/反爬，跳过")
+            return
+        # 检测“没有结果”提示
+        try:
+            no_result_el = await page.query_selector('[data-testid="empty_state"]')
+        except Exception:
+            no_result_el = None
+        if no_result_el:
+            print(f"[x_trending] 页面提示无结果，跳过此关键词")
+            return
+        # 兜底：直接尝试用多级选择器抓取（可能元素已加载但选择器等待超时）
+        print(f"[x_trending] wait_for_selector 超时，尝试直接抓取")
+
+    scroll_count = 0
+    max_scrolls = 3
+    while scroll_count < max_scrolls:
+        try:
+            if len(all_posts) >= MAX_POSTS_PER_TOPIC:
+                break
+
+            tweet_elements, used_sel = await _find_tweet_elements(page)
+            if not tweet_elements:
+                print(f"[x_trending] 本轮未找到 tweet 元素（所有选择器均未命中），停止滚动")
+                break
+
+            if scroll_count == 0:
+                print(f"[x_trending] 命中选择器: {used_sel}, 找到 {len(tweet_elements)} 个元素")
+
+            for element in tweet_elements:
+                post_data = await _parse_tweet_element(element)
+                if post_data:
+                    all_posts[post_data["post_id"]] = post_data
+
+            if len(all_posts) >= MAX_POSTS_PER_TOPIC:
+                break
+
+            # 滚动到底部加载更多
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await page.wait_for_timeout(1500)
+            scroll_count += 1
+        except Exception as e:
+            print(f"[x_trending] 滚动抓取异常: {e}")
+            break
 
 
 async def _crawl_with_existing_api(keywords: str = "") -> bool:
@@ -184,6 +379,9 @@ async def _crawl_with_playwright_direct(keywords: str = "") -> List[Dict[str, An
 
     tried_cookies = set()
     last_error = ""
+    # 重置 cloudflare 标记（本次调用会重新设置）
+    global _last_cloudflare_hit
+    _last_cloudflare_hit = False
 
     for attempt in range(1, max_retries + 1):
         cookie = get_cookie_from_pool()
@@ -218,7 +416,15 @@ async def _crawl_with_playwright_direct(keywords: str = "") -> List[Dict[str, An
                 context = await browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     viewport={"width": 1920, "height": 1080},
-                    extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+                    extra_http_headers={
+                        "Accept-Language": "en-US,en;q=0.9",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                        "Upgrade-Insecure-Requests": "1",
+                        "Sec-Fetch-Dest": "document",
+                        "Sec-Fetch-Mode": "navigate",
+                        "Sec-Fetch-Site": "none",
+                        "Sec-Fetch-User": "?1",
+                    },
                 )
 
                 cookie_list = []
@@ -235,140 +441,59 @@ async def _crawl_with_playwright_direct(keywords: str = "") -> List[Dict[str, An
                     print(f"[x_trending] 设置了 {len(cookie_list)} 个 cookies")
 
                 page = await context.new_page()
-                page.set_default_timeout(60000)
+                # 降低默认超时，避免单次 goto 卡死 60s
+                page.set_default_timeout(15000)
 
                 all_posts = {}
+                # Cloudflare 命中后该 cookie 下所有关键词都会失败，提前结束避免无效重试
+                cloudflare_hit = False
 
                 for kw_idx, search_kw in enumerate(search_keywords, 1):
                     try:
+                        if cloudflare_hit:
+                            break
                         if len(all_posts) >= MAX_POSTS_PER_TOPIC:
                             print(f"[x_trending] 已获取 {MAX_POSTS_PER_TOPIC} 条帖子，提前结束")
                             break
 
-                        search_url = f"https://x.com/search?q={search_kw}&src=typed_query"
+                        # 用 f=top（热门）过滤，比默认 live 流更相关；URL 编码关键词
+                        from urllib.parse import quote
+                        search_url = f"https://x.com/search?q={quote(search_kw)}&src=typed_query&f=top"
                         print(f"[x_trending] 搜索关键词 {kw_idx}/{len(search_keywords)}: {search_kw}, URL: {search_url}")
-                        await page.goto(search_url, wait_until="domcontentloaded")
-                        await page.wait_for_timeout(5000)
 
-                        html_content = await page.content()
-                        print(f"[x_trending] 页面内容长度: {len(html_content)}")
-                        if len(html_content) < 5000:
-                            print(f"[x_trending] 页面内容可能为空，跳过此关键词")
-                            # 打印前 500 字符调试
-                            print(f"[x_trending] 页面前 500 字符: {html_content[:500]}")
+                        # 单关键词整体超时保护，避免卡死整个采集
+                        posts_before = len(all_posts)
+                        try:
+                            await asyncio.wait_for(
+                                _search_one_keyword(page, search_url, all_posts),
+                                timeout=_PER_KEYWORD_TIMEOUT,
+                            )
+                        except asyncio.TimeoutError:
+                            print(f"[x_trending] 关键词 {search_kw} 超时({_PER_KEYWORD_TIMEOUT}s)，跳过")
+                            continue
+                        except Exception as e:
+                            err = str(e)
+                            if "cloudflare" in err.lower():
+                                cloudflare_hit = True
+                                _last_cloudflare_hit = True  # 供 crawl_trending 短路策略 3
+                                print(f"[x_trending] 检测到 Cloudflare 挑战页，跳过剩余关键词")
+                                break
+                            print(f"[x_trending] 关键词 {search_kw} 搜索异常: {err[:150]}")
                             continue
 
-                        scroll_count = 0
-                        max_scrolls = 3
-
-                        while scroll_count < max_scrolls:
-                            try:
-                                if len(all_posts) >= MAX_POSTS_PER_TOPIC:
-                                    break
-
-                                tweet_elements = await page.query_selector_all('[data-testid="tweet"]')
-                                print(f"[x_trending] 找到 {len(tweet_elements)} 个 [data-testid='tweet'] 元素")
-                                if not tweet_elements:
-                                    tweet_elements = await page.query_selector_all('article')
-                                    print(f"[x_trending] 找到 {len(tweet_elements)} 个 article 元素")
-
-                                for element in tweet_elements:
-                                    try:
-                                        post_data = {}
-
-                                        content_el = await element.query_selector('[data-testid="tweetText"]')
-                                        post_data["content"] = await content_el.inner_text() if content_el else ""
-
-                                        if not post_data["content"]:
-                                            continue
-
-                                        username_el = await element.query_selector('[data-testid="User-Name"] a span')
-                                        if not username_el:
-                                            username_el = await element.query_selector('a[href^="/"] span')
-                                        post_data["username"] = (await username_el.inner_text()).replace("@", "") if username_el else ""
-
-                                        nickname_el = await element.query_selector('[data-testid="User-Name"] a div span')
-                                        if not nickname_el:
-                                            nickname_el = await element.query_selector('[data-testid="User-Name"] span')
-                                        post_data["nickname"] = await nickname_el.inner_text() if nickname_el else ""
-
-                                        link_el = await element.query_selector('[data-testid="User-Name"] a')
-                                        href = await link_el.get_attribute("href") if link_el else ""
-                                        username_part = ""
-                                        if href and "/" in href:
-                                            username_part = href.split("/")[1]
-
-                                        post_id = ""
-                                        status_links = await element.query_selector_all('a[href*="/status/"]')
-                                        for link in status_links:
-                                            status_href = await link.get_attribute("href")
-                                            if status_href and "/status/" in status_href:
-                                                parts = status_href.split("/status/")
-                                                if len(parts) > 1:
-                                                    post_id = parts[1].split("?")[0].split("/")[0]
-                                                    break
-
-                                        if not post_id:
-                                            time_el = await element.query_selector('time')
-                                            time_href = await time_el.get_attribute("datetime") if time_el else ""
-                                            post_id = time_href.split(":")[0] if ":" in time_href else ""
-
-                                        post_data["post_id"] = post_id
-                                        post_data["post_url"] = f"https://x.com/{username_part}/status/{post_id}"
-
-                                        likes_el = await element.query_selector('[data-testid="like"] span')
-                                        post_data["likes_count"] = await likes_el.inner_text() if likes_el else "0"
-
-                                        retweets_el = await element.query_selector('[data-testid="retweet"] span')
-                                        post_data["retweets_count"] = await retweets_el.inner_text() if retweets_el else "0"
-
-                                        replies_el = await element.query_selector('[data-testid="reply"] span')
-                                        post_data["replies_count"] = await replies_el.inner_text() if replies_el else "0"
-
-                                        views_el = await element.query_selector('[data-testid="view"] span')
-                                        post_data["views_count"] = await views_el.inner_text() if views_el else "0"
-
-                                        time_el = await element.query_selector('time')
-                                        post_data["created_at"] = await time_el.get_attribute("datetime") if time_el else ""
-
-                                        video_el = await element.query_selector('[data-testid="video"]')
-                                        post_data["video_url"] = ""
-                                        if video_el:
-                                            video_src = await video_el.get_attribute("src")
-                                            post_data["video_url"] = video_src if video_src else ""
-
-                                        image_els = await element.query_selector_all('[data-testid="tweetImage"]')
-                                        post_data["image_url"] = ""
-                                        if image_els:
-                                            img_el = await image_els[0].query_selector("img")
-                                            if img_el:
-                                                post_data["image_url"] = await img_el.get_attribute("src") or ""
-
-                                        if post_data.get("post_id") and post_data.get("content"):
-                                            all_posts[post_data["post_id"]] = post_data
-
-                                    except Exception as e:
-                                        continue
-
-                                if len(all_posts) >= MAX_POSTS_PER_TOPIC:
-                                    break
-
-                                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                                await page.wait_for_timeout(2000)
-                                scroll_count += 1
-
-                            except Exception as e:
-                                break
+                        added = len(all_posts) - posts_before
+                        print(f"[x_trending] 关键词 {search_kw} 新增 {added} 条，累计 {len(all_posts)} 条")
 
                     except Exception as e:
-                        print(f"[x_trending] 关键词 {search_kw} 搜索失败: {e}")
+                        print(f"[x_trending] 关键词 {search_kw} 处理失败: {e}")
                         continue
 
                 await browser.close()
 
                 posts = list(all_posts.values())[:MAX_POSTS_PER_TOPIC]
 
-                mark_cookie_success(cookie)
+                if posts:
+                    mark_cookie_success(cookie)
                 print(f"[x_trending] 直接爬取成功，获取 {len(posts)} 条帖子")
                 return posts
 
@@ -380,7 +505,7 @@ async def _crawl_with_playwright_direct(keywords: str = "") -> List[Dict[str, An
             if browser:
                 try:
                     await browser.close()
-                except:
+                except Exception:
                     pass
 
             is_cookie_error = (
@@ -496,7 +621,7 @@ async def _save_trending_data(posts: List[Dict[str, Any]]):
                         import datetime
                         dt = datetime.datetime.fromisoformat(post["created_at"].replace("Z", "+00:00"))
                         created_at_int = int(dt.timestamp())
-                    except:
+                    except Exception:
                         created_at_int = 0
                 
                 new_post = XTwitterTrendingPost(
@@ -533,9 +658,26 @@ async def _cleanup_old_data():
 
 
 async def crawl_trending():
-    """执行一次热点采集（多策略）"""
+    """执行一次热点采集（多策略）
+
+    策略链优化：
+    - 策略1：直接 Playwright 爬取（多关键词，主策略）
+    - 策略2：数据库提取历史热点（兜底，秒级）
+    - 策略3：仅当策略1 非 Cloudflare 失败时，才用单关键词重试（避免 CF 命中后串行卡死）
+    - 策略4：已有爬虫接口（最后备用）
+    整体超时保护：120s，避免预热卡死
+    """
     print("[x_trending] 开始热点采集...")
 
+    try:
+        await asyncio.wait_for(_crawl_trending_inner(), timeout=120.0)
+    except asyncio.TimeoutError:
+        print(f"[x_trending] 热点采集总超时(120s)，提前结束（不影响服务运行）")
+
+
+async def _crawl_trending_inner():
+    """crawl_trending 的内部实现，带总超时保护"""
+    global _last_cloudflare_hit
     posts = []
 
     # 策略1: 使用直接 Playwright 爬取（首要策略，绕过 CDP）
@@ -547,16 +689,22 @@ async def crawl_trending():
         print("[x_trending] 直接爬取失败，尝试从数据库提取热点")
         posts = await _extract_hot_posts_from_db()
 
-    # 策略3: 如果数据库也没有，使用备用关键词进行直接爬取
-    if not posts:
-        print("[x_trending] 数据库无热点，使用备用关键词直接爬取")
-        for keywords in FALLBACK_KEYWORDS[:5]:
+    # 策略3: 如果数据库也没有，且策略1 不是 Cloudflare 拦截，使用单关键词重试
+    # Cloudflare 命中时跳过：CF 拦截与关键词无关，重试 5 个关键词只会卡死预热
+    if not posts and not _last_cloudflare_hit:
+        print("[x_trending] 数据库无热点，使用单关键词直接爬取")
+        for keywords in FALLBACK_KEYWORDS[:3]:  # 从 5 缩减到 3，减少串行卡时
             posts = await _crawl_with_playwright_direct(keywords)
             if posts:
                 break
+            if _last_cloudflare_hit:
+                print("[x_trending] 单关键词重试期间命中 Cloudflare，停止重试")
+                break
+    elif not posts and _last_cloudflare_hit:
+        print("[x_trending] 策略1 命中 Cloudflare，跳过策略3（单关键词重试无意义）")
 
     # 策略4: 如果都失败，尝试已有的爬虫爬取（作为最后的备用）
-    if not posts:
+    if not posts and not _last_cloudflare_hit:
         print("[x_trending] 尝试已有的爬虫爬取（备用策略）")
         success = await _crawl_with_existing_api()
         if success:

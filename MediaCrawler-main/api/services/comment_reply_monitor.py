@@ -15,7 +15,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select, and_, update, func
+from sqlalchemy import select, and_, update, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db_session import get_session
@@ -36,16 +36,19 @@ if not logger.handlers:
     logger.propagate = False  # 避免通过 root logger 重复输出
 
 
-# 轮询间隔（秒）
-CHECK_INTERVAL = int(os.getenv("X_WORKBENCH_REPLY_CHECK_INTERVAL", "180"))
+# 轮询间隔（秒）- 默认 900s（15分钟），避免在低配机器上频繁扫描导致 CPU 100%
+CHECK_INTERVAL = int(os.getenv("X_WORKBENCH_REPLY_CHECK_INTERVAL", "900"))
 # 每日 AI 回复上限
 DAILY_LIMIT = int(os.getenv("X_WORKBENCH_REPLY_DAILY_LIMIT", "100"))
-# 单次轮询最多检查多少条已发评论
-BATCH_SIZE = 10
+# 单次轮询最多检查多少条已发评论（降低以减少浏览器活跃时间）
+BATCH_SIZE = 5
 # 已发评论多久后停止监控（默认 7 天）
 MONITOR_TTL = 7 * 24 * 3600
 # 浏览器并发上限(避免同时启动太多浏览器实例导致内存爆炸)
-_BROWSER_CONCURRENCY = int(os.getenv("X_WORKBENCH_BROWSER_CONCURRENCY", "3"))
+# 默认 1（低配机器），高配机器可通过环境变量调大
+_BROWSER_CONCURRENCY = int(os.getenv("X_WORKBENCH_BROWSER_CONCURRENCY", "1"))
+# 全局共享信号量:确保已发评论检查和监控帖子检查并行时不会超出浏览器并发上限
+_GLOBAL_BROWSER_SEM: Optional[asyncio.Semaphore] = None
 # AI 回复并发上限(避免触发 AI 速率限制)
 _AI_REPLY_CONCURRENCY = int(os.getenv("X_WORKBENCH_AI_REPLY_CONCURRENCY", "2"))
 
@@ -144,10 +147,16 @@ async def stop_monitor():
 
 async def _monitor_loop():
     """监控主循环"""
+    global _GLOBAL_BROWSER_SEM
+    if _GLOBAL_BROWSER_SEM is None:
+        _GLOBAL_BROWSER_SEM = asyncio.Semaphore(_BROWSER_CONCURRENCY)
     while True:
         try:
-            await _check_all_sent_comments()
-            await _check_all_monitored_posts()
+            # 并行执行两个检查，避免一个检查阻塞另一个
+            await asyncio.gather(
+                _check_all_sent_comments(),
+                _check_all_monitored_posts(),
+            )
         except Exception as e:
             logger.error(f"loop error: {e}")
         await asyncio.sleep(CHECK_INTERVAL)
@@ -188,7 +197,7 @@ async def _check_all_sent_comments():
 
     logger.info(f"并发检查 {len(sent_comments)} 条已发评论的回复(并发上限 {_BROWSER_CONCURRENCY})")
 
-    sem = asyncio.Semaphore(_BROWSER_CONCURRENCY)
+    sem = _GLOBAL_BROWSER_SEM or asyncio.Semaphore(_BROWSER_CONCURRENCY)
 
     async def _check_with_sem(sc: XTwitterSentComment):
         async with sem:
@@ -258,13 +267,16 @@ async def _check_one_sent_comment(sc: XTwitterSentComment):
         existing_result = await session.execute(existing_stmt)
         existing_ids = {row[0] for row in existing_result.all()}
 
+        # 多 cookie 池:收集本系统所有账号,过滤自己发的回复以防自回复循环
+        my_usernames = await _get_all_my_usernames_async()
+
         for r in replies:
             reply_id = r.get("reply_id", "")
             if not reply_id or reply_id in existing_ids:
                 continue
             if reply_id == our_comment_id:
                 continue
-            if r.get("username") and r.get("username") == await _get_my_username_async():
+            if r.get("username") and r.get("username") in my_usernames:
                 continue
 
             new_reply = XTwitterReply(
@@ -362,12 +374,55 @@ async def _get_my_username_async() -> str:
 
 
 def _get_my_username() -> str:
-    """获取当前登录用户名(同步版,仅返回缓存值)
+    """获取当前用户名(同步版,仅返回缓存值)
 
     注意:此函数只返回已缓存的用户名,不会触发数据库查询。
     首次调用应使用 _get_my_username_async() 进行初始化。
     """
     return _MY_USERNAME
+
+
+# 本系统使用过的所有用户名集合(多 cookie 池场景下,不同评论可能由不同账号发出)
+_ALL_MY_USERNAMES: Optional[set] = None
+_ALL_MY_USERNAMES_TS: float = 0.0
+_ALL_MY_USERNAMES_TTL = 600  # 缓存 10 分钟,避免每次回复检查都查库
+
+
+async def _get_all_my_usernames_async() -> set:
+    """获取本系统所有使用过的用户名(从已发评论 comment_url 提取 + 环境变量)
+
+    多 cookie 池场景下,系统会用不同账号发评论/回复。这里收集所有出现过的
+    用户名,用于过滤"自己发的回复",防止已发评论监控出现自回复循环。
+    结果带 TTL 缓存(10 分钟),进程内有效。
+    """
+    global _ALL_MY_USERNAMES, _ALL_MY_USERNAMES_TS
+    now = time.time()
+    if _ALL_MY_USERNAMES is not None and (now - _ALL_MY_USERNAMES_TS) < _ALL_MY_USERNAMES_TTL:
+        return _ALL_MY_USERNAMES
+
+    usernames: set = set()
+    env_username = os.getenv("X_TWITTER_MY_USERNAME", "").strip().lstrip("@")
+    if env_username:
+        usernames.add(env_username)
+    try:
+        async with get_session() as session:
+            stmt = (
+                select(XTwitterSentComment.comment_url)
+                .where(XTwitterSentComment.comment_url.like("https://x.com/%/status/%"))
+            )
+            result = await session.execute(stmt)
+            for (url,) in result.all():
+                u = _extract_username_from_url(url)
+                if u:
+                    usernames.add(u)
+    except Exception as e:
+        logger.error(f"收集本系统用户名集合失败: {e}")
+
+    _ALL_MY_USERNAMES = usernames
+    _ALL_MY_USERNAMES_TS = now
+    if usernames:
+        logger.info(f"已收集本系统用户名集合(用于自回复过滤): {sorted(usernames)}")
+    return usernames
 
 
 def _extract_username_from_url(url: str) -> str:
@@ -413,8 +468,135 @@ def _extract_username_from_cookies(cookies_str: str) -> str:
 
 
 async def _fetch_replies_for_post(post_url: str) -> List[Dict[str, Any]]:
-    """通过浏览器抓取推文/评论下的回复"""
-    return await _fetch_replies_via_browser(post_url)
+    """获取推文/评论下的回复（双重降级策略，与热点采集降级策略一致）
+
+    策略1: 浏览器实时抓取（优先，数据最新）
+    策略2: 数据库提取降级（浏览器失败/Cloudflare反爬/超时时兜底）
+    """
+    # 策略1: 浏览器实时抓取
+    try:
+        replies = await _fetch_replies_via_browser(post_url)
+        if replies:
+            return replies
+    except Exception as e:
+        logger.warning(f"[Monitor] 浏览器抓取回复异常,尝试数据库降级: {post_url} ({e})")
+
+    # 策略2: 数据库降级（浏览器返回空或异常时，从已存储的回复中提取）
+    db_replies = await _fetch_replies_from_db(post_url)
+    if db_replies:
+        logger.info(f"[Monitor] 数据库降级提取到 {len(db_replies)} 条回复: {post_url}")
+    return db_replies
+
+
+async def _fetch_replies_from_db(post_url: str) -> List[Dict[str, Any]]:
+    """从数据库提取已存储的回复（浏览器抓取失败时的降级方案）
+
+    当浏览器遭遇 Cloudflare 反爬挑战页或超时时，从 x_twitter_reply 表
+    按原推文 ID 提取历史已抓取的回复，保证监控流程不中断。
+    """
+    # 从 URL 提取 tweet_id（与 _fetch_replies_via_browser 一致的解析逻辑）
+    tweet_id = ""
+    if "/status/" in post_url:
+        tweet_id = post_url.split("/status/")[-1].split("?")[0].split("#")[0].split("/")[0]
+    if not tweet_id:
+        return []
+
+    try:
+        async with get_session() as session:
+            stmt = (
+                select(XTwitterReply)
+                .where(XTwitterReply.post_id == tweet_id)
+                .order_by(desc(XTwitterReply.reply_created_at))
+                .limit(50)
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+            # 返回与 _parse_tweet_detail_response 兼容的 dict 结构
+            return [
+                {
+                    "reply_id": r.reply_id or "",
+                    "reply_url": r.reply_url or "",
+                    "username": r.replier_username or "",
+                    "nickname": r.replier_nickname or "",
+                    "avatar": r.replier_avatar or "",
+                    "content": r.reply_content or "",
+                    "user_id": r.replier_user_id or "",
+                    "likes_count": str(r.reply_likes_count or "0"),
+                    "created_at": r.reply_created_at or 0,
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.warning(f"[Monitor] 数据库降级提取回复失败: {e}")
+        return []
+
+
+def _parse_tweet_detail_response(data: dict, focal_tweet_id: str) -> List[Dict[str, Any]]:
+    """解析 TweetDetail GraphQL API 响应，提取回复列表
+
+    TweetDetail 响应包含焦点推文及其对话树中的所有回复。
+    结构: data.tweetResult.result.timeline.instructions[].entries[].content.itemContent.tweet_results.result
+    """
+    replies = []
+    try:
+        result = data.get("data", {}).get("tweetResult", {}).get("result", {})
+        if not result:
+            return []
+
+        instructions = result.get("timeline", {}).get("instructions", [])
+        for instruction in instructions:
+            entries = instruction.get("entries", [])
+            for entry in entries:
+                try:
+                    content = entry.get("content", {})
+                    item_content = content.get("itemContent", {})
+                    if not item_content:
+                        continue
+
+                    tweet_results = item_content.get("tweet_results", {})
+                    tweet = tweet_results.get("result", {})
+                    if not tweet:
+                        continue
+
+                    # 处理 TweetWithVisibilityResults 类型
+                    if tweet.get("__typename") == "TweetWithVisibilityResults":
+                        tweet = tweet.get("tweet", {})
+                        if not tweet:
+                            continue
+
+                    rest_id = tweet.get("rest_id", "")
+                    if not rest_id or rest_id == focal_tweet_id:
+                        continue
+
+                    legacy = tweet.get("legacy", {})
+                    full_text = legacy.get("full_text", "")
+                    if not full_text.strip():
+                        continue
+
+                    # 提取用户信息
+                    user_result = tweet.get("core", {}).get("user_results", {}).get("result", {})
+                    user_legacy = user_result.get("legacy", {})
+                    username = user_legacy.get("screen_name", "")
+                    nickname = user_legacy.get("name", "")
+                    avatar = user_legacy.get("profile_image_url_https", "")
+
+                    replies.append({
+                        "reply_id": rest_id,
+                        "reply_url": f"https://x.com/{username}/status/{rest_id}" if username else "",
+                        "username": username,
+                        "nickname": nickname,
+                        "avatar": avatar,
+                        "content": full_text,
+                        "user_id": user_result.get("rest_id", ""),
+                        "likes_count": str(legacy.get("favorite_count", 0)),
+                        "created_at": 0,
+                    })
+                except Exception:
+                    continue
+    except Exception as e:
+        logger.warning(f"解析 TweetDetail 响应失败: {e}")
+
+    return replies
 
 
 # ==================== 浏览器实例池(共享单例) ====================
@@ -455,9 +637,23 @@ async def _get_shared_browser():
         _shared_playwright = await async_playwright().start()
         _shared_browser = await _shared_playwright.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox"],
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                # CPU/内存优化：限制渲染进程数为 1，避免多页面产生多个 renderer 进程
+                "--renderer-process-limit=1",
+                # 禁用不必要的子进程，减少 CPU/内存开销
+                "--disable-extensions",
+                "--disable-plugins",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                # 限制 JS 堆内存，防止单页面内存泄漏
+                "--js-flags=--max-old-space-size=256",
+            ],
         )
-        logger.info("已启动共享浏览器实例(复用模式)")
+        logger.info("已启动共享浏览器实例(复用模式,已优化CPU/内存)")
         return _shared_browser, _shared_playwright
 
 
@@ -477,17 +673,9 @@ async def _close_shared_browser():
 async def _fetch_replies_via_browser(post_url: str) -> List[Dict[str, Any]]:
     """浏览器方案：访问推文/评论页面解析回复
 
-    优化:复用共享浏览器实例,只创建独立 context(保持隔离)。
-    避免每次调用都启动新浏览器(节省 1-3s/次)。
-    
-    智能等待策略:
-    - 使用 wait_for_selector 等待推文元素出现,替代固定 sleep(4)
-    - 滚动后等待新内容加载(最多 3 次,每次最多 5 秒)
-    - 超时时间可配置,避免无限等待
-    
-    请求拦截优化:
-    - 阻止图片、样式表、字体等非必要资源加载
-    - 仅允许 HTML、JS、JSON 请求,大幅提升页面加载速度
+    双重策略:
+    1. 优先拦截 X 的 GraphQL TweetDetail API 响应（不依赖 CSS 渲染，最可靠）
+    2. 兜底用 DOM 抓取 article 元素（使用 state="attached" 避免 CSS 拦截导致可见性检查失败）
     """
     cookies_str = os.getenv("X_TWITTER_COOKIES", "")
     if not cookies_str or "auth_token" not in cookies_str:
@@ -496,6 +684,14 @@ async def _fetch_replies_via_browser(post_url: str) -> List[Dict[str, Any]]:
     from api.services.x_comment_sender import _parse_cookies
     cookie_list = _parse_cookies(cookies_str)
 
+    # 规范化 URL
+    if "/i/web/status/" in post_url:
+        post_url = post_url.replace("/i/web/status/", "/i/status/")
+
+    tweet_id = ""
+    if "/status/" in post_url:
+        tweet_id = post_url.split("/status/")[-1].split("?")[0].split("#")[0].split("/")[0]
+
     context = None
     try:
         browser, _ = await _get_shared_browser()
@@ -503,28 +699,99 @@ async def _fetch_replies_via_browser(post_url: str) -> List[Dict[str, Any]]:
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800},
         )
-        
-        await context.route("**/*", lambda route: route.abort() 
-            if route.request.resource_type in ("image", "stylesheet", "font", "media") 
+
+        await context.route("**/*", lambda route: route.abort()
+            if route.request.resource_type in ("image", "stylesheet", "font", "media")
             else route.continue_())
 
         await context.add_cookies(cookie_list)
         page = await context.new_page()
 
-        await page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
-        
+        # 策略1: 拦截 GraphQL TweetDetail 响应(分页会有多条,全部收集)
+        tweet_detail_responses: List = []
+
+        def _on_response(response):
+            try:
+                if "TweetDetail" in response.url and response.status == 200:
+                    tweet_detail_responses.append(response)
+            except Exception:
+                pass
+
+        page.on("response", _on_response)
+
         try:
-            await page.wait_for_selector('article[data-testid="tweet"]', timeout=15000)
+            await page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
+        except Exception as e:
+            logger.warning(f"页面加载超时,继续尝试抓取已拦截的响应: {post_url} ({e})")
+
+        # Cloudflare 反爬挑战页快速检测：避免等待完整 GraphQL(25s)+DOM(8s) 超时
+        # "Just a moment..." / "Checking your browser" 是 Cloudflare 挑战页标志
+        try:
+            page_title = await page.title()
+            if "just a moment" in page_title.lower() or "checking your browser" in page_title.lower():
+                # 预期内的反爬降级路径（已有 DB 兜底），降为 DEBUG 避免后台监控循环刷屏
+                # （x_workbench_monitor 每轮会检查多个 post，WARNING 会产生大量噪音日志）
+                logger.debug(
+                    f"[Monitor] 检测到 Cloudflare 反爬挑战页(title={page_title!r}),"
+                    f"快速失败,降级到数据库提取: {post_url}"
+                )
+                return []  # 返回空，由 _fetch_replies_for_post 的 DB 降级兜底
         except Exception:
-            logger.warning(f"等待推文元素超时,页面可能未正确加载: {post_url}")
+            pass
+
+        # 轮询等待 TweetDetail 响应到达(最多 25s),而非固定 sleep
+        deadline = time.time() + 25
+        while time.time() < deadline and not tweet_detail_responses:
+            await asyncio.sleep(0.5)
+        # 已收到响应后再等 2s,收集可能的分页响应
+        if tweet_detail_responses:
+            await asyncio.sleep(2)
+
+        # 解析所有捕获到的 TweetDetail 响应,合并去重
+        if tweet_detail_responses:
+            all_replies: List[Dict[str, Any]] = []
+            seen_ids = set()
+            first_data = None
+            for idx, resp in enumerate(tweet_detail_responses):
+                try:
+                    data = await resp.json()
+                except Exception as e:
+                    logger.warning(f"解析 GraphQL 响应 JSON 失败: {e}")
+                    continue
+                if idx == 0:
+                    first_data = data
+                parsed = _parse_tweet_detail_response(data, tweet_id)
+                for r in parsed:
+                    rid = r.get("reply_id", "")
+                    if rid and rid not in seen_ids:
+                        seen_ids.add(rid)
+                        all_replies.append(r)
+            if all_replies:
+                logger.info(f"GraphQL API 抓取到 {len(all_replies)} 条回复(来自 {len(tweet_detail_responses)} 个响应): {post_url}")
+                return all_replies
+            # 诊断:响应已捕获但解析出 0 条,记录结构信息便于排查 parser
+            if isinstance(first_data, dict):
+                top_keys = list((first_data.get("data") or {}).keys())
+                logger.info(f"GraphQL API 响应无回复数据(data.keys={top_keys}),尝试 DOM 抓取: {post_url}")
+            else:
+                logger.info(f"GraphQL API 响应无回复数据,尝试 DOM 抓取: {post_url}")
+
+        # 策略2: DOM 抓取兜底（state="attached" 不依赖 CSS 可见性）
+        try:
+            await page.wait_for_selector('article[data-testid="tweet"]', timeout=8000, state="attached")
+        except Exception:
+            # 诊断:记录页面标题/URL,判断是否被登录墙/限流拦截
+            try:
+                title = await page.title()
+                cur_url = page.url
+                logger.warning(f"等待推文元素超时(title={title!r}, url={cur_url!r}): {post_url}")
+            except Exception:
+                logger.warning(f"等待推文元素超时,页面可能未正确加载: {post_url}")
             return []
 
         for _ in range(3):
             await page.evaluate("window.scrollBy(0, 1000)")
-            try:
-                await page.wait_for_selector('article[data-testid="tweet"]', timeout=5000)
-            except Exception:
-                pass
+            await asyncio.sleep(2)
 
         replies = await page.evaluate("""() => {
             const results = [];
@@ -540,14 +807,14 @@ async def _fetch_replies_via_browser(post_url: str) -> List[Dict[str, Any]]:
                 const username = parts[0];
                 const status_id = parts[1].split('?')[0].split('#')[0].split('/')[0];
                 const reply_url = `https://x.com/${parts[0]}/status/${status_id}`;
-                
+
                 const content_elem = article.querySelector('div[data-testid="tweetText"]');
                 const content = content_elem ? content_elem.innerText : '';
                 if (!content.trim()) return;
-                
+
                 const avatar_elem = article.querySelector('img[src*="profile_images"]');
                 const avatar = avatar_elem ? avatar_elem.getAttribute('src') : '';
-                
+
                 results.push({
                     reply_id: status_id,
                     reply_url: reply_url,
@@ -563,6 +830,8 @@ async def _fetch_replies_via_browser(post_url: str) -> List[Dict[str, Any]]:
             return results;
         }""")
 
+        if replies:
+            logger.info(f"DOM 抓取到 {len(replies)} 条回复: {post_url}")
         return replies
     except Exception as e:
         logger.error(f"浏览器抓取回复失败: {e}")
@@ -767,7 +1036,7 @@ async def _check_all_monitored_posts():
 
     logger.info(f"并发检查 {len(monitored_posts)} 个监控帖子的评论(并发上限 {_BROWSER_CONCURRENCY})")
 
-    sem = asyncio.Semaphore(_BROWSER_CONCURRENCY)
+    sem = _GLOBAL_BROWSER_SEM or asyncio.Semaphore(_BROWSER_CONCURRENCY)
 
     async def _check_with_sem(mp: XTwitterMonitoredPost):
         async with sem:
@@ -822,20 +1091,21 @@ async def _check_one_monitored_post(mp: XTwitterMonitoredPost):
         existing_result = await session.execute(existing_stmt)
         existing_ids = {row[0] for row in existing_result.all()}
 
-        my_username = await _get_my_username_async()
-
+        # 注意:多 cookie 池场景下不再过滤"自己的评论"。
+        # 用户明确要求:帖子下所有评论(包括自己用某个账号发的)都要被监控,
+        # 回复时由 cookie 池自动换一个不同账号回复,避免自回复循环。
+        # 已发评论回复(_check_one_sent_comment)仍用账号集合过滤以防循环。
         for c in comments:
-            comment_id = c.get("comment_id", "")
+            comment_id = c.get("reply_id", "") or c.get("comment_id", "")
             if not comment_id or comment_id in existing_ids:
                 continue
-            if c.get("username") and c.get("username") == my_username:
-                continue
+            # 不跳过 post 作者或本系统账号的评论,统一入库待 AI 回复
 
             new_comment = XTwitterPostReply(
                 monitored_post_id=mp.id,
                 post_id=mp.post_id,
                 comment_id=comment_id,
-                comment_url=c.get("comment_url", ""),
+                comment_url=c.get("reply_url", "") or c.get("comment_url", ""),
                 commenter_user_id=c.get("user_id", ""),
                 commenter_username=c.get("username", ""),
                 commenter_nickname=c.get("nickname", ""),

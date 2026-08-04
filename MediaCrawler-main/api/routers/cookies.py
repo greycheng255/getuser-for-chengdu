@@ -844,3 +844,22 @@ async def clear_bad_ips(
     pool = get_account_pool(platform)
     pool.clear_bad_ips()
     return {"success": True, "message": "已清除所有坏IP标记"}
+
+
+@router.post("/accounts/check-health")
+async def check_account_health(
+    platform: str = "dy",
+    current_user: dict = Depends(require_admin)
+):
+    """主动执行真实健康检测：检查Cookie格式 + IP是否被block
+
+    这是"真实展示"的核心接口：
+    - Cookie: 检查每个账号的Cookie是否包含必需登录态字段
+    - IP: 通过实际访问平台首页检测每个IP是否被风控
+    - 返回详细的检测结果，前端可据此展示真实的Cookie/IP block状态
+    """
+    from ..services.account_pool import _detect_network_interfaces
+    await _detect_network_interfaces()
+    pool = get_account_pool(platform)
+    result = await pool.check_all_health()
+    return result

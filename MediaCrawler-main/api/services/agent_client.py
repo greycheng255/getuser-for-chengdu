@@ -24,6 +24,14 @@ from pydantic import BaseModel
 
 from tools import utils
 
+
+def _get_engine():
+    """获取异步数据库引擎（公共方法，消除重复导入）"""
+    from database.db_session import get_async_engine
+    import config
+    return get_async_engine(config.SAVE_DATA_OPTION)
+
+
 # ==================== 配置 ====================
 
 # 碳硅交易平台地址（从环境变量读取，默认本地开发）
@@ -566,14 +574,12 @@ async def execute_platform_task(task_id: str, order_id: str, task_config: Dict[s
         )
 
         # 获取高意向客户
-        from database.db_session import get_async_engine
         from database.models import CustomerLead
         from sqlalchemy import select, desc
         from sqlalchemy.ext.asyncio import AsyncSession
         from sqlalchemy.orm import sessionmaker
-        import config
 
-        engine = get_async_engine(config.SAVE_DATA_OPTION)
+        engine = _get_engine()
         leads = []
         if engine:
             AsyncSessionFactory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

@@ -709,12 +709,214 @@ class AccountPool:
         if expired:
             logger.info(f"[AccountPool] Expired bad IPs cleared: {expired}")
 
-    def get_pool_status(self) -> Dict:
-        """获取账号池状态摘要"""
+    def _check_cookie_format(self, cookie: str) -> Dict:
+        """检查Cookie格式是否包含平台必需的登录态字段（快速检查，不发网络请求）
+
+        Returns:
+            {valid: bool, missing_fields: list, check_field: str}
+        """
+        if not cookie:
+            return {"valid": False, "missing_fields": ["Cookie为空"], "check_field": ""}
+
+        # 各平台必需的登录态字段
+        required_fields_map = {
+            "dy": ["sessionid", "sessionid_ss", "uid_tt"],
+            "douyin": ["sessionid", "sessionid_ss", "uid_tt"],
+            "xhs": ["web_session"],
+            "xiaohongshu": ["web_session"],
+            "wb": ["SUB"],
+            "weibo": ["SUB"],
+            "ks": ["passToken", "userId"],
+            "kuaishou": ["passToken", "userId"],
+            "bili": ["SESSDATA"],
+            "bilibili": ["SESSDATA"],
+            "x_twitter": ["auth_token", "ct0"],
+            "x": ["auth_token", "ct0"],
+        }
+        required = required_fields_map.get(self.platform, [])
+        missing = [f for f in required if f not in cookie]
+        check_field = required[0] if required else ""
+        return {"valid": len(missing) == 0, "missing_fields": missing, "check_field": check_field}
+
+    def _get_cookie_status(self, account: Account) -> str:
+        """根据账号状态和Cookie格式判断Cookie的真实状态
+
+        Returns:
+            valid / invalid / expired / cooldown / unknown
+        """
+        if not account.cookie:
+            return "invalid"
+
+        # 先检查格式
+        fmt = self._check_cookie_format(account.cookie)
+        if not fmt["valid"]:
+            return "invalid"
+
+        # 根据运行时状态判断
+        if account.status == "dead":
+            return "expired"  # Cookie已被标记为失效（运行时检测到登录过期）
+        if account.status == "cooldown":
+            return "cooldown"
+        if account.status == "banned":
+            return "expired"
+        return "valid"
+
+    async def check_all_health(self) -> Dict:
+        """主动执行真实健康检测：检查所有Cookie格式 + 所有IP是否被block
+
+        这是"真实展示"的核心：不只依赖被动失败记录，而是主动检测当前状态。
+        - Cookie: 检查格式是否包含必需登录态字段（快速）
+        - IP: 通过访问平台首页检查IP是否被风控（网络请求）
+
+        Returns:
+            {accounts_checked, ips_checked, cookie_results, ip_results, summary}
+        """
         now = time.time()
+        self._cleanup_expired_bad_ips()
+
+        # 1. 检查所有Cookie格式
+        cookie_results = []
+        for acc in self.accounts:
+            fmt = self._check_cookie_format(acc.cookie)
+            cookie_status = self._get_cookie_status(acc)
+            cookie_results.append({
+                "account_id": acc.account_id,
+                "alias": acc.cookie_alias,
+                "cookie_status": cookie_status,
+                "has_required_fields": fmt["valid"],
+                "missing_fields": fmt["missing_fields"],
+                "check_field": fmt["check_field"],
+                "runtime_status": acc.status,
+                "health_score": acc.health_score,
+                "fail_count": acc.fail_count,
+            })
+
+        # 2. 检查所有IP健康状态（并行检测所有网卡）
+        ip_results = {}
+        if _NETWORK_INTERFACE_MAP:
+            tasks = []
+            iface_list = []
+            for iface, ip in _NETWORK_INTERFACE_MAP.items():
+                # 先检查是否在坏IP列表中
+                is_bad = iface in self._bad_ips or ip in self._bad_ips
+                if is_bad:
+                    marked_time = self._bad_ips.get(iface) or self._bad_ips.get(ip, now)
+                    remaining_ttl = max(0, int(self._bad_ip_ttl - (now - marked_time)))
+                    ip_results[iface] = {
+                        "ip": ip,
+                        "status": "blocked",
+                        "marked_bad": True,
+                        "remaining_ttl": remaining_ttl,
+                        "last_checked": int(now),
+                    }
+                else:
+                    # 需要实际检测
+                    tasks.append(_check_ip_health_for_platform(iface, self.platform))
+                    iface_list.append(iface)
+
+            # 并行检测未标记为坏IP的网卡
+            if tasks:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for iface, result in zip(iface_list, results):
+                    ip = _NETWORK_INTERFACE_MAP.get(iface, "")
+                    if isinstance(result, Exception):
+                        ip_results[iface] = {
+                            "ip": ip,
+                            "status": "unknown",
+                            "marked_bad": False,
+                            "error": str(result),
+                            "last_checked": int(now),
+                        }
+                    elif result:
+                        ip_results[iface] = {
+                            "ip": ip,
+                            "status": "healthy",
+                            "marked_bad": False,
+                            "last_checked": int(now),
+                        }
+                    else:
+                        # IP被风控，主动标记为坏IP
+                        self._bad_ips[iface] = now
+                        ip_results[iface] = {
+                            "ip": ip,
+                            "status": "blocked",
+                            "marked_bad": True,
+                            "remaining_ttl": self._bad_ip_ttl,
+                            "last_checked": int(now),
+                        }
+                        logger.warning(f"[AccountPool] Health check: {iface} ({ip}) is BLOCKED by {self.platform}")
+        else:
+            ip_results["default"] = {
+                "ip": "unknown",
+                "status": "unknown",
+                "marked_bad": False,
+                "last_checked": int(now),
+            }
+
+        # 3. 汇总
+        cookie_valid = sum(1 for r in cookie_results if r["cookie_status"] == "valid")
+        cookie_invalid = sum(1 for r in cookie_results if r["cookie_status"] == "invalid")
+        cookie_expired = sum(1 for r in cookie_results if r["cookie_status"] == "expired")
+        ip_healthy = sum(1 for r in ip_results.values() if r["status"] == "healthy")
+        ip_blocked = sum(1 for r in ip_results.values() if r["status"] == "blocked")
+
+        return {
+            "platform": self.platform,
+            "checked_at": int(now),
+            "accounts_checked": len(cookie_results),
+            "ips_checked": len(ip_results),
+            "cookie_results": cookie_results,
+            "ip_results": ip_results,
+            "summary": {
+                "cookie_valid": cookie_valid,
+                "cookie_invalid": cookie_invalid,
+                "cookie_expired": cookie_expired,
+                "ip_healthy": ip_healthy,
+                "ip_blocked": ip_blocked,
+            },
+        }
+
+    def get_pool_status(self) -> Dict:
+        """获取账号池状态摘要（含Cookie/IP block详情）"""
+        now = time.time()
+        self._cleanup_expired_bad_ips()
+
         healthy = [a for a in self.accounts if a.status == "healthy"]
         cooldown = [a for a in self.accounts if a.status == "cooldown"]
         dead = [a for a in self.accounts if a.status == "dead"]
+
+        # 构建坏IP详情列表
+        bad_ip_list = []
+        for key, marked_time in self._bad_ips.items():
+            remaining_ttl = max(0, int(self._bad_ip_ttl - (now - marked_time)))
+            # 尝试找到对应的网卡名和IP
+            ip_addr = _NETWORK_INTERFACE_MAP.get(key, key)
+            bad_ip_list.append({
+                "key": key,
+                "interface": key if key in _NETWORK_INTERFACE_MAP else "",
+                "ip": ip_addr,
+                "marked_at": int(marked_time),
+                "remaining_ttl": remaining_ttl,
+            })
+
+        # 构建每个IP的健康状态
+        ip_health = {}
+        for iface, ip in _NETWORK_INTERFACE_MAP.items():
+            is_bad = iface in self._bad_ips or ip in self._bad_ips
+            if is_bad:
+                marked_time = self._bad_ips.get(iface) or self._bad_ips.get(ip, now)
+                remaining_ttl = max(0, int(self._bad_ip_ttl - (now - marked_time)))
+                ip_health[iface] = {
+                    "ip": ip,
+                    "status": "blocked",
+                    "remaining_ttl": remaining_ttl,
+                }
+            else:
+                ip_health[iface] = {
+                    "ip": ip,
+                    "status": "healthy",
+                    "remaining_ttl": 0,
+                }
 
         return {
             "platform": self.platform,
@@ -723,12 +925,16 @@ class AccountPool:
             "cooldown": len(cooldown),
             "dead": len(dead),
             "bad_ips": len(self._bad_ips),
+            "bad_ip_list": bad_ip_list,
+            "ip_health": ip_health,
             "current_account": self.current_account.account_id if self.current_account else None,
             "accounts": [
                 {
                     "account_id": a.account_id,
                     "alias": a.cookie_alias,
                     "status": a.status,
+                    "cookie_status": self._get_cookie_status(a),
+                    "cookie_missing_fields": self._check_cookie_format(a.cookie)["missing_fields"],
                     "health_score": a.health_score,
                     "fail_count": a.fail_count,
                     "success_count": a.success_count,
@@ -741,6 +947,7 @@ class AccountPool:
                     "proxy_ip": a.proxy_ip,
                     "network_interface": a.network_interface,
                     "public_ip": a.public_ip,
+                    "ip_blocked": (a.network_interface in self._bad_ips) if a.network_interface else False,
                 }
                 for a in self.accounts
             ],

@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的项目 - GEO系统</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .projects-container {
+            padding: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .projects-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .projects-header h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .project-card {
+            background: var(--card-bg);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            transition: var(--transition-normal);
+            cursor: pointer;
+        }
+
+        .project-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .project-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .project-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.25rem;
+        }
+
+        .project-domain {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .project-status {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .project-status.active {
+            background: var(--success-light);
+            color: var(--success-color);
+        }
+
+        .project-status.pending {
+            background: var(--warning-light);
+            color: var(--warning-color);
+        }
+
+        .project-meta {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .project-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .project-score {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .score-circle {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.125rem;
+            flex-shrink: 0;
+        }
+
+        .score-circle.high {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .score-circle.medium {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+        }
+
+        .score-circle.low {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+
+        .score-labels {
+            flex: 1;
+        }
+
+        .score-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8125rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            background: var(--card-bg);
+            border-radius: var(--radius-lg);
+            border: 2px dashed var(--border-color);
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        .empty-state h3 {
+            font-size: 1.25rem;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .empty-state p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+        }
+
+        .btn-primary {
+            background: var(--primary-gradient);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .loading-spinner {
+            text-align: center;
+            padding: 4rem;
+        }
+
+        .loading-spinner .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid var(--border-color);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .project-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .btn-small {
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            border-radius: var(--radius-sm);
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .btn-view {
+            background: var(--primary-gradient);
+            color: white;
+        }
+
+        .btn-delete {
+            background: var(--danger-light);
+            color: var(--danger-color);
+        }
+
+        .btn-ai {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .btn-ai:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>🚀 GEO系统</h1>
+                <p>AI搜索时代的内容优化</p>
+            </div>
+            
+            <nav>
+                <ul class="nav-menu">
+                    <li class="nav-item" data-section="home" onclick="window.location.href='index.html'">
+                        <span class="nav-icon">🏠</span>
+                        <span>首页</span>
+                    </li>
+                    <li class="nav-item active" data-section="projects" onclick="window.location.href='projects.html'">
+                        <span class="nav-icon">📁</span>
+                        <span>我的项目</span>
+                    </li>
+                    <li class="nav-item" data-section="ai-tasks" onclick="window.location.href='ai-tasks.html'">
+                        <span class="nav-icon">🤖</span>
+                        <span>AI任务</span>
+                    </li>
+                    <li class="nav-item" data-section="content-generator" onclick="window.location.href='content-generator.html'">
+                        <span class="nav-icon">✍️</span>
+                        <span>内容生成</span>
+                    </li>
+                    <li class="nav-item" data-section="content-analyzer" onclick="window.location.href='content-analyzer.html'">
+                        <span class="nav-icon">🔍</span>
+                        <span>内容分析</span>
+                    </li>
+                    <li class="nav-item" data-section="content-optimizer" onclick="window.location.href='content-optimizer.html'">
+                        <span class="nav-icon">⚡</span>
+                        <span>内容优化</span>
+                    </li>
+                    <li class="nav-item" data-section="metrics-tracker" onclick="window.location.href='metrics-tracker.html'">
+                        <span class="nav-icon">📊</span>
+                        <span>数据监测</span>
+                    </li>
+                    <li class="nav-item" data-section="roi-calculator" onclick="window.location.href='roi-calculator.html'">
+                        <span class="nav-icon">💰</span>
+                        <span>ROI计算</span>
+                    </li>
+                    <li class="nav-item" data-section="authority-builder" onclick="window.location.href='authority-builder.html'">
+                        <span class="nav-icon">🏛️</span>
+                        <span>信源建设</span>
+                    </li>
+                    <li class="nav-item" data-section="geo-expert" onclick="window.location.href='geo_optimizer.html'">
+                        <span class="nav-icon">🎯</span>
+                        <span>GEO优化专家</span>
+                    </li>
+                    <li class="nav-item" data-section="diagnose" onclick="window.location.href='website_diagnose.html'">
+                        <span class="nav-icon">🔎</span>
+                        <span>网站诊断</span>
+                    </li>
+                </ul>
+            </nav>
+            <div class="user-info" style="padding: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <span id="currentUser" style="color: rgba(255,255,255,0.8); font-size: 0.875rem;">加载中...</span>
+                <button onclick="logout()" style="margin-top: 0.5rem; padding: 0.5rem 1rem; background: rgba(255,255,255,0.1); border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 0.75rem;">退出</button>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <div class="projects-container">
+                <div class="projects-header">
+                    <h1>📁 我的项目</h1>
+                    <a href="geo_demo.html" class="btn-primary">+ 新建项目</a>
+                </div>
+
+                <div id="projectsList">
+                    <div class="loading-spinner">
+                        <div class="spinner"></div>
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // 自动检测：如果页面通过localhost访问则用localhost:5000，否则用当前host
+        const API_BASE_URL = (typeof API_HOST !== 'undefined' && API_HOST) ? API_HOST :
+            (window.location.protocol + '//' + window.location.hostname + ':5001') + '/api';
+
+        // 检查登录状态
+        function checkAuth() {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                window.location.href = 'login.html';
+                return false;
+            }
+            return true;
+        }
+
+        // 获取用户项目列表
+        async function loadProjects() {
+            if (!checkAuth()) return;
+
+            const token = localStorage.getItem('access_token');
+            const container = document.getElementById('projectsList');
+
+            try {
+                // 获取诊断记录
+                const diagnosisResponse = await fetch(`${API_BASE_URL}/diagnosis/history`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                const diagnosisData = await diagnosisResponse.json();
+
+                // 获取优化方案
+                const plansResponse = await fetch(`${API_BASE_URL}/optimization/plans`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                const plansData = await plansResponse.json();
+
+                const projects = [];
+
+                // 合并诊断记录
+                if (diagnosisData.success && diagnosisData.data) {
+                    diagnosisData.data.forEach(item => {
+                        projects.push({
+                            id: item.id,
+                            type: 'diagnosis',
+                            title: item.brand_name || item.domain,
+                            domain: item.domain,
+                            date: item.created_at,
+                            score: item.overall_score,
+                            status: 'active'
+                        });
+                    });
+                }
+
+                // 合并优化方案
+                if (plansData.success && plansData.data) {
+                    plansData.data.forEach(item => {
+                        projects.push({
+                            id: item.id,
+                            type: 'plan',
+                            title: item.brand_name,
+                            domain: item.domain,
+                            date: item.created_at,
+                            score: null,
+                            status: 'active'
+                        });
+                    });
+                }
+
+                // 按时间排序
+                projects.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+                renderProjects(projects);
+            } catch (error) {
+                console.error('加载项目失败:', error);
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚠️</div>
+                        <h3>加载失败</h3>
+                        <p>请稍后重试</p>
+                    </div>
+                `;
+            }
+        }
+
+        // 渲染项目列表
+        function renderProjects(projects) {
+            const container = document.getElementById('projectsList');
+
+            if (projects.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📂</div>
+                        <h3>暂无项目</h3>
+                        <p>创建您的第一个GEO优化项目</p>
+                        <a href="geo_demo.html" class="btn-primary">开始创建</a>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="projects-grid">
+                    ${projects.map(project => `
+                        <div class="project-card" onclick="viewProject(${project.id}, '${project.type}')">
+                            <div class="project-header">
+                                <div>
+                                    <div class="project-title">${project.title}</div>
+                                    <div class="project-domain">${project.domain}</div>
+                                </div>
+                                <span class="project-status ${project.status}">
+                                    ${project.status === 'active' ? '进行中' : '待处理'}
+                                </span>
+                            </div>
+                            
+                            <div class="project-meta">
+                                <div class="project-meta-item">
+                                    <span>📅</span>
+                                    <span>${formatDate(project.date)}</span>
+                                </div>
+                                <div class="project-meta-item">
+                                    <span>📊</span>
+                                    <span>${project.type === 'diagnosis' ? '网站诊断' : '优化方案'}</span>
+                                </div>
+                            </div>
+                            
+                            ${project.score !== null ? `
+                            <div class="project-score">
+                                <div class="score-circle ${getScoreClass(project.score)}">
+                                    ${Math.round(project.score)}
+                                </div>
+                                <div class="score-labels">
+                                    <div class="score-label">
+                                        <span>综合评分</span>
+                                    </div>
+                                </div>
+                            </div>
+                            ` : ''}
+                            
+                            <div class="project-actions">
+                                <button class="btn-small btn-view" onclick="event.stopPropagation(); viewProject(${project.id}, '${project.type}')">
+                                    查看详情
+                                </button>
+                                ${project.type === 'plan' ? `
+                                <button class="btn-small btn-ai" onclick="event.stopPropagation(); createAITasks(${project.id})" title="生成AI任务">
+                                    🤖 AI任务
+                                </button>
+                                ` : ''}
+                                <button class="btn-small btn-delete" onclick="event.stopPropagation(); deleteProject(${project.id}, '${project.type}')">
+                                    删除
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        // 获取评分样式
+        function getScoreClass(score) {
+            if (score >= 80) return 'high';
+            if (score >= 60) return 'medium';
+            return 'low';
+        }
+
+        // 格式化日期
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('zh-CN');
+        }
+
+        // 查看项目详情
+        function viewProject(id, type) {
+            if (type === 'diagnosis') {
+                window.location.href = `diagnosis_detail.html?id=${id}`;
+            } else {
+                window.location.href = `plan_detail.html?id=${id}`;
+            }
+        }
+
+        // 删除项目
+        async function deleteProject(id, type) {
+            if (!confirm('确定要删除这个项目吗？')) return;
+
+            const token = localStorage.getItem('access_token');
+            const endpoint = type === 'diagnosis' ? `/diagnosis/${id}` : `/optimization/plans/${id}`;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    loadProjects(); // 重新加载
+                } else {
+                    alert('删除失败: ' + data.message);
+                }
+            } catch (error) {
+                console.error('删除失败:', error);
+                alert('删除失败');
+            }
+        }
+
+        // 创建AI任务
+        async function createAITasks(planId) {
+            if (!confirm('确定要为这个优化方案生成AI任务吗？\n\n系统将自动创建以下任务：\n• 品牌GEO优化文章\n• 关键词深度文章（3篇）\n• FAQ问答生成\n• Schema结构化数据\n• GEO优化落地页')) return;
+
+            const token = localStorage.getItem('access_token');
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/ai-tasks/create-from-plan`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ plan_id: planId })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    alert(`✅ 成功创建 ${data.data.count} 个AI任务！\n\n点击确定前往AI任务页面查看和管理。`);
+                    window.location.href = 'ai-tasks.html';
+                } else {
+                    alert('创建失败: ' + data.message);
+                }
+            } catch (error) {
+                console.error('创建AI任务失败:', error);
+                alert('创建失败，请稍后重试');
+            }
+        }
+
+        // 获取当前用户
+        async function getCurrentUser() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('currentUser').textContent = `👤 ${data.data.username}`;
+                }
+            } catch (error) {
+                console.error('获取用户信息失败:', error);
+            }
+        }
+
+        // 退出登录
+        function logout() {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('username');
+            window.location.href = 'login.html';
+        }
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', () => {
+            if (checkAuth()) {
+                getCurrentUser();
+                loadProjects();
+            }
+        });
+    </script>
+</body>
+</html>

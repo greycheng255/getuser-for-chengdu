@@ -114,6 +114,8 @@ export interface AccountItem {
   account_id: string;
   alias: string;
   status: string;  // healthy / cooldown / banned / dead
+  cookie_status: string;  // valid / invalid / expired / cooldown / unknown
+  cookie_missing_fields: string[];
   health_score: number;
   fail_count: number;
   success_count: number;
@@ -126,6 +128,21 @@ export interface AccountItem {
   proxy_ip: string;
   network_interface: string;  // 网卡名: eth0/eth1/eth2
   public_ip: string;          // 绑定的公网IP
+  ip_blocked: boolean;        // 当前绑定的IP是否被block
+}
+
+export interface BadIpInfo {
+  key: string;
+  interface: string;
+  ip: string;
+  marked_at: number;
+  remaining_ttl: number;
+}
+
+export interface IpHealthInfo {
+  ip: string;
+  status: string;  // healthy / blocked / unknown
+  remaining_ttl: number;
 }
 
 export interface AccountPoolStatus {
@@ -135,9 +152,44 @@ export interface AccountPoolStatus {
   cooldown: number;
   dead: number;
   bad_ips: number;
+  bad_ip_list: BadIpInfo[];
+  ip_health: Record<string, IpHealthInfo>;
   current_account: string | null;
   accounts: AccountItem[];
   network_interfaces: Record<string, string>;  // 网卡名 → 公网IP
+}
+
+export interface HealthCheckResult {
+  platform: string;
+  checked_at: number;
+  accounts_checked: number;
+  ips_checked: number;
+  cookie_results: Array<{
+    account_id: string;
+    alias: string;
+    cookie_status: string;
+    has_required_fields: boolean;
+    missing_fields: string[];
+    check_field: string;
+    runtime_status: string;
+    health_score: number;
+    fail_count: number;
+  }>;
+  ip_results: Record<string, {
+    ip: string;
+    status: string;  // healthy / blocked / unknown
+    marked_bad: boolean;
+    remaining_ttl?: number;
+    error?: string;
+    last_checked: number;
+  }>;
+  summary: {
+    cookie_valid: number;
+    cookie_invalid: number;
+    cookie_expired: number;
+    ip_healthy: number;
+    ip_blocked: number;
+  };
 }
 
 export const getAccounts = (platform: string = 'dy'): Promise<AccountPoolStatus> => {
@@ -150,4 +202,8 @@ export const refreshAccounts = (platform: string = 'dy'): Promise<{ success: boo
 
 export const clearBadIps = (platform: string = 'dy'): Promise<{ success: boolean; message: string }> => {
   return request.post('/cookies/accounts/clear-bad-ips', null, { params: { platform } });
+};
+
+export const checkAccountHealth = (platform: string = 'dy'): Promise<HealthCheckResult> => {
+  return request.post('/cookies/accounts/check-health', null, { params: { platform } });
 };

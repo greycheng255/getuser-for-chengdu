@@ -5,23 +5,20 @@
  * - 套餐状态与配额(核心)
  * - 用量统计(视频/评论/线索)
  * - 余额与充值
- * - Cookie管理(子Tab)
- * - 商业化信息(子Tab,对管理员显示完整版)
+ * - 商业化信息(对管理员显示)
+ *
+ * 注:Cookie管理已迁移至"机器人账号"页面
  */
+import { message } from '../utils/antdMessage';
 import React, { useEffect, useState } from 'react';
-import {
-  Card, Tabs, Row, Col, Statistic, Progress, Tag, Button, Space, message,
-  Modal, InputNumber, Radio, Empty, Spin, Alert, Typography,
-} from 'antd';
+import { Card, Row, Col, Statistic, Progress, Tag, Button, Space, Modal, InputNumber, Radio, Empty, Spin, Alert, Typography } from 'antd';
 import {
   CrownOutlined, WalletOutlined, ThunderboltOutlined, FileTextOutlined,
   MessageOutlined, UserOutlined, ReloadOutlined, ArrowUpOutlined,
-  SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getMyPlan, listPlans, upgradePlan, rechargeBalance, type PlanInfo, type PlanConfig } from '../api/plan';
 import { authStorage } from '../api/auth';
-import CookieManager from './CookieManager';
 import BusinessManager from './BusinessManager';
 
 const { Title, Text } = Typography;
@@ -127,7 +124,7 @@ const Mine: React.FC = () => {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: 80 }}>
-        <Spin size="large" tip="加载中..." />
+        <Spin size="large" description="加载中..." />
       </div>
     );
   }
@@ -338,34 +335,12 @@ const Mine: React.FC = () => {
         </Row>
       </Card>
 
-      {/* === 子Tab:Cookie管理 / 商业化 === */}
-      <Card style={{ marginTop: 16 }}>
-        <Tabs
-          defaultActiveKey="cookies"
-          items={[
-            {
-              key: 'cookies',
-              label: (
-                <span>
-                  <SafetyCertificateOutlined />
-                  Cookie管理
-                </span>
-              ),
-              children: <CookieManager />,
-            },
-            ...(isAdmin ? [{
-              key: 'business',
-              label: (
-                <span>
-                  <WalletOutlined />
-                  商业化管理
-                </span>
-              ),
-              children: <BusinessManager />,
-            }] : []),
-          ]}
-        />
-      </Card>
+      {/* === 商业化管理 === */}
+      {isAdmin && (
+        <Card title="商业化管理" style={{ marginTop: 16 }}>
+          <BusinessManager />
+        </Card>
+      )}
 
       {/* === 套餐升级弹窗 === */}
       <Modal

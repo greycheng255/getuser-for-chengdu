@@ -329,7 +329,7 @@ def calculate_user_value(content: str, like_count: str = "0") -> dict:
             score += 10
         elif likes > 10:
             score += 5
-    except:
+    except Exception:
         pass
     
     # 评论长度加分（详细评论通常更有价值）
@@ -779,7 +779,7 @@ async def _task_to_dict(task: CrawlerTaskModel, session: AsyncSession = None) ->
         if task.promo_config:
             try:
                 promo_config = json.loads(task.promo_config)
-            except:
+            except Exception:
                 promo_config = None
 
         return {
@@ -3387,7 +3387,7 @@ async def generate_ad_content_api(task_id: str, request: GenerateContentRequest,
         if task.promo_config:
             try:
                 promo_config = json.loads(task.promo_config)
-            except:
+            except Exception:
                 promo_config = {}
         
         # 生成文案

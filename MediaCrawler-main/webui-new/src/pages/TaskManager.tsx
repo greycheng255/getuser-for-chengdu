@@ -1,9 +1,6 @@
+import { message } from '../utils/antdMessage';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import {
-  Card, Button, Tag, Space, Modal, Form, Input, Select, message, notification,
-  Radio, Row, Col, Statistic, Empty, Progress, Spin, Alert,
-  Steps, Tooltip, Tabs, Descriptions, Badge, List, Popover, Popconfirm,
-} from 'antd';
+import { Card, Button, Tag, Space, Modal, Form, Input, Select, notification, Radio, Row, Col, Statistic, Empty, Progress, Spin, Alert, Steps, Tooltip, Tabs, Descriptions, Badge, List, Popover, Popconfirm } from 'antd';
 import {
   PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined,
   PlusOutlined, RobotOutlined, ReloadOutlined,
@@ -160,14 +157,14 @@ const OutreachJobsPanel: React.FC<{ taskId?: string }> = ({ taskId }) => {
       {/* 加载状态 */}
       {jobsLoading && !localStats && (
         <div style={{ textAlign: 'center', padding: 40 }}>
-          <Spin tip="加载获客任务数据..." />
+          <Spin description="加载获客任务数据..." />
         </div>
       )}
 
       {/* 错误提示 */}
       {fetchError && !localStats && (
         <div style={{ textAlign: 'center', padding: 20 }}>
-          <Alert type="error" message={fetchError} showIcon style={{ marginBottom: 16 }} />
+          <Alert type="error" title={fetchError} showIcon style={{ marginBottom: 16 }} />
           <Button type="primary" onClick={() => { setJobsLoading(true); fetchJobs(); }}>重试</Button>
         </div>
       )}
@@ -176,22 +173,22 @@ const OutreachJobsPanel: React.FC<{ taskId?: string }> = ({ taskId }) => {
       {localStats && (
         <Row gutter={12} style={{ marginBottom: 16 }}>
           <Col span={6}>
-            <Card size="small" bodyStyle={{ padding: '12px 16px' }}>
+            <Card size="small" styles={{ body: { padding: '12px 16px' } }}>
               <Statistic title="总发送" value={localStats.total_success + localStats.total_failed} suffix={<span style={{ fontSize: 12, color: '#999' }}>/ {localStats.total_targets}</span>} styles={{ content: { fontSize: 22 } }} />
             </Card>
           </Col>
           <Col span={6}>
-            <Card size="small" bodyStyle={{ padding: '12px 16px' }}>
+            <Card size="small" styles={{ body: { padding: '12px 16px' } }}>
               <Statistic title="成功" value={localStats.total_success} styles={{ content: { fontSize: 22, color: '#52c41a' } }} prefix="✅" />
             </Card>
           </Col>
           <Col span={6}>
-            <Card size="small" bodyStyle={{ padding: '12px 16px' }}>
+            <Card size="small" styles={{ body: { padding: '12px 16px' } }}>
               <Statistic title="失败" value={localStats.total_failed} styles={{ content: { fontSize: 22, color: '#ff4d4f' } }} prefix="❌" />
             </Card>
           </Col>
           <Col span={6}>
-            <Card size="small" bodyStyle={{ padding: '12px 16px' }}>
+            <Card size="small" styles={{ body: { padding: '12px 16px' } }}>
               <Statistic title="成功率" value={localStats.success_rate} suffix="%" styles={{ content: { fontSize: 22, color: localStats.success_rate > 50 ? '#52c41a' : '#faad14' } }} />
             </Card>
           </Col>
@@ -202,7 +199,7 @@ const OutreachJobsPanel: React.FC<{ taskId?: string }> = ({ taskId }) => {
       {localStats && (
         <Row gutter={12} style={{ marginBottom: 16 }}>
           <Col span={12}>
-            <Card size="small" title="今日统计" bodyStyle={{ padding: '8px 16px' }}>
+            <Card size="small" title="今日统计" styles={{ body: { padding: '8px 16px' } }}>
               <Space size={24}>
                 <span>发送: <b>{(localStats.today_success || 0) + (localStats.today_failed || 0)}</b></span>
                 <span style={{ color: '#52c41a' }}>成功: <b>{localStats.today_success || 0}</b></span>
@@ -211,7 +208,7 @@ const OutreachJobsPanel: React.FC<{ taskId?: string }> = ({ taskId }) => {
             </Card>
           </Col>
           <Col span={12}>
-            <Card size="small" title="风控状态" bodyStyle={{ padding: '8px 16px' }}>
+            <Card size="small" title="风控状态" styles={{ body: { padding: '8px 16px' } }}>
               {localStats.cooldown_remaining > 0 ? (
                 <span style={{ color: '#ff4d4f' }}>🔥 冷却中，剩余 {Math.ceil(localStats.cooldown_remaining / 60)} 分钟</span>
               ) : (
@@ -225,7 +222,7 @@ const OutreachJobsPanel: React.FC<{ taskId?: string }> = ({ taskId }) => {
 
       {/* 7天趋势 */}
       {localStats?.daily_stats && localStats.daily_stats.some((d: any) => d.success > 0 || d.failed > 0) && (
-        <Card size="small" title="最近7天趋势" style={{ marginBottom: 16 }} bodyStyle={{ padding: '8px 16px' }}>
+        <Card size="small" title="最近7天趋势" style={{ marginBottom: 16 }} styles={{ body: { padding: '8px 16px' } }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 80 }}>
             {localStats.daily_stats.map((d: any, i: number) => {
               const maxVal = Math.max(...localStats.daily_stats.map((x: any) => x.success + x.failed), 1);
@@ -346,7 +343,7 @@ const OutreachJobsPanel: React.FC<{ taskId?: string }> = ({ taskId }) => {
         width={600}
       >
         {logModalLoading ? (
-          <div style={{ textAlign: 'center', padding: 30 }}><Spin tip="加载日志..." /></div>
+          <div style={{ textAlign: 'center', padding: 30 }}><Spin description="加载日志..." /></div>
         ) : logModalData ? (
           <div>
             {/* 基本信息 */}

@@ -1,0 +1,58 @@
+# GEO系统模型配置
+
+models:
+  # 默认对话模型
+  default_chat:
+    provider: openai
+    model: gpt-4o
+    api_key: ${OPENAI_API_KEY}
+    base_url: https://api.openai.com/v1
+    temperature: 0.7
+    max_tokens: 4000
+    timeout: 60
+
+  # 备用对话模型
+  backup_chat:
+    provider: anthropic
+    model: claude-3-sonnet-20240229
+    api_key: ${ANTHROPIC_API_KEY}
+    temperature: 0.7
+    max_tokens: 4000
+
+  # 默认Embedding模型
+  default_embedding:
+    provider: openai
+    model: text-embedding-3-small
+    api_key: ${OPENAI_API_KEY}
+    base_url: https://api.openai.com/v1
+    dimensions: 1536
+
+  # 长文本模型（用于文章生成）
+  longform:
+    provider: openai
+    model: gpt-4o
+    api_key: ${OPENAI_API_KEY}
+    temperature: 0.8
+    max_tokens: 8000
+
+  # 分析模型（用于数据分析）
+  analysis:
+    provider: openai
+    model: gpt-4o-mini
+    api_key: ${OPENAI_API_KEY}
+    temperature: 0.3
+    max_tokens: 2000
+
+# 模型选择策略
+model_selection:
+  content_generation: default_chat
+  content_rewrite: longform
+  data_analysis: analysis
+  embedding: default_embedding
+  fallback: backup_chat
+
+# 重试配置
+retry:
+  max_attempts: 3
+  backoff_factor: 2
+  timeout: 60

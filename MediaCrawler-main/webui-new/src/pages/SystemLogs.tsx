@@ -1,213 +1,364 @@
-import React, { useEffect, useState } from 'react';
+import { message } from '../utils/antdMessage';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Card, Table, Tag, Space, Button, Input, Select, DatePicker, Empty, Spin, Tooltip, Form } from 'antd';
 import {
-  Card, Table, Tag, Space, Button, Input, Select, DatePicker, message,
-  Empty, Spin, Badge, Tooltip,
-} from 'antd';
-import {
-  ReloadOutlined, ClearOutlined, FileTextOutlined,
+  ReloadOutlined, FileTextOutlined, DownloadOutlined,
   CheckCircleOutlined, WarningOutlined, CloseCircleOutlined,
   InfoCircleOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { auditLogApi } from '../api/prdGap';
 
 const { Option } = Select;
 const { RangePicker } = DatePicker;
 
-interface LogEntry {
-  id: string;
-  timestamp: string;
-  level: 'info' | 'success' | 'warning' | 'error';
-  module: string;
-  message: string;
-  detail?: string;
+// 真实后端 AuditLog 字段（与 api/services/utils/audit_log.py: AuditLog 一致）
+interface AuditLogEntry {
+  log_id: string;
+  action_type: string;
+  user_id?: number | null;
+  platform?: string;
+  target?: string;
+  description?: string;
+  request_data?: Record<string, unknown>;
+  response_data?: Record<string, unknown>;
+  ip_address?: string;
+  user_agent?: string;
+  status: string; // success / failed / partial / needs_review / started
+  error_message?: string;
+  created_at?: string;
 }
 
-const mockLogs: LogEntry[] = [
-  { id: '1', timestamp: new Date(Date.now() - 1000 * 60).toISOString(), level: 'info', module: 'crawler', message: '开始执行采集任务 #task_001', detail: '平台: xhs, 关键词: AI工具' },
-  { id: '2', timestamp: new Date(Date.now() - 1000 * 120).toISOString(), level: 'success', module: 'crawler', message: '采集任务完成', detail: '共获取 156 条数据，识别 23 条线索' },
-  { id: '3', timestamp: new Date(Date.now() - 1000 * 300).toISOString(), level: 'warning', module: 'scorer', message: '评分模型置信度较低', detail: '部分文本内容过短，评分可能不准确' },
-  { id: '4', timestamp: new Date(Date.now() - 1000 * 600).toISOString(), level: 'error', module: 'crawler', message: '采集请求失败', detail: '请求超时，请检查网络连接' },
-  { id: '5', timestamp: new Date(Date.now() - 1000 * 900).toISOString(), level: 'info', module: 'system', message: '系统启动', detail: '获客系统已启动' },
-  { id: '6', timestamp: new Date(Date.now() - 1000 * 1200).toISOString(), level: 'success', module: 'lead', message: '新线索入库', detail: '用户 @ai_lover 被识别为高意向线索' },
-  { id: '7', timestamp: new Date(Date.now() - 1000 * 1800).toISOString(), level: 'info', module: 'task', message: '定时任务触发', detail: '执行每日数据汇总' },
-  { id: '8', timestamp: new Date(Date.now() - 1000 * 3600).toISOString(), level: 'warning', module: 'system', message: '内存使用率较高', detail: '当前内存使用率 82%，建议清理缓存' },
-];
+interface ActionTypeOption {
+  value: string;
+  label: string;
+}
 
-const levelConfig: Record<string, { color: string; icon: React.ReactNode }> = {
-  info: { color: 'blue', icon: <InfoCircleOutlined /> },
+// 状态 -> 颜色/图标 映射
+const statusConfig: Record<string, { color: string; icon: React.ReactNode }> = {
   success: { color: 'green', icon: <CheckCircleOutlined /> },
-  warning: { color: 'orange', icon: <WarningOutlined /> },
-  error: { color: 'red', icon: <CloseCircleOutlined /> },
+  partial: { color: 'blue', icon: <InfoCircleOutlined /> },
+  started: { color: 'blue', icon: <InfoCircleOutlined /> },
+  needs_review: { color: 'orange', icon: <WarningOutlined /> },
+  failed: { color: 'red', icon: <CloseCircleOutlined /> },
 };
 
-const moduleOptions = [
-  { value: 'crawler', label: '采集模块' },
-  { value: 'scorer', label: '评分模块' },
-  { value: 'lead', label: '线索模块' },
-  { value: 'task', label: '任务调度' },
-  { value: 'system', label: '系统' },
+// 平台选项（与后端 PLATFORMS 对齐，部分常用）
+const platformOptions = [
+  { value: 'douyin', label: '抖音' },
+  { value: 'xiaohongshu', label: '小红书' },
+  { value: 'weibo', label: '微博' },
+  { value: 'zhihu', label: '知乎' },
+  { value: 'bilibili', label: '哔哩哔哩' },
+  { value: 'baidu', label: '百度' },
+  { value: 'toutiao', label: '头条' },
+  { value: 'x', label: 'X' },
+  { value: 'hackernews', label: 'Hacker News' },
+  { value: 'reddit', label: 'Reddit' },
+  { value: 'github', label: 'GitHub' },
+  { value: 'youtube', label: 'YouTube' },
 ];
 
+// action_type 中文标签
+const actionTypeLabels: Record<string, string> = {
+  publish: '发布',
+  interaction: '互动',
+  config_change: '配置变更',
+  account_mgmt: '账号管理',
+  login: '登录',
+  export: '数据导出',
+  other: '其他',
+};
+
 const SystemLogs: React.FC = () => {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [filterLevel, setFilterLevel] = useState<string>('');
-  const [filterModule, setFilterModule] = useState<string>('');
-  const [searchText, setSearchText] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [actionTypes, setActionTypes] = useState<ActionTypeOption[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
+  // 筛选条件
+  const [filterActionType, setFilterActionType] = useState<string>('');
+  const [filterUserId, setFilterUserId] = useState<string>('');
+  const [filterPlatform, setFilterPlatform] = useState<string>('');
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
 
+  // 加载操作类型枚举
   useEffect(() => {
-    fetchLogs();
-    const interval = setInterval(fetchLogs, 10000);
-    return () => clearInterval(interval);
+    (async () => {
+      try {
+        const resp: any = await auditLogApi.actionTypes();
+        const items: any[] = resp?.data?.items || [];
+        setActionTypes(items.map(it => ({
+          value: it.value,
+          label: actionTypeLabels[it.value] || it.label || it.value,
+        })));
+      } catch (e) {
+        // 降级使用本地枚举
+        setActionTypes(Object.entries(actionTypeLabels).map(([v, l]) => ({ value: v, label: l })));
+      }
+    })();
   }, []);
 
-  const fetchLogs = async () => {
+  const buildParams = useCallback(() => {
+    const params: Record<string, unknown> = {
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    };
+    if (filterActionType) params.action_type = filterActionType;
+    if (filterUserId) {
+      const uid = parseInt(filterUserId, 10);
+      if (!Number.isNaN(uid)) params.user_id = uid;
+    }
+    if (filterPlatform) params.platform = filterPlatform;
+    if (dateRange && dateRange[0] && dateRange[1]) {
+      params.start_date = dateRange[0].format('YYYY-MM-DD');
+      params.end_date = dateRange[1].format('YYYY-MM-DD');
+    }
+    return params;
+  }, [filterActionType, filterUserId, filterPlatform, dateRange, page, pageSize]);
+
+  const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setLogs(mockLogs);
+      const resp: any = await auditLogApi.list(buildParams());
+      const data = resp?.data || {};
+      const items: AuditLogEntry[] = data.items || [];
+      setLogs(items);
+      // 后端 total 为本页条数（list_logs 不返回真实 total），用 items 长度+偏移估算
+      setTotal(Number(data.total ?? items.length) + Number(data.offset ?? 0));
+    } catch (e) {
+      console.error('fetch audit logs failed:', e);
+      message.error('加载操作日志失败');
+      setLogs([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
+  }, [buildParams]);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
+
+  const handleSearch = () => {
+    setPage(1);
+    fetchLogs();
   };
 
-  const filteredLogs = logs.filter(log => {
-    if (filterLevel && log.level !== filterLevel) return false;
-    if (filterModule && log.module !== filterModule) return false;
-    if (searchText && !log.message.toLowerCase().includes(searchText.toLowerCase())) return false;
-    if (dateRange && dateRange[0] && dateRange[1]) {
-      const logDate = dayjs(log.timestamp);
-      if (logDate.isBefore(dateRange[0]) || logDate.isAfter(dateRange[1])) return false;
-    }
-    return true;
-  });
+  const handleReset = () => {
+    setFilterActionType('');
+    setFilterUserId('');
+    setFilterPlatform('');
+    setDateRange(null);
+    setPage(1);
+  };
 
-  const handleClear = () => {
-    setLogs([]);
-    message.success('日志已清空');
+  const handleExportCsv = async () => {
+    setExporting(true);
+    try {
+      const params: Record<string, unknown> = {};
+      if (filterActionType) params.action_type = filterActionType;
+      if (filterUserId) {
+        const uid = parseInt(filterUserId, 10);
+        if (!Number.isNaN(uid)) params.user_id = uid;
+      }
+      if (filterPlatform) params.platform = filterPlatform;
+      if (dateRange && dateRange[0] && dateRange[1]) {
+        params.start_date = dateRange[0].format('YYYY-MM-DD');
+        params.end_date = dateRange[1].format('YYYY-MM-DD');
+      }
+      const blob: any = await auditLogApi.exportCsv(params);
+      // axios responseType=blob 时返回 Blob
+      const url = window.URL.createObjectURL(
+        blob instanceof Blob ? blob : new Blob([blob as any], { type: 'text/csv' })
+      );
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `audit_logs_${dayjs().format('YYYYMMDD_HHmmss')}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      message.success('CSV 导出成功');
+    } catch (e) {
+      console.error('export csv failed:', e);
+      message.error('CSV 导出失败');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const columns = [
     {
       title: '时间',
-      dataIndex: 'timestamp',
-      key: 'timestamp',
+      dataIndex: 'created_at',
+      key: 'created_at',
       width: 180,
-      render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm:ss'),
-      sorter: (a: LogEntry, b: LogEntry) => dayjs(a.timestamp).unix() - dayjs(b.timestamp).unix(),
+      render: (v: string) => v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '-',
+      sorter: (a: AuditLogEntry, b: AuditLogEntry) =>
+        dayjs(a.created_at || 0).unix() - dayjs(b.created_at || 0).unix(),
     },
     {
-      title: '级别',
-      dataIndex: 'level',
-      key: 'level',
-      width: 100,
-      render: (v: string) => {
-        const config = levelConfig[v];
-        return <Tag color={config?.color} icon={config?.icon}>{v.toUpperCase()}</Tag>;
-      },
-    },
-    {
-      title: '模块',
-      dataIndex: 'module',
-      key: 'module',
-      width: 120,
-      render: (v: string) => {
-        const moduleLabel = moduleOptions.find(m => m.value === v)?.label || v;
-        return <Tag>{moduleLabel}</Tag>;
-      },
-    },
-    {
-      title: '消息',
-      dataIndex: 'message',
-      key: 'message',
-      render: (v: string, record: LogEntry) => (
-        <Tooltip title={record.detail} placement="topLeft">
-          <span style={{ cursor: 'help' }}>{v}</span>
-        </Tooltip>
+      title: '操作类型',
+      dataIndex: 'action_type',
+      key: 'action_type',
+      width: 110,
+      render: (v: string) => (
+        <Tag color="blue">{actionTypeLabels[v] || v || '-'}</Tag>
       ),
     },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 100,
+      render: (v: string) => {
+        const cfg = statusConfig[v] || { color: 'default', icon: <InfoCircleOutlined /> };
+        return <Tag color={cfg.color} icon={cfg.icon}>{(v || 'other').toUpperCase()}</Tag>;
+      },
+    },
+    {
+      title: '用户ID',
+      dataIndex: 'user_id',
+      key: 'user_id',
+      width: 90,
+      render: (v: number | null | undefined) => v ?? '-',
+    },
+    {
+      title: '平台',
+      dataIndex: 'platform',
+      key: 'platform',
+      width: 120,
+      render: (v: string) => v ? <Tag>{v}</Tag> : '-',
+    },
+    {
+      title: '操作描述',
+      dataIndex: 'description',
+      key: 'description',
+      render: (v: string, record: AuditLogEntry) => {
+        const detail = record.error_message
+          ? `错误: ${record.error_message}`
+          : JSON.stringify(record.response_data || {});
+        return (
+          <Tooltip title={detail} placement="topLeft">
+            <span style={{ cursor: 'help' }}>{v || '-'}</span>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      title: '目标',
+      dataIndex: 'target',
+      key: 'target',
+      width: 180,
+      ellipsis: true,
+      render: (v: string) => v || '-',
+    },
+    {
+      title: 'IP',
+      dataIndex: 'ip_address',
+      key: 'ip_address',
+      width: 130,
+      render: (v: string) => v || '-',
+    },
   ];
-
-  const stats = {
-    total: filteredLogs.length,
-    error: filteredLogs.filter(l => l.level === 'error').length,
-    warning: filteredLogs.filter(l => l.level === 'warning').length,
-    info: filteredLogs.filter(l => l.level === 'info').length,
-  };
 
   return (
     <div>
       <Card size="small" style={{ marginBottom: 16 }}>
-        <Space wrap>
-          <Input
-            placeholder="搜索日志内容"
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-            style={{ width: 200 }}
-            allowClear
-          />
-          <Select
-            placeholder="日志级别"
-            value={filterLevel || undefined}
-            onChange={setFilterLevel}
-            style={{ width: 120 }}
-            allowClear
-          >
-            <Option value="info">INFO</Option>
-            <Option value="success">SUCCESS</Option>
-            <Option value="warning">WARNING</Option>
-            <Option value="error">ERROR</Option>
-          </Select>
-          <Select
-            placeholder="模块"
-            value={filterModule || undefined}
-            onChange={setFilterModule}
-            style={{ width: 120 }}
-            allowClear
-          >
-            {moduleOptions.map(m => (
-              <Option key={m.value} value={m.value}>{m.label}</Option>
-            ))}
-          </Select>
-          <RangePicker
-            showTime
-            value={dateRange}
-            onChange={setDateRange}
-          />
-          <Button icon={<ReloadOutlined />} onClick={fetchLogs}>刷新</Button>
-          <Button icon={<ClearOutlined />} danger onClick={handleClear}>清空</Button>
-        </Space>
+        <Form layout="inline" onFinish={handleSearch}>
+          <Form.Item label="操作类型">
+            <Select
+              placeholder="全部"
+              value={filterActionType || undefined}
+              onChange={setFilterActionType}
+              style={{ width: 140 }}
+              allowClear
+            >
+              {actionTypes.map(at => (
+                <Option key={at.value} value={at.value}>{at.label}</Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item label="用户ID">
+            <Input
+              placeholder="用户ID"
+              value={filterUserId}
+              onChange={e => setFilterUserId(e.target.value)}
+              style={{ width: 120 }}
+              allowClear
+            />
+          </Form.Item>
+          <Form.Item label="平台">
+            <Select
+              placeholder="全部"
+              value={filterPlatform || undefined}
+              onChange={setFilterPlatform}
+              style={{ width: 140 }}
+              allowClear
+            >
+              {platformOptions.map(p => (
+                <Option key={p.value} value={p.value}>{p.label}</Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item label="时间范围">
+            <RangePicker
+              value={dateRange as any}
+              onChange={(dates) => setDateRange(dates as any)}
+            />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit" icon={<ReloadOutlined />}>
+                查询
+              </Button>
+              <Button onClick={handleReset}>重置</Button>
+              <Button
+                icon={<DownloadOutlined />}
+                loading={exporting}
+                onClick={handleExportCsv}
+              >
+                导出 CSV
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
       </Card>
 
       <Card>
         <Space style={{ marginBottom: 16 }}>
-          <Badge count={stats.total} showZero color="#1890ff">
-            <Tag icon={<FileTextOutlined />}>全部</Tag>
-          </Badge>
-          <Badge count={stats.error} showZero color="#f5222d">
-            <Tag icon={<CloseCircleOutlined />} color="error">错误</Tag>
-          </Badge>
-          <Badge count={stats.warning} showZero color="#faad14">
-            <Tag icon={<WarningOutlined />} color="warning">警告</Tag>
-          </Badge>
-          <Badge count={stats.info} showZero color="#1890ff">
-            <Tag icon={<InfoCircleOutlined />} color="processing">信息</Tag>
-          </Badge>
+          <Tag icon={<FileTextOutlined />} color="blue">
+            共 {total} 条
+          </Tag>
         </Space>
 
         {loading && logs.length === 0 ? (
           <Spin style={{ display: 'flex', justifyContent: 'center', padding: 50 }} />
-        ) : filteredLogs.length > 0 ? (
+        ) : logs.length > 0 ? (
           <Table
             columns={columns}
-            dataSource={filteredLogs}
-            rowKey="id"
+            dataSource={logs}
+            rowKey="log_id"
             size="small"
-            pagination={{ pageSize: 20, showSizeChanger: true }}
+            pagination={{
+              current: page,
+              pageSize,
+              total,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (t) => `共 ${t} 条`,
+              onChange: (p, ps) => {
+                setPage(p);
+                setPageSize(ps);
+              },
+            }}
           />
         ) : (
-          <Empty description="暂无日志" />
+          <Empty description="暂无操作日志" />
         )}
       </Card>
     </div>

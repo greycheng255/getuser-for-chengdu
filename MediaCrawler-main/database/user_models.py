@@ -6,8 +6,10 @@
 - 角色通过 UserModel.role 字段区分: admin / operator / viewer
 - 套餐通过 UserModel.plan_type 字段区分: free / basic / pro / enterprise
 - 业务表通过 owner_user_id 字段关联用户实现数据隔离
+- 细粒度 RBAC: sys_permission / sys_role_permission 表(阶段三 P2-6)
 """
-from sqlalchemy import Column, Integer, String, Text, BigInteger
+from sqlalchemy import Column, Integer, String, Text, BigInteger, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import func as sa_func
 from sqlalchemy.ext.declarative import declarative_base
 
 # 复用现有 Base,确保与现有模型共用同一个 metadata
@@ -101,3 +103,38 @@ class OpenNotebookOAuthFlowModel(Base):
     expires_ts = Column(BigInteger, index=True, nullable=False, comment='过期时间戳(秒)')
     consumed_ts = Column(BigInteger, default=0, comment='消费时间戳(秒)')
     created_ts = Column(BigInteger, comment='创建时间戳(秒)')
+
+
+# ============ 细粒度 RBAC 权限表(阶段三 P2-6) ============
+
+
+class SysPermissionModel(Base):
+    """权限定义表
+
+    定义系统所有可分配的权限码,如 publisher:multi-publish / moderation:review 等。
+    admin 角色默认拥有所有权限,无需在此表分配。
+    """
+    __tablename__ = 'sys_permission'
+    permission_id = Column(Integer, primary_key=True, autoincrement=True, comment='权限ID')
+    permission_code = Column(String(64), unique=True, index=True, nullable=False, comment='权限码(模块:动作)')
+    permission_name = Column(String(128), nullable=False, default='', comment='权限名称')
+    module = Column(String(32), index=True, nullable=False, default='', comment='模块名')
+    description = Column(Text, default='', comment='描述')
+    created_at = Column(DateTime, server_default=sa_func.now(), comment='创建时间')
+
+
+class SysRolePermissionModel(Base):
+    """角色-权限关联表
+
+    role 取值: admin / operator / viewer。
+    admin 角色默认拥有所有权限,本表可不记录(admin 判断在代码层短路);
+    此表主要用于 operator/viewer 的权限差异化分配。
+    """
+    __tablename__ = 'sys_role_permission'
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    role = Column(String(32), index=True, nullable=False, comment='角色: admin / operator / viewer')
+    permission_id = Column(Integer, ForeignKey('sys_permission.permission_id', ondelete='CASCADE'), nullable=False, comment='权限ID')
+
+    __table_args__ = (
+        UniqueConstraint('role', 'permission_id', name='uq_role_permission'),
+    )

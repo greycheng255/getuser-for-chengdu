@@ -101,7 +101,7 @@ async def notify_workbench_event(user_id: str, event_type: str, data: dict):
 # ==================== 1. 关键词回复规则 ====================
 
 @router.get("/reply-rules")
-async def get_reply_rules():
+async def get_workbench_reply_rules():
     """获取关键词回复规则"""
     import config as app_config
     rules = getattr(app_config, "X_TWITTER_KEYWORD_REPLY_RULES", [])
@@ -109,7 +109,7 @@ async def get_reply_rules():
 
 
 @router.put("/reply-rules")
-async def update_reply_rules(rules: ListType[KeywordReplyRule]):
+async def update_workbench_reply_rules(rules: ListType[KeywordReplyRule]):
     """更新关键词回复规则"""
     import config as app_config
     rules_data = [r.model_dump() for r in rules]
@@ -139,7 +139,7 @@ async def update_reply_rules(rules: ListType[KeywordReplyRule]):
 # ==================== 2. 批量视频拆解 ====================
 
 @router.post("/batch/breakdown")
-async def batch_video_breakdown(req: BatchBreakdownRequest, user=Depends(get_current_user)):
+async def batch_workbench_video_breakdown(req: BatchBreakdownRequest, user=Depends(get_current_user)):
     """批量视频拆解(带 WebSocket 进度推送)"""
     import config as app_config
     from api.services.ai_agent_client import generate_video_breakdown
@@ -207,16 +207,8 @@ async def batch_video_breakdown(req: BatchBreakdownRequest, user=Depends(get_cur
 
 
 # ==================== 3. WebSocket 实时事件 ====================
-#
-# 注意: WebSocket 路由单独注册到一个不带认证依赖的 router,
-# 因为 APIRouter 级别的 dependencies=[Depends(get_current_user)] 使用 Bearer Token,
-# 在 WebSocket 握手阶段无法注入 HTTP 头,会导致连接被拒绝。
-# WebSocket 通过 query 参数 token 自行认证。
 
-_ws_router = APIRouter(prefix="/x-workbench", tags=["x-workbench-advanced"])
-
-
-@_ws_router.websocket("/ws/events")
+@router.websocket("/ws/events")
 async def websocket_events(websocket: WebSocket, token: str = Query(default="")):
     """
     工作台实时事件 WebSocket 通道
@@ -231,10 +223,7 @@ async def websocket_events(websocket: WebSocket, token: str = Query(default=""))
 
     try:
         payload = decode_token(token)
-        if payload is None:
-            await websocket.close(code=4401)
-            return
-        user_id = str(payload.get("sub") or payload.get("uid") or "unknown")
+        user_id = str(payload.get("sub", "unknown"))
     except Exception:
         await websocket.close(code=4401)
         return

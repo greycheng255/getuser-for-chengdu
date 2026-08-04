@@ -469,6 +469,155 @@ class XTwitterClient(AbstractApiClient):
         
         return await self.post_comment(comment_url, content)
 
+    async def create_tweet(self, content: str, video_url: str = None) -> Dict[str, Any]:
+        self.logger.info(f"[XTwitterClient.create_tweet] Creating tweet with content: {content[:100]}...")
+        
+        result = {
+            "success": False,
+            "tweet_url": "",
+            "tweet_id": "",
+            "error": "",
+        }
+        
+        try:
+            await self.playwright_page.goto("https://x.com/compose/tweet", wait_until="networkidle", timeout=30000)
+            await asyncio.sleep(3)
+
+            textarea = None
+            textarea_selectors = [
+                'textarea[data-testid="tweetTextarea_0"]',
+                'textarea[data-testid="tweetTextarea"]',
+                '[data-testid="tweetTextarea_0"]',
+                '[data-testid="tweetTextarea"]',
+                'textarea[placeholder*="What is happening"]',
+                'textarea[placeholder*="What\'s happening"]',
+            ]
+            for selector in textarea_selectors:
+                try:
+                    textarea = await self.playwright_page.wait_for_selector(selector, timeout=5000)
+                    if textarea:
+                        self.logger.info(f"[XTwitterClient.create_tweet] Found textarea with selector: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not textarea:
+                self.logger.warning("[XTwitterClient.create_tweet] Textarea not found")
+                result["error"] = "Textarea not found"
+                return result
+            
+            await textarea.fill(content)
+            await asyncio.sleep(2)
+
+            if video_url:
+                self.logger.info(f"[XTwitterClient.create_tweet] Uploading video: {video_url}")
+                
+                import tempfile
+                import os
+                import httpx
+                
+                async with httpx.AsyncClient() as http_client:
+                    response = await http_client.get(video_url, timeout=60.0)
+                    if response.status_code != 200:
+                        self.logger.error(f"[XTwitterClient.create_tweet] Failed to download video: {response.status_code}")
+                        result["error"] = f"Failed to download video: {response.status_code}"
+                        return result
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as f:
+                        f.write(response.content)
+                        video_path = f.name
+                
+                try:
+                    attach_button = None
+                    attach_selectors = [
+                        'div[data-testid="attach"]',
+                        'button[data-testid="attach"]',
+                        '[data-testid="attach"]',
+                        'input[type="file"]',
+                    ]
+                    for selector in attach_selectors:
+                        try:
+                            attach_button = await self.playwright_page.wait_for_selector(selector, timeout=5000)
+                            if attach_button:
+                                self.logger.info(f"[XTwitterClient.create_tweet] Found attach button with selector: {selector}")
+                                break
+                        except:
+                            continue
+                    
+                    if not attach_button:
+                        self.logger.warning("[XTwitterClient.create_tweet] Attach button not found")
+                        result["error"] = "Attach button not found"
+                        return result
+                    
+                    await attach_button.set_input_files(video_path)
+                    self.logger.info("[XTwitterClient.create_tweet] Video file selected")
+                    
+                    await asyncio.sleep(10)
+                    
+                    upload_complete = False
+                    for _ in range(20):
+                        try:
+                            await self.playwright_page.wait_for_selector('div[data-testid="videoThumbnail"]', timeout=3000)
+                            upload_complete = True
+                            self.logger.info("[XTwitterClient.create_tweet] Video uploaded successfully")
+                            break
+                        except:
+                            await asyncio.sleep(2)
+                    
+                    if not upload_complete:
+                        self.logger.warning("[XTwitterClient.create_tweet] Video upload timeout")
+                        result["error"] = "Video upload timeout"
+                        return result
+                finally:
+                    if os.path.exists(video_path):
+                        os.unlink(video_path)
+            
+            send_button = None
+            send_selectors = [
+                'div[data-testid="tweetButton"]',
+                'button[data-testid="tweetButton"]',
+                '[data-testid="tweetButton"]',
+            ]
+            for selector in send_selectors:
+                try:
+                    send_button = await self.playwright_page.wait_for_selector(selector, timeout=5000)
+                    if send_button:
+                        self.logger.info(f"[XTwitterClient.create_tweet] Found send button with selector: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not send_button:
+                self.logger.warning("[XTwitterClient.create_tweet] Send button not found")
+                result["error"] = "Send button not found"
+                return result
+            
+            await send_button.click()
+            await asyncio.sleep(8)
+            
+            current_url = self.playwright_page.url
+            self.logger.info(f"[XTwitterClient.create_tweet] Current URL after posting: {current_url}")
+            
+            import re
+            tweet_id_match = re.search(r'/status/(\d+)', current_url)
+            if tweet_id_match:
+                tweet_id = tweet_id_match.group(1)
+                tweet_url = f"https://x.com/i/web/status/{tweet_id}"
+                result["tweet_id"] = tweet_id
+                result["tweet_url"] = tweet_url
+                self.logger.info(f"[XTwitterClient.create_tweet] Extracted tweet ID: {tweet_id}, URL: {tweet_url}")
+            
+            result["success"] = True
+            self.logger.info("[XTwitterClient.create_tweet] Tweet posted successfully")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"[XTwitterClient.create_tweet] Failed: {e}")
+            import traceback
+            self.logger.error(f"[XTwitterClient.create_tweet] Traceback: {traceback.format_exc()}")
+            result["error"] = str(e)
+            return result
+
 
     async def get_notifications(self, max_count: int = 50) -> List[Dict]:
         self.logger.info("[XTwitterClient.get_notifications] Fetching notifications")

@@ -694,6 +694,11 @@ class LeadAssignment(Base):
     package_id = Column(String(64), default='', comment='线索包ID')
     business_user_id = Column(String(64), index=True, comment='分配给的业务用户ID')
     assign_type = Column(String(20), default='purchase', comment='分配类型: purchase=购买, manual=手动分配, auto=自动分配')
+    status = Column(String(20), default='assigned', comment='状态: assigned=已分配, used=已使用, recalled=已回收, expired=已过期')
+    price_paid = Column(Integer, default=0, comment='支付价格(分)')
+    expire_ts = Column(BigInteger, default=0, comment='过期时间戳(0=永不过期)')
+    assigned_ts = Column(BigInteger, default=0, comment='分配时间戳')
+    owner_user_id = Column(String(64), index=True, default='', comment='归属系统用户ID')
 
 
 class FollowUpRecord(Base):
@@ -927,6 +932,8 @@ class XTwitterSentComment(Base):
     """
     __tablename__ = 'x_twitter_sent_comment'
     id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    # 评论所属平台: x/douyin/xiaohongshu/bilibili/weibo/kuaishou 等，默认 x（兼容历史数据）
+    platform = Column(String(32), default='x', index=True, comment='评论所属平台: x/dy/xhs/bili/wb/ks')
     post_id = Column(String(255), index=True, comment='被评论的推文ID')
     post_url = Column(Text, comment='被评论的推文URL')
     post_content = Column(Text, comment='推文内容摘要（便于展示）')
@@ -1152,5 +1159,87 @@ class XTwitterNotificationChannel(Base):
     success_count = Column(Integer, default=0, comment='成功推送次数')
     fail_count = Column(Integer, default=0, comment='失败次数')
     note = Column(String(255), default='', comment='备注说明')
+    created_ts = Column(BigInteger, comment='创建时间戳')
+    updated_ts = Column(BigInteger, comment='更新时间戳')
+
+
+class XTwitterAutoPipelineTask(Base):
+    """X Twitter 自动化流水线任务表
+    记录从视频拆解到发布的全流程状态,支持 WebSocket 实时推送进度。
+    """
+    __tablename__ = 'x_twitter_auto_pipeline_task'
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    task_id = Column(String(64), unique=True, index=True, comment='任务UUID')
+    post_id = Column(String(64), index=True, comment='原推文ID')
+    status = Column(String(32), default='pending', index=True, comment='任务状态: pending/running/completed/failed')
+    current_step = Column(Integer, default=0, comment='当前步骤 0-6')
+    step_detail = Column(String(512), default='', comment='当前步骤详细描述')
+    # Step 1 结果
+    breakdown_id = Column(Integer, comment='关联 XTwitterVideoBreakdown.id')
+    # Step 2 结果
+    video_task_id = Column(String(128), default='', comment='AI6700 视频任务ID')
+    video_url = Column(Text, default='', comment='生成的解说视频URL')
+    video_status = Column(String(32), default='', comment='视频生成状态: submitting/processing/succeeded/failed')
+    # Step 3-4 结果
+    candidate_contents = Column(Text, default='[]', comment='候选文案JSON数组')
+    selected_content = Column(Text, default='', comment='AI自动选择的最佳文案')
+    # Step 6 结果
+    tweet_id = Column(String(64), default='', comment='发布后的推文ID')
+    tweet_url = Column(Text, default='', comment='发布后的推文URL')
+    # 错误信息
+    error_msg = Column(Text, default='', comment='错误信息')
+    # 选项
+    skip_video = Column(Integer, default=0, comment='是否跳过视频生成: 0=否, 1=是')
+    add_ts = Column(BigInteger, comment='记录创建时间戳')
+    update_ts = Column(BigInteger, comment='记录更新时间戳')
+
+
+class VoiceModel(Base):
+    """声音克隆模型"""
+    __tablename__ = 'voice_models'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_user_id = Column(String(64), index=True, comment='归属用户ID')
+    name = Column(String(255), comment='声音名称')
+    provider = Column(String(32), default='edge_tts', comment='提供方: cosyvoice/edge_tts')
+    provider_model_id = Column(String(255), default='', comment='CosyVoice返回的模型ID')
+    sample_audio_path = Column(Text, default='', comment='录音样本路径')
+    voice_config = Column(Text, default='{}', comment='声音配置JSON(音色/语速等)')
+    status = Column(String(32), default='pending', comment='状态: pending/ready/failed')
+    created_ts = Column(BigInteger, comment='创建时间戳')
+
+
+class DigitalHumanModel(Base):
+    """数字人形象模型"""
+    __tablename__ = 'digital_human_models'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_user_id = Column(String(64), index=True, comment='归属用户ID')
+    name = Column(String(255), comment='数字人名称')
+    provider = Column(String(32), default='image_video', comment='提供方: heygem/image_video')
+    provider_model_id = Column(String(255), default='', comment='HeyGem返回的模型ID')
+    portrait_path = Column(Text, default='', comment='形象照路径')
+    status = Column(String(32), default='pending', comment='状态: pending/ready/failed')
+    created_ts = Column(BigInteger, comment='创建时间戳')
+
+
+class TalkingHeadTask(Base):
+    """口播视频生成任务"""
+    __tablename__ = 'talking_head_tasks'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    owner_user_id = Column(String(64), index=True, comment='归属用户ID')
+    source_video_url = Column(Text, default='', comment='对标视频链接')
+    original_script = Column(Text, default='', comment='提取的原始文案')
+    rewritten_script = Column(Text, default='', comment='仿写后文案')
+    voice_model_id = Column(Integer, index=True, comment='声音模型ID')
+    digital_human_id = Column(Integer, index=True, comment='数字人模型ID')
+    audio_path = Column(Text, default='', comment='合成音频路径')
+    video_path = Column(Text, default='', comment='最终视频路径')
+    cover_path = Column(Text, default='', comment='封面图片路径')
+    subtitle_path = Column(Text, default='', comment='字幕文件路径')
+    title_suggestions = Column(Text, default='[]', comment='标题建议JSON')
+    tags = Column(Text, default='[]', comment='话题标签JSON')
+    pipeline_steps = Column(Text, default='[]', comment='流水线步骤记录JSON')
+    status = Column(String(32), default='pending', comment='状态: pending/extracting/rewriting/synthesizing/generating/done/failed')
+    error = Column(Text, default='', comment='错误信息')
+    elapsed = Column(Integer, default=0, comment='总耗时(秒)')
     created_ts = Column(BigInteger, comment='创建时间戳')
     updated_ts = Column(BigInteger, comment='更新时间戳')

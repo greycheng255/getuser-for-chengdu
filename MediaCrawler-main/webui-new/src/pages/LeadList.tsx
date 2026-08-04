@@ -1,8 +1,6 @@
+import { message } from '../utils/antdMessage';
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  Card, Tag, Button, Space, Modal, Input, Select, message, Tabs, Tooltip,
-  Avatar, Table, Popconfirm, Progress, DatePicker, InputNumber, Upload,
-} from 'antd';
+import { Card, Tag, Button, Space, Modal, Input, Select, Tabs, Tooltip, Avatar, Table, Popconfirm, Progress, DatePicker, InputNumber, Upload } from 'antd';
 import {
   ReloadOutlined, DownloadOutlined, EyeOutlined, DeleteOutlined, EnvironmentOutlined, UserOutlined,
   UploadOutlined, CopyOutlined, LinkOutlined,
@@ -21,6 +19,10 @@ const { Option } = Select;
 
 const LeadList: React.FC = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
+  // 看板视图独立数据池:board 视图拉取 200 条用于 Kanban 分组展示,
+  // 与列表视图的 leads(≤pageSize)分离,避免切换视图时 Table 因 dataSource.length > pageSize
+  // 触发 antd 警告 "dataSource length is less than pagination.total but large than pagination.pageSize"
+  const [boardLeads, setBoardLeads] = useState<Lead[]>([]);
   const [stats, setStats] = useState<LeadStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -101,7 +103,12 @@ const LeadList: React.FC = () => {
       const res = await getLeads(params);
       // 如果这不是最新请求,丢弃结果(避免旧响应覆盖新响应)
       if (seq !== fetchSeqRef.current) return;
-      setLeads(res.items);
+      // board/list 视图数据分离:避免 200 条看板数据污染列表 Table(触发 antd 分页警告)
+      if (viewMode === 'board') {
+        setBoardLeads(res.items);
+      } else {
+        setLeads(res.items);
+      }
       setPagination(prev => ({ ...prev, page, total: res.total }));
     } catch (err: any) {
       if (seq !== fetchSeqRef.current) return;
@@ -130,11 +137,11 @@ const LeadList: React.FC = () => {
   const boardData = React.useMemo(() => {
     const groups: Record<string, Lead[]> = {};
     Object.keys(STATUS_MAP).forEach(k => { groups[k] = []; });
-    leads.forEach(l => {
+    boardLeads.forEach(l => {
       if (groups[l.status]) groups[l.status].push(l);
     });
     return groups;
-  }, [leads]);
+  }, [boardLeads]);
 
   // 拉取地域分布 Top 10(用于快捷标签)
   // 注意:level 筛选需同步传入,否则地域标签数量与列表不一致
@@ -691,10 +698,10 @@ const LeadList: React.FC = () => {
           />
         ) : <span style={{ color: '#666', fontSize: 13 }}>看板视图:拖拽卡片到其他列即可变更状态(仅展示最新 {leads.length} 条)</span>}
         <Space>
-          <Button.Group size="small">
+          <Space.Compact size="small">
             <Button type={viewMode === 'list' ? 'primary' : 'default'} onClick={() => setViewMode('list')}>列表</Button>
             <Button type={viewMode === 'board' ? 'primary' : 'default'} onClick={() => { setViewMode('board'); setActiveTab('all'); }}>看板</Button>
-          </Button.Group>
+          </Space.Compact>
         </Space>
       </div>
 

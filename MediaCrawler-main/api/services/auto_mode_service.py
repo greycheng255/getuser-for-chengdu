@@ -152,8 +152,8 @@ async def _run_one_cycle():
 
     # ===== 1. 触发一次热点采集(异步,不等待完成) =====
     try:
-        from api.services.x_trending_fetcher import crawl_trending_once
-        asyncio.create_task(crawl_trending_once())
+        from api.services.x_trending_fetcher import crawl_trending
+        asyncio.create_task(crawl_trending())
         logger.info("已触发热点采集(异步)")
     except Exception as e:
         logger.warning(f"触发热点采集失败(继续用 DB 已有数据): {e}")

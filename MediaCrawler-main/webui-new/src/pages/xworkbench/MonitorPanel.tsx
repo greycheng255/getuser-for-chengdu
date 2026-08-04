@@ -1,24 +1,6 @@
+import { message } from '../../utils/antdMessage';
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  Row,
-  Col,
-  Card,
-  Statistic,
-  Spin,
-  Collapse,
-  Empty,
-  List,
-  Tag,
-  Avatar,
-  Tooltip,
-  Badge,
-  Button,
-  Space,
-  Progress,
-  Alert,
-  Typography,
-  message,
-} from 'antd';
+import { Row, Col, Card, Statistic, Spin, Collapse, Empty, List, Tag, Avatar, Tooltip, Badge, Button, Space, Progress, Alert, Typography } from 'antd';
 import {
   MessageOutlined,
   CheckCircleTwoTone,
@@ -28,6 +10,7 @@ import {
   PlayCircleOutlined,
   PauseCircleOutlined,
   RobotOutlined,
+  GlobalOutlined,
 } from '@ant-design/icons';
 import {
   xWorkbenchApi,
@@ -55,20 +38,23 @@ const MonitorPanel: React.FC = () => {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [autoMode, setAutoMode] = useState<AutoModeStatus | null>(null);
   const [autoModeLoading, setAutoModeLoading] = useState(false);
+  const [platformsOverview, setPlatformsOverview] = useState<any>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, st, h, am] = await Promise.all([
+      const [s, st, h, am, po] = await Promise.all([
         xWorkbenchApi.getStats(),
         xWorkbenchApi.getMonitorStatus(),
         xWorkbenchApi.aiHealth().catch(() => ({ ok: false, error: '请求失败' })),
         xWorkbenchApi.getAutoModeStatus().catch(() => null),
+        xWorkbenchApi.getMonitorPlatforms().catch(() => null),
       ]);
       setStats(s);
       setStatus(st);
       setAiHealth(h);
       setAutoMode(am);
+      setPlatformsOverview(po);
     } catch (e: any) {
       message.error('加载失败: ' + (e?.message || ''));
     } finally {
@@ -216,6 +202,63 @@ const MonitorPanel: React.FC = () => {
           </Card>
         </Col>
       </Row>
+
+      {/* 多平台监控总览：15 个平台（7 国内 + 8 国外）的数据采集状态 */}
+      {platformsOverview && (
+        <Card
+          size="small"
+          title={
+            <Space>
+              <GlobalOutlined style={{ color: '#1890ff' }} />
+              <span>多平台监控总览</span>
+              <Tag color="blue">国内 {platformsOverview.domestic_count} 个</Tag>
+              <Tag color="geekblue">国外 {platformsOverview.global_count} 个</Tag>
+              <Tag>共 {platformsOverview.total_platforms} 个平台</Tag>
+            </Space>
+          }
+          style={{ marginBottom: 16 }}
+          extra={<Button size="small" icon={<ReloadOutlined />} onClick={load} loading={loading}>刷新</Button>}
+        >
+          <Row gutter={[8, 8]}>
+            {platformsOverview.platforms?.map((p: any) => {
+              const hasData = p.db_count > 0 || p.cache_count > 0;
+              const cacheAgeText = p.cache_age_seconds >= 0
+                ? (p.cache_age_seconds < 60 ? `${p.cache_age_seconds}秒前` : `${Math.floor(p.cache_age_seconds / 60)}分钟前`)
+                : '未缓存';
+              return (
+                <Col key={p.id} xs={12} sm={8} md={6} lg={4}>
+                  <Card
+                    size="small"
+                    style={{
+                      borderTop: `3px solid ${p.color}`,
+                      opacity: hasData ? 1 : 0.6,
+                    }}
+                    styles={{ body: { padding: '8px 10px' } }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <span style={{
+                        display: 'inline-block',
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: p.color,
+                        flexShrink: 0,
+                      }} />
+                      <Text strong style={{ fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {p.name}
+                      </Text>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#999' }}>
+                      <div>数据库: <Text strong style={{ color: hasData ? p.color : '#999' }}>{p.db_count}</Text> 条</div>
+                      <div>缓存: {p.cache_count} 条 · {cacheAgeText}</div>
+                    </div>
+                  </Card>
+                </Col>
+              );
+            })}
+          </Row>
+        </Card>
+      )}
 
       <Collapse defaultActiveKey={['stats']} style={{ marginBottom: 16 }}>
         <Collapse.Panel header="📊 统计明细" key="stats">

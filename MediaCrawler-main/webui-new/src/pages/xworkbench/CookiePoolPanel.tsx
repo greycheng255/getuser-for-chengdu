@@ -1,21 +1,6 @@
+import { message } from '../../utils/antdMessage';
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  Spin,
-  Alert,
-  Row,
-  Col,
-  Card,
-  Statistic,
-  Button,
-  Space,
-  Table,
-  Tag,
-  Empty,
-  Modal,
-  Input,
-  Typography,
-  message,
-} from 'antd';
+import { Spin, Alert, Row, Col, Card, Statistic, Button, Space, Table, Tag, Empty, Modal, Input, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
   ReloadOutlined,

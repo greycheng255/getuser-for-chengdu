@@ -1,37 +1,25 @@
+import { message } from '../utils/antdMessage';
 import { useState, useEffect } from 'react';
-import { Card, Button, Input, message, Spin, Badge, Space, Typography, Tag, Tabs, Modal, Statistic, Row, Col, Progress } from 'antd';
+import { Card, Button, Input, Spin, Space, Typography, Tag, Tabs, Modal, Statistic, Row, Col, Progress, Tooltip, Alert } from 'antd';
 import {
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  EditOutlined,
-  ExperimentOutlined,
-  SearchOutlined,
-  SaveOutlined,
   ReloadOutlined,
-  EyeOutlined,
   PlusOutlined,
   DeleteOutlined,
   ThunderboltOutlined,
   StopOutlined,
+  HeartOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import {
-  getCookies, updateCookie, checkCookie, testCookie, parseCookie,
   getCookiePool, addCookieToPool, removeCookieFromPool, clearCookiePool, clearInvalidCookies,
-  getAccounts, refreshAccounts, clearBadIps,
-  type CookiePoolStatus, type AccountPoolStatus,
+  getAccounts, refreshAccounts, clearBadIps, checkAccountHealth,
+  type CookiePoolStatus, type AccountPoolStatus, type HealthCheckResult,
 } from '../api/cookies';
 
 const { TextArea } = Input;
 const { Title, Text } = Typography;
-
-interface CookieStatus {
-  name: string;
-  platform: string;
-  has_cookie: boolean;
-  cookie_length: number;
-  status: string;
-  check_field: string;
-}
 
 const platformIcons: Record<string, string> = {
   xhs: '📕',
@@ -43,144 +31,11 @@ const platformIcons: Record<string, string> = {
 };
 
 export default function CookieManager() {
-  const [cookies, setCookies] = useState<Record<string, CookieStatus>>({});
-  const [loading, setLoading] = useState(false);
-  const [testing, setTesting] = useState<Record<string, boolean>>({});
-  const [checking, setChecking] = useState<Record<string, boolean>>({});
-  const [parsing, setParsing] = useState<Record<string, boolean>>({});
-  const [editing, setEditing] = useState<Record<string, boolean>>({});
-  const [cookieValues, setCookieValues] = useState<Record<string, string>>({});
-  const [testResults, setTestResults] = useState<Record<string, any>>({});
-  const [checkResults, setCheckResults] = useState<Record<string, any>>({});
-  const [parseResults, setParseResults] = useState<Record<string, any>>({});
-
-  const fetchCookies = async () => {
-    setLoading(true);
-    try {
-      const data = await getCookies();
-      setCookies(data);
-    } catch (error) {
-      message.error('获取 Cookie 状态失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchCookies();
-  }, []);
-
-  const handleUpdate = async (platform: string) => {
-    const value = cookieValues[platform];
-    if (!value || !value.trim()) {
-      message.warning('请输入 Cookie');
-      return;
-    }
-    try {
-      await updateCookie(platform, value.trim());
-      message.success('Cookie 更新成功');
-      setEditing(prev => ({ ...prev, [platform]: false }));
-      setParseResults(prev => ({ ...prev, [platform]: null }));
-      fetchCookies();
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '更新失败');
-    }
-  };
-
-  const handleCheck = async (platform: string) => {
-    setChecking(prev => ({ ...prev, [platform]: true }));
-    try {
-      const result = await checkCookie(platform);
-      setCheckResults(prev => ({ ...prev, [platform]: result }));
-      if (result.valid) {
-        message.success(result.message);
-      } else {
-        message.warning(result.message);
-      }
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '检测失败');
-    } finally {
-      setChecking(prev => ({ ...prev, [platform]: false }));
-    }
-  };
-
-  const handleTest = async (platform: string) => {
-    setTesting(prev => ({ ...prev, [platform]: true }));
-    try {
-      const result = await testCookie(platform);
-      setTestResults(prev => ({ ...prev, [platform]: result }));
-      if (result.success && result.logged_in) {
-        message.success(result.message);
-      } else if (result.success && !result.logged_in) {
-        message.warning(result.message);
-      } else {
-        message.error(result.message);
-      }
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '测试失败');
-    } finally {
-      setTesting(prev => ({ ...prev, [platform]: false }));
-    }
-  };
-
-  const handleParse = async (platform: string) => {
-    const value = cookieValues[platform];
-    if (!value || !value.trim()) {
-      message.warning('请先输入 Cookie 内容');
-      return;
-    }
-    setParsing(prev => ({ ...prev, [platform]: true }));
-    try {
-      const result = await parseCookie(platform, value.trim());
-      setParseResults(prev => ({ ...prev, [platform]: result }));
-      // 将解析后的格式化 Cookie 更新到输入框
-      if (result.formatted_cookie) {
-        setCookieValues(prev => ({ ...prev, [platform]: result.formatted_cookie }));
-      }
-      message.success(`解析成功，识别到 ${result.cookie_keys.length} 个 Cookie 字段`);
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail || '解析失败');
-    } finally {
-      setParsing(prev => ({ ...prev, [platform]: false }));
-    }
-  };
-
-  const toggleEdit = (platform: string) => {
-    setEditing(prev => ({ ...prev, [platform]: !prev[platform] }));
-    if (!editing[platform]) {
-      setCookieValues(prev => ({ ...prev, [platform]: '' }));
-      setParseResults(prev => ({ ...prev, [platform]: null }));
-    }
-  };
-
   return (
     <div style={{ padding: 24 }}>
       <Tabs
-        defaultActiveKey="single"
+        defaultActiveKey="pool"
         items={[
-          {
-            key: 'single',
-            label: '单Cookie管理',
-            children: <SingleCookieTab
-              cookies={cookies}
-              loading={loading}
-              fetchCookies={fetchCookies}
-              testing={testing}
-              checking={checking}
-              parsing={parsing}
-              editing={editing}
-              cookieValues={cookieValues}
-              testResults={testResults}
-              checkResults={checkResults}
-              parseResults={parseResults}
-              setCookieValues={setCookieValues}
-              toggleEdit={toggleEdit}
-              handleUpdate={handleUpdate}
-              handleCheck={handleCheck}
-              handleTest={handleTest}
-              handleParse={handleParse}
-            />,
-          },
           {
             key: 'pool',
             label: 'Cookie池管理',
@@ -194,250 +49,6 @@ export default function CookieManager() {
         ]}
       />
     </div>
-  );
-}
-
-// ============================================================
-// 单Cookie管理 Tab（原有逻辑）
-// ============================================================
-function SingleCookieTab(props: any) {
-  const {
-    cookies, loading, fetchCookies,
-    testing, checking, parsing, editing,
-    cookieValues, testResults, checkResults, parseResults,
-    setCookieValues, toggleEdit, handleUpdate, handleCheck, handleTest, handleParse,
-  } = props;
-
-  return (
-    <>
-      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={4}>🍪 Cookie 管理中心</Title>
-          <Text type="secondary">管理各平台的登录 Cookie，确保采集引擎能正常访问平台数据</Text>
-          <br />
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            支持格式：标准字符串、JSON对象、浏览器开发者工具格式、Network请求头格式
-          </Text>
-        </div>
-        <Button icon={<ReloadOutlined />} onClick={fetchCookies} loading={loading}>
-          刷新状态
-        </Button>
-      </div>
-
-      <Spin spinning={loading}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', gap: 16 }}>
-          {Object.entries(cookies).map(([platform, data]: [string, any]) => (
-            <Card
-              key={platform}
-              title={
-                <Space>
-                  <span style={{ fontSize: 20 }}>{platformIcons[platform] || '📱'}</span>
-                  <span>{data.name}</span>
-                  <Badge
-                    status={data.has_cookie ? 'success' : 'error'}
-                    text={data.status}
-                  />
-                </Space>
-              }
-              extra={
-                <Space>
-                  <Button
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={() => toggleEdit(platform)}
-                  >
-                    {data.has_cookie ? '更新' : '添加'}
-                  </Button>
-                  <Button
-                    size="small"
-                    icon={<SearchOutlined />}
-                    onClick={() => handleCheck(platform)}
-                    loading={checking[platform]}
-                  >
-                    检测
-                  </Button>
-                  <Button
-                    size="small"
-                    type="primary"
-                    icon={<ExperimentOutlined />}
-                    onClick={() => handleTest(platform)}
-                    loading={testing[platform]}
-                  >
-                    测试
-                  </Button>
-                </Space>
-              }
-            >
-              <div style={{ marginBottom: 12 }}>
-                <Text type="secondary">平台ID: {platform}</Text>
-                <br />
-                <Text type="secondary">Cookie长度: {data.cookie_length} 字符</Text>
-                <br />
-                <Text type="secondary">关键字段: {data.check_field}</Text>
-              </div>
-
-              {editing[platform] && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ marginBottom: 8, padding: 8, background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 4 }}>
-                    <Text type="warning" style={{ fontSize: 12 }}>
-                      <strong>提示：</strong>必须从已登录的浏览器中复制完整的登录态 Cookie，确保包含 <Tag color="red">{data.check_field}</Tag> 字段。
-                      <br />
-                      缺少登录态字段的 Cookie 只能匿名访问，无法采集数据。
-                    </Text>
-                  </div>
-                  <TextArea
-                    rows={6}
-                    placeholder={`支持多种格式粘贴：\n1. 标准格式: key1=value1; key2=value2\n2. JSON格式: {"key1": "value1"}\n3. 浏览器格式: key: value (多行)\n4. Network格式: Cookie: key1=value1; key2=value2\n5. Netscape格式: domain\\tflag\\tpath\\tsecure\\texpiration\\tname\\tvalue\n\n请务必包含登录态字段如 ${data.check_field}`}
-                    value={cookieValues[platform] || ''}
-                    onChange={e => setCookieValues((prev: Record<string, string>) => ({ ...prev, [platform]: e.target.value }))}
-                    style={{ fontFamily: 'monospace', fontSize: 12 }}
-                  />
-                  <Space style={{ marginTop: 8 }}>
-                    <Button
-                      icon={<EyeOutlined />}
-                      onClick={() => handleParse(platform)}
-                      loading={parsing[platform]}
-                    >
-                      解析预览
-                    </Button>
-                    <Button
-                      type="primary"
-                      icon={<SaveOutlined />}
-                      onClick={() => handleUpdate(platform)}
-                    >
-                      保存
-                    </Button>
-                    <Button onClick={() => toggleEdit(platform)}>取消</Button>
-                  </Space>
-                </div>
-              )}
-
-              {/* 解析预览结果 */}
-              {parseResults[platform] && parseResults[platform].success && (
-                <div
-                  style={{
-                    marginTop: 12,
-                    padding: 12,
-                    borderRadius: 4,
-                    background: parseResults[platform].has_login_field ? '#f0f5ff' : '#fff2f0',
-                    border: `1px solid ${parseResults[platform].has_login_field ? '#d6e4ff' : '#ffccc7'}`,
-                  }}
-                >
-                  <Text strong style={{ display: 'block', marginBottom: 8 }}>
-                    <EyeOutlined /> 解析预览
-                    {!parseResults[platform].has_login_field && (
-                      <Tag color="error" style={{ marginLeft: 8 }}>缺少登录态字段</Tag>
-                    )}
-                    {parseResults[platform].has_login_field && (
-                      <Tag color="success" style={{ marginLeft: 8 }}>包含登录态字段</Tag>
-                    )}
-                  </Text>
-                  <div style={{ marginBottom: 8, display: 'flex', gap: 16 }}>
-                    <Tag color="default">原始: {parseResults[platform].original_length} 字符</Tag>
-                    <Tag color="processing">解析后: {parseResults[platform].formatted_length} 字符</Tag>
-                    <Tag color="success">共 {parseResults[platform].cookie_keys.length} 个字段</Tag>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <Text type="secondary">识别字段: </Text>
-                    {parseResults[platform].cookie_keys.map((key: string) => (
-                      <Tag key={key} color={parseResults[platform].check_field === key ? 'green' : 'blue'}>{key}</Tag>
-                    ))}
-                  </div>
-                  {!parseResults[platform].has_login_field && (
-                    <div style={{ marginBottom: 8, padding: 8, background: '#fff', borderRadius: 4 }}>
-                      <Text type="danger" strong>缺少关键字段: </Text>
-                      {parseResults[platform].missing_fields.map((field: string) => (
-                        <Tag key={field} color="red">{field}</Tag>
-                      ))}
-                      <br />
-                      <Text type="warning" style={{ fontSize: 12 }}>
-                        {parseResults[platform].login_tip}
-                      </Text>
-                    </div>
-                  )}
-                  <div>
-                    <Text type="secondary">格式化预览: </Text>
-                    <div style={{
-                      marginTop: 4,
-                      padding: 8,
-                      background: '#fff',
-                      borderRadius: 4,
-                      fontSize: 12,
-                      fontFamily: 'monospace',
-                      maxHeight: 120,
-                      overflow: 'auto',
-                      border: '1px solid #e8e8e8'
-                    }}>
-                      {Object.entries(parseResults[platform].cookie_preview).map(([key, value]: [string, any]) => (
-                        <div key={key} style={{ color: '#666', lineHeight: '1.8' }}>
-                          <Text strong style={{ color: parseResults[platform].check_field === key ? '#52c41a' : '#1890ff' }}>{key}</Text>
-                          <Text type="secondary">=</Text>
-                          <Text>{value}</Text>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {checkResults[platform] && (
-                <div
-                  style={{
-                    marginTop: 12,
-                    padding: 12,
-                    borderRadius: 4,
-                    background: checkResults[platform].valid ? '#f6ffed' : '#fff2f0',
-                    border: `1px solid ${checkResults[platform].valid ? '#b7eb8f' : '#ffccc7'}`,
-                  }}
-                >
-                  <Space>
-                    {checkResults[platform].valid ? (
-                      <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                    ) : (
-                      <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
-                    )}
-                    <Text>{checkResults[platform].message}</Text>
-                  </Space>
-                </div>
-              )}
-
-              {testResults[platform] && (
-                <div
-                  style={{
-                    marginTop: 12,
-                    padding: 12,
-                    borderRadius: 4,
-                    background: testResults[platform].success && testResults[platform].logged_in
-                      ? '#f6ffed'
-                      : testResults[platform].success
-                      ? '#fffbe6'
-                      : '#fff2f0',
-                    border: `1px solid ${
-                      testResults[platform].success && testResults[platform].logged_in
-                        ? '#b7eb8f'
-                        : testResults[platform].success
-                        ? '#ffe58f'
-                        : '#ffccc7'
-                    }`,
-                  }}
-                >
-                  <Space>
-                    {testResults[platform].success && testResults[platform].logged_in ? (
-                      <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                    ) : testResults[platform].success ? (
-                      <CloseCircleOutlined style={{ color: '#faad14' }} />
-                    ) : (
-                      <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
-                    )}
-                    <Text>{testResults[platform].message}</Text>
-                  </Space>
-                </div>
-              )}
-            </Card>
-          ))}
-        </div>
-      </Spin>
-    </>
   );
 }
 
@@ -699,12 +310,24 @@ function CookiePoolTab() {
 }
 
 // ============================================================
-// 账号池监控 Tab
+// 账号池监控 Tab（真实展示 Cookie/IP block 状态 + 健康分）
 // ============================================================
+
+// Cookie状态 → 颜色/文字映射
+const cookieStatusMap: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
+  valid:    { color: 'green',   text: 'Cookie有效',   icon: <CheckCircleOutlined /> },
+  invalid:  { color: 'red',     text: 'Cookie无效',   icon: <CloseCircleOutlined /> },
+  expired:  { color: 'volcano', text: 'Cookie过期',   icon: <WarningOutlined /> },
+  cooldown: { color: 'orange',  text: 'Cookie冷却',   icon: <WarningOutlined /> },
+  unknown:  { color: 'default', text: '未知',         icon: <WarningOutlined /> },
+};
+
 function AccountPoolTab() {
   const [accountData, setAccountData] = useState<AccountPoolStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [platform, setPlatform] = useState('dy');
+  const [healthChecking, setHealthChecking] = useState(false);
+  const [healthResult, setHealthResult] = useState<HealthCheckResult | null>(null);
 
   const fetchAccounts = async () => {
     setLoading(true);
@@ -744,18 +367,23 @@ function AccountPoolTab() {
     }
   };
 
-  const statusColor = (status: string) => {
-    const map: Record<string, string> = {
-      healthy: 'green', cooldown: 'orange', banned: 'red', dead: 'default',
-    };
-    return map[status] || 'default';
-  };
-
-  const statusText = (status: string) => {
-    const map: Record<string, string> = {
-      healthy: '健康', cooldown: '冷却中', banned: '已封禁', dead: '已失效',
-    };
-    return map[status] || status;
+  // 主动健康检测：实际检查Cookie格式 + IP是否被block
+  const handleHealthCheck = async () => {
+    setHealthChecking(true);
+    try {
+      const result = await checkAccountHealth(platform);
+      setHealthResult(result);
+      const s = result.summary;
+      message.success(
+        `检测完成: Cookie ${s.cookie_valid}有效/${s.cookie_invalid}无效/${s.cookie_expired}过期, IP ${s.ip_healthy}健康/${s.ip_blocked}被封`
+      );
+      // 刷新账号池状态以获取最新数据
+      fetchAccounts();
+    } catch (error: any) {
+      message.error(error?.response?.data?.detail || '健康检测失败');
+    } finally {
+      setHealthChecking(false);
+    }
   };
 
   return (
@@ -773,16 +401,27 @@ function AccountPoolTab() {
             )}
           </Text>
         </div>
-        <Space>
+        <Space wrap>
           <select
             value={platform}
             onChange={(e) => setPlatform(e.target.value)}
             style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #d9d9d9' }}
           >
-            <option value="dy">dy</option>
-            <option value="xhs">xhs</option>
-            <option value="x_twitter">x_twitter</option>
+            <option value="dy">抖音(dy)</option>
+            <option value="xhs">小红书(xhs)</option>
+            <option value="ks">快手(ks)</option>
+            <option value="bili">B站(bili)</option>
+            <option value="wb">微博(wb)</option>
+            <option value="x_twitter">X(x_twitter)</option>
           </select>
+          <Button
+            type="primary"
+            icon={<HeartOutlined />}
+            onClick={handleHealthCheck}
+            loading={healthChecking}
+          >
+            健康检测
+          </Button>
           <Button icon={<ThunderboltOutlined />} onClick={handleRefresh}>
             刷新池
           </Button>
@@ -794,6 +433,32 @@ function AccountPoolTab() {
           </Button>
         </Space>
       </div>
+
+      {/* 健康检测结果横幅 */}
+      {healthResult && (
+        <Alert
+          type={healthResult.summary.ip_blocked > 0 || healthResult.summary.cookie_invalid > 0 ? 'warning' : 'success'}
+          showIcon
+          icon={<HeartOutlined />}
+          message={`健康检测完成 (检测时间: ${new Date(healthResult.checked_at * 1000).toLocaleTimeString()})`}
+          description={
+            <Space size="large" wrap>
+              <span>
+                Cookie: <Text type="success">{healthResult.summary.cookie_valid} 有效</Text>
+                {healthResult.summary.cookie_invalid > 0 && <Text type="danger"> / {healthResult.summary.cookie_invalid} 无效</Text>}
+                {healthResult.summary.cookie_expired > 0 && <Text type="warning"> / {healthResult.summary.cookie_expired} 过期</Text>}
+              </span>
+              <span>
+                IP: <Text type="success">{healthResult.summary.ip_healthy} 健康</Text>
+                {healthResult.summary.ip_blocked > 0 && <Text type="danger"> / {healthResult.summary.ip_blocked} 被封</Text>}
+              </span>
+            </Space>
+          }
+          style={{ marginBottom: 16 }}
+          closable
+          onClose={() => setHealthResult(null)}
+        />
+      )}
 
       {accountData && (
         <>
@@ -835,61 +500,169 @@ function AccountPoolTab() {
             </Col>
           </Row>
 
-          <Card title="账号详情" size="small" extra={
-            accountData.network_interfaces && Object.keys(accountData.network_interfaces).length > 0 && (
-              <Space size="small" wrap>
-                <Text type="secondary" style={{ fontSize: 11 }}>可用IP池:</Text>
-                {Object.entries(accountData.network_interfaces).map(([iface, ip]) => (
-                  <Tag key={iface} color="blue" style={{ fontSize: 11 }}>
-                    {iface}: {ip}
+          {/* IP健康状态面板 - 真实展示每个IP是否被block */}
+          {accountData.ip_health && Object.keys(accountData.ip_health).length > 0 && (
+            <Card
+              title={
+                <Space>
+                  <span>🌐 IP健康状态</span>
+                  <Tag color={accountData.bad_ips > 0 ? 'red' : 'green'}>
+                    {accountData.bad_ips > 0 ? `${accountData.bad_ips} 个IP被封` : '全部正常'}
                   </Tag>
+                </Space>
+              }
+              size="small"
+              style={{ marginBottom: 16 }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+                {Object.entries(accountData.ip_health).map(([iface, info]) => (
+                  <div
+                    key={iface}
+                    style={{
+                      padding: 12,
+                      borderRadius: 8,
+                      background: info.status === 'blocked' ? '#fff2f0' : info.status === 'healthy' ? '#f6ffed' : '#fafafa',
+                      border: `1px solid ${info.status === 'blocked' ? '#ffccc7' : info.status === 'healthy' ? '#b7eb8f' : '#d9d9d9'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Space>
+                        {info.status === 'healthy' ? (
+                          <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                        ) : info.status === 'blocked' ? (
+                          <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
+                        ) : (
+                          <WarningOutlined style={{ color: '#faad14' }} />
+                        )}
+                        <Text strong>{iface}</Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{info.ip}</Text>
+                      </Space>
+                      <Tag color={info.status === 'blocked' ? 'red' : info.status === 'healthy' ? 'green' : 'default'}>
+                        {info.status === 'blocked' ? '已被封' : info.status === 'healthy' ? '正常' : '未知'}
+                      </Tag>
+                    </div>
+                    {info.status === 'blocked' && info.remaining_ttl > 0 && (
+                      <div style={{ marginTop: 4, fontSize: 12, color: '#ff4d4f' }}>
+                        <Tooltip title="IP被封后自动冷却，过期后恢复使用">
+                          <WarningOutlined /> 自动恢复剩余: {Math.ceil(info.remaining_ttl / 60)} 分钟
+                        </Tooltip>
+                      </div>
+                    )}
+                  </div>
                 ))}
+              </div>
+              {accountData.bad_ip_list && accountData.bad_ip_list.length > 0 && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+                  <Text type="secondary" strong style={{ fontSize: 12 }}>被封IP详情:</Text>
+                  <div style={{ marginTop: 8 }}>
+                    {accountData.bad_ip_list.map((bad, idx) => (
+                      <Tag key={idx} color="red" style={{ marginBottom: 4 }}>
+                        {bad.interface || bad.key}: {bad.ip} (剩余 {Math.ceil(bad.remaining_ttl / 60)}分钟)
+                      </Tag>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* 账号详情 - 真实展示Cookie状态 + 健康分 */}
+          <Card
+            title={
+              <Space>
+                <span>账号详情</span>
+                <Text type="secondary" style={{ fontSize: 12, fontWeight: 'normal' }}>
+                  (Cookie状态由格式检测+运行时状态综合判定，健康分由请求成功率动态计算)
+                </Text>
               </Space>
-            )
-          }>
+            }
+            size="small"
+            extra={
+              accountData.network_interfaces && Object.keys(accountData.network_interfaces).length > 0 && (
+                <Space size="small" wrap>
+                  <Text type="secondary" style={{ fontSize: 11 }}>可用IP池:</Text>
+                  {Object.entries(accountData.network_interfaces).map(([iface, ip]) => (
+                    <Tag key={iface} color="blue" style={{ fontSize: 11 }}>
+                      {iface}: {ip}
+                    </Tag>
+                  ))}
+                </Space>
+              )
+            }
+          >
             {accountData.accounts.length === 0 ? (
               <Text type="secondary">暂无账号，请在"Cookie池管理"中添加Cookie</Text>
             ) : (
               <div style={{ maxHeight: 500, overflowY: 'auto' }}>
-                {accountData.accounts.map((acc) => (
-                  <div key={acc.account_id} style={{
-                    padding: 12,
-                    background: acc.status === 'healthy' ? '#f6ffed' : acc.status === 'cooldown' ? '#fffbe6' : '#fff2f0',
-                    borderRadius: 8,
-                    marginBottom: 8,
-                    border: `1px solid ${acc.status === 'healthy' ? '#b7eb8f' : acc.status === 'cooldown' ? '#ffe58f' : '#ffccc7'}`,
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <Space>
-                        <Tag color={statusColor(acc.status)}>{statusText(acc.status)}</Tag>
-                        <Text strong>{acc.alias}</Text>
-                        {acc.network_interface && (
-                          <Tag color="geekblue" style={{ fontSize: 11 }}>
-                            上次用: {acc.network_interface} → {acc.public_ip || '未知'}
-                          </Tag>
+                {accountData.accounts.map((acc) => {
+                  const cs = cookieStatusMap[acc.cookie_status] || cookieStatusMap.unknown;
+                  return (
+                    <div
+                      key={acc.account_id}
+                      style={{
+                        padding: 12,
+                        background: acc.status === 'healthy' ? '#f6ffed' : acc.status === 'cooldown' ? '#fffbe6' : '#fff2f0',
+                        borderRadius: 8,
+                        marginBottom: 8,
+                        border: `1px solid ${acc.status === 'healthy' ? '#b7eb8f' : acc.status === 'cooldown' ? '#ffe58f' : '#ffccc7'}`,
+                      }}
+                    >
+                      {/* 第一行：状态标签 + 账号别名 + IP信息 */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                        <Space wrap>
+                          {/* Cookie真实状态标签 */}
+                          <Tooltip title={
+                            acc.cookie_status === 'invalid' && acc.cookie_missing_fields.length > 0
+                              ? `缺少字段: ${acc.cookie_missing_fields.join(', ')}`
+                              : acc.cookie_status === 'expired'
+                              ? '运行时检测到Cookie已失效（登录过期）'
+                              : acc.cookie_status === 'cooldown'
+                              ? `冷却原因: ${acc.cooldown_reason || '未知'}`
+                              : 'Cookie格式正确且运行时状态正常'
+                          }>
+                            <Tag color={cs.color} icon={cs.icon}>{cs.text}</Tag>
+                          </Tooltip>
+                          <Text strong>{acc.alias}</Text>
+                          {/* IP状态标签 */}
+                          {acc.network_interface && (
+                            <Tag
+                              color={acc.ip_blocked ? 'red' : 'geekblue'}
+                              style={{ fontSize: 11 }}
+                              icon={acc.ip_blocked ? <CloseCircleOutlined /> : <CheckCircleOutlined />}
+                            >
+                              {acc.network_interface} → {acc.public_ip || '未知'}
+                              {acc.ip_blocked && ' (IP被封)'}
+                            </Tag>
+                          )}
+                          {acc.proxy_ip && <Text type="secondary" style={{ fontSize: 12 }}>代理: {acc.proxy_ip}</Text>}
+                        </Space>
+                        {acc.status === 'cooldown' && acc.cooldown_remaining > 0 && (
+                          <Text type="warning" style={{ fontSize: 12 }}>
+                            冷却剩余: {Math.ceil(acc.cooldown_remaining / 60)}分钟 ({acc.cooldown_reason})
+                          </Text>
                         )}
-                        {acc.proxy_ip && <Text type="secondary" style={{ fontSize: 12 }}>代理: {acc.proxy_ip}</Text>}
-                      </Space>
-                      {acc.status === 'cooldown' && acc.cooldown_remaining > 0 && (
-                        <Text type="warning" style={{ fontSize: 12 }}>
-                          冷却剩余: {Math.ceil(acc.cooldown_remaining / 60)}分钟 ({acc.cooldown_reason})
+                      </div>
+
+                      {/* 第二行：健康分进度条 */}
+                      <Tooltip title={`健康分 = 基础100分 - 失败扣分 + 成功加分。当前: 请求${acc.total_requests}次, 成功${acc.success_count}次, 失败${acc.total_fails}次, 连续失败${acc.fail_count}次`}>
+                        <Progress
+                          percent={acc.health_score}
+                          size="small"
+                          status={acc.health_score > 60 ? 'success' : acc.health_score > 30 ? 'normal' : 'exception'}
+                          format={(p) => `健康分: ${p}`}
+                        />
+                      </Tooltip>
+
+                      {/* 第三行：请求统计 */}
+                      <div style={{ marginTop: 4, fontSize: 12, color: '#999' }}>
+                        请求: {acc.total_requests} | 成功: {acc.success_count} | 失败: {acc.total_fails} | 连续失败: {acc.fail_count}
+                        <Text type="secondary" style={{ marginLeft: 8, fontSize: 11 }}>
+                          (每次请求随机分配IP)
                         </Text>
-                      )}
+                      </div>
                     </div>
-                    <Progress
-                      percent={acc.health_score}
-                      size="small"
-                      status={acc.health_score > 60 ? 'success' : acc.health_score > 30 ? 'normal' : 'exception'}
-                      format={(p) => `健康分: ${p}`}
-                    />
-                    <div style={{ marginTop: 4, fontSize: 12, color: '#999' }}>
-                      请求: {acc.total_requests} | 成功: {acc.success_count} | 失败: {acc.total_fails} | 连续失败: {acc.fail_count}
-                      <Text type="secondary" style={{ marginLeft: 8, fontSize: 11 }}>
-                        (每次请求随机分配IP)
-                      </Text>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Card>

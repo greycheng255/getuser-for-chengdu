@@ -35,19 +35,24 @@ _one_shot_status: Dict[str, Any] = {
     "error": "",
     "crawled_count": 0,
     "stage": "idle",  # idle/starting/crawling/saving/done/failed
+    "platform": "",       # 最近采集的平台 id（如 x/youtube/xiaohongshu）
+    "platform_name": "",  # 最近采集的平台展示名（如 "X (Twitter)" / "小红书"）
 }
 
 
 class CrawlOnceRequest(BaseModel):
     keywords: str = Field("", description="自定义关键词，逗号分隔。为空则用配置中的 KEYWORDS")
     max_posts: int = Field(20, ge=1, le=100, description="每个关键词最多抓取条数")
+    platform: str = Field("x", description="平台：x/youtube/bilibili/douyin/xiaohongshu 等，使用 hotpoint_fetcher 支持")
 
 
 @router.post("/once")
 async def crawl_once(req: CrawlOnceRequest):
-    """触发一次 X Twitter 采集（异步任务，立即返回）
-    
-    关键词为空时，自动从热点聚合获取最新热点数据，不再使用 config.KEYWORDS
+    """触发一次采集（异步任务，立即返回）
+
+    平台支持：
+    - x: 使用 x_trending_fetcher + XTwitterPost 表（保持原逻辑）
+    - 其他平台: 使用 hotpoint_fetcher.fetch_platform(force_refresh=True) 强制刷新缓存
     """
     global _one_shot_task
 
@@ -55,20 +60,33 @@ async def crawl_once(req: CrawlOnceRequest):
         return {"success": False, "message": "已有采集任务在运行中", "status": _one_shot_status}
 
     keywords = req.keywords.strip()
-    
-    _one_shot_task = asyncio.create_task(_do_crawl_once(keywords, req.max_posts))
+    platform = req.platform.strip() or "x"
+
+    _one_shot_task = asyncio.create_task(_do_crawl_once(keywords, req.max_posts, platform))
     return {
         "success": True,
         "message": "采集任务已启动",
         "keywords": keywords if keywords else "热点聚合自动获取",
         "max_posts": req.max_posts,
+        "platform": platform,
     }
 
 
-async def _do_crawl_once(keywords: str, max_posts: int):
-    """实际执行单次采集"""
+async def _do_crawl_once(keywords: str, max_posts: int, platform: str = "x"):
+    """实际执行单次采集
+
+    平台路由：
+    - x: 走 x_trending_fetcher + XTwitterPost 表（保持原逻辑）
+    - 其他平台: 走 hotpoint_fetcher.fetch_platform(force_refresh=True) 强制刷新缓存
+    """
     global _one_shot_status
     import time
+    # 获取平台展示名，前端用于显示"上次采集：小红书 成功（共20条）"
+    try:
+        from api.services.hotpoint_fetcher import PLATFORMS
+        platform_name = PLATFORMS.get(platform, {}).get("name", platform)
+    except Exception:
+        platform_name = platform
     _one_shot_status.update({
         "running": True,
         "started_at": int(time.time()),
@@ -77,11 +95,29 @@ async def _do_crawl_once(keywords: str, max_posts: int):
         "error": "",
         "crawled_count": 0,
         "stage": "starting",
+        "platform": platform,
+        "platform_name": platform_name,
     })
 
     try:
+        # === 非 X 平台：使用 hotpoint_fetcher 强制刷新缓存 ===
+        if platform != "x":
+            _one_shot_status["stage"] = "crawling (热点聚合)"
+            print(f"[x-workbench-crawl] 开始采集平台 {platform}（强制刷新缓存）")
+
+            from api.services.hotpoint_fetcher import fetch_platform, PLATFORMS
+            if platform not in PLATFORMS:
+                raise ValueError(f"不支持的平台: {platform}，支持的平台: {list(PLATFORMS.keys())}")
+
+            raw_items = await fetch_platform(platform, force_refresh=True)
+            _one_shot_status["stage"] = "done"
+            _one_shot_status["crawled_count"] = len(raw_items)
+            print(f"[x-workbench-crawl] 平台 {platform} 采集完成，共获取 {len(raw_items)} 条数据")
+            return
+
+        # === X 平台：保持原逻辑 ===
         _one_shot_status["stage"] = "crawling"
-        print(f"[x-workbench-crawl] 开始采集，关键词: {_one_shot_status['keywords']}")
+        print(f"[x-workbench-crawl] 开始采集 X，关键词: {_one_shot_status['keywords']}")
 
         if keywords:
             from api.services.x_trending_fetcher import _crawl_with_playwright_direct, _save_trending_data

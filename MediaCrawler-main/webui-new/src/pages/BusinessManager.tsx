@@ -1,8 +1,6 @@
+import { message } from '../utils/antdMessage';
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  Card, Tabs, Table, Button, Space, Modal, Form, Input, Select, InputNumber,
-  message, Tag, Row, Col, Statistic, Tooltip, Popconfirm, Switch, Descriptions, Divider
-} from 'antd';
+import { Card, Tabs, Table, Button, Space, Modal, Form, Input, Select, InputNumber, Tag, Row, Col, Statistic, Tooltip, Popconfirm, Switch, Descriptions, Divider } from 'antd';
 import {
   UserOutlined, TeamOutlined, AppstoreOutlined, ApiOutlined, DollarOutlined,
   PlusOutlined, ReloadOutlined, KeyOutlined, SendOutlined, ShopOutlined, PhoneOutlined
@@ -501,93 +499,102 @@ const BusinessManager: React.FC = () => {
       </Card>
 
       {/* Tab页 */}
-      <Tabs defaultActiveKey="users">
-        {/* 客户管理 */}
-        <Tabs.TabPane tab="客户管理" key="users">
-          <Card>
-            <Space style={{ marginBottom: 16 }}>
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateUserModal(true)}>创建客户/销售</Button>
-              <Button icon={<ReloadOutlined />} onClick={() => fetchUsers(usersPage)}>刷新</Button>
-            </Space>
-            <Table
-              columns={userColumns}
-              dataSource={users}
-              rowKey="id"
-              loading={usersLoading}
-              pagination={{
-                current: usersPage,
-                total: usersTotal,
-                pageSize: 20,
-                onChange: (page) => fetchUsers(page),
-              }}
-              scroll={{ x: 1200 }}
-            />
-          </Card>
-        </Tabs.TabPane>
-
-        {/* 线索包管理 */}
-        <Tabs.TabPane tab="线索包管理" key="packages">
-          <Card>
-            <Space style={{ marginBottom: 16 }}>
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreatePackageModal(true)}>创建线索包</Button>
-              <Button icon={<ReloadOutlined />} onClick={() => fetchPackages(packagesPage)}>刷新</Button>
-            </Space>
-            <Table
-              columns={packageColumns}
-              dataSource={packages}
-              rowKey="id"
-              loading={packagesLoading}
-              pagination={{
-                current: packagesPage,
-                total: packagesTotal,
-                pageSize: 20,
-                onChange: (page) => fetchPackages(page),
-              }}
-              scroll={{ x: 1000 }}
-            />
-          </Card>
-        </Tabs.TabPane>
-
-        {/* API对接 */}
-        <Tabs.TabPane tab="API对接" key="api">
-          <Card>
-            <Space style={{ marginBottom: 16 }}>
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateApiClientModal(true)}>创建API客户端</Button>
-              <Button icon={<ReloadOutlined />} onClick={() => fetchApiClients()}>刷新</Button>
-            </Space>
-            <Table
-              columns={apiClientColumns}
-              dataSource={apiClients}
-              rowKey="id"
-              loading={apiClientsLoading}
-              pagination={false}
-              scroll={{ x: 900 }}
-            />
-          </Card>
-        </Tabs.TabPane>
-
-        {/* 已分配线索 */}
-        <Tabs.TabPane tab="已分配线索" key="assigned">
-          <Card>
-            <Space style={{ marginBottom: 16 }}>
-              <Button icon={<ReloadOutlined />} onClick={() => fetchAssignedLeads()}>刷新</Button>
-            </Space>
-            <Table
-              columns={assignedLeadColumns}
-              dataSource={assignedLeads}
-              rowKey="assignment_id"
-              loading={assignedLoading}
-              pagination={{
-                current: 1,
-                total: assignedTotal,
-                pageSize: 20,
-                onChange: (page) => fetchAssignedLeads(page),
-              }}
-              scroll={{ x: 1000 }}
-            />
-          </Card>
-        </Tabs.TabPane>
-      </Tabs>
+      <Tabs defaultActiveKey="users" items={[
+        {
+          key: 'users',
+          label: '客户管理',
+          children: (
+            <Card>
+              <Space style={{ marginBottom: 16 }}>
+                <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateUserModal(true)}>创建客户/销售</Button>
+                <Button icon={<ReloadOutlined />} onClick={() => fetchUsers(usersPage)}>刷新</Button>
+              </Space>
+              <Table
+                columns={userColumns}
+                dataSource={users}
+                rowKey="id"
+                loading={usersLoading}
+                pagination={{
+                  current: usersPage,
+                  total: usersTotal,
+                  pageSize: 20,
+                  onChange: (page) => fetchUsers(page),
+                }}
+                scroll={{ x: 1200 }}
+              />
+            </Card>
+          ),
+        },
+        {
+          key: 'packages',
+          label: '线索包管理',
+          children: (
+            <Card>
+              <Space style={{ marginBottom: 16 }}>
+                <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreatePackageModal(true)}>创建线索包</Button>
+                <Button icon={<ReloadOutlined />} onClick={() => fetchPackages(packagesPage)}>刷新</Button>
+              </Space>
+              <Table
+                columns={packageColumns}
+                dataSource={packages}
+                rowKey="id"
+                loading={packagesLoading}
+                pagination={{
+                  current: packagesPage,
+                  total: packagesTotal,
+                  pageSize: 20,
+                  onChange: (page) => fetchPackages(page),
+                }}
+                scroll={{ x: 1000 }}
+              />
+            </Card>
+          ),
+        },
+        {
+          key: 'api',
+          label: 'API对接',
+          children: (
+            <Card>
+              <Space style={{ marginBottom: 16 }}>
+                <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateApiClientModal(true)}>创建API客户端</Button>
+                <Button icon={<ReloadOutlined />} onClick={() => fetchApiClients()}>刷新</Button>
+              </Space>
+              <Table
+                columns={apiClientColumns}
+                dataSource={apiClients}
+                rowKey="id"
+                loading={apiClientsLoading}
+                pagination={false}
+                scroll={{ x: 900 }}
+              />
+            </Card>
+          ),
+        },
+        {
+          key: 'assigned',
+          label: '已分配线索',
+          children: (
+            <Card>
+              <Space style={{ marginBottom: 16 }}>
+                <Button icon={<ReloadOutlined />} onClick={() => fetchAssignedLeads()}>刷新</Button>
+              </Space>
+              <Table
+                columns={assignedLeadColumns}
+                dataSource={assignedLeads}
+                rowKey="assignment_id"
+                loading={assignedLoading}
+                pagination={{
+                  current: 1,
+                  total: assignedTotal,
+                  pageSize: 20,
+                  onChange: (page) => fetchAssignedLeads(page),
+                }}
+                scroll={{ x: 1000 }}
+              />
+            </Card>
+          ),
+        },
+      ]} />
 
       {/* 创建用户弹窗 */}
       <Modal

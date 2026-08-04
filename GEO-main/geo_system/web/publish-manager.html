@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>内容分发管理 - GEO系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* 头部 */
+        .header {
+            text-align: center;
+            padding: 40px 0;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #a0a0a0;
+            font-size: 1.1rem;
+        }
+
+        /* 平台卡片 */
+        .platforms-section {
+            margin-bottom: 40px;
+        }
+
+        .section-title {
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .platforms-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .platform-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .platform-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .platform-card.configured {
+            border-color: #10b981;
+        }
+
+        .platform-icon {
+            font-size: 2.5rem;
+            margin-bottom: 12px;
+        }
+
+        .platform-name {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .platform-desc {
+            color: #a0a0a0;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+        }
+
+        .platform-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .platform-status.configured {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .platform-status.not-configured {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        /* 快速发布 */
+        .quick-publish {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 40px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            min-height: 150px;
+            resize: vertical;
+        }
+
+        /* 平台选择 */
+        .platform-select {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .platform-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .platform-checkbox:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .platform-checkbox.selected {
+            background: rgba(102, 126, 234, 0.3);
+            border-color: #667eea;
+        }
+
+        .platform-checkbox input {
+            display: none;
+        }
+
+        /* 按钮 */
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* 任务列表 */
+        .tasks-section {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 30px;
+        }
+
+        .tasks-filter {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            color: #a0a0a0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .filter-btn:hover,
+        .filter-btn.active {
+            background: rgba(102, 126, 234, 0.3);
+            border-color: #667eea;
+            color: #fff;
+        }
+
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .task-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s;
+        }
+
+        .task-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .task-info h4 {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+
+        .task-meta {
+            display: flex;
+            gap: 16px;
+            color: #a0a0a0;
+            font-size: 0.85rem;
+        }
+
+        .task-status {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .task-status.success {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .task-status.pending {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        .task-status.failed {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .task-status.publishing {
+            background: rgba(59, 130, 246, 0.2);
+            color: #3b82f6;
+        }
+
+        /* 结果展示 */
+        .result-links {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .result-link {
+            padding: 4px 10px;
+            background: rgba(102, 126, 234, 0.2);
+            border-radius: 4px;
+            font-size: 0.8rem;
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .result-link:hover {
+            background: rgba(102, 126, 234, 0.3);
+        }
+
+        /* 消息提示 */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 16px 24px;
+            border-radius: 8px;
+            color: #fff;
+            font-weight: 500;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+        }
+
+        .toast.success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+
+        .toast.error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+
+        /* 加载动画 */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+
+            .platforms-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .task-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <div class="header">
+            <h1>📢 内容分发管理</h1>
+            <p>一键将AI生成的内容发布到多个平台，提升品牌曝光度</p>
+        </div>
+
+        <!-- 平台配置 -->
+        <div class="platforms-section">
+            <h2 class="section-title">
+                <span>🔗</span>
+                已连接平台
+            </h2>
+            <div class="platforms-grid" id="platformsGrid">
+                <!-- 动态加载 -->
+            </div>
+        </div>
+
+        <!-- 快速发布 -->
+        <div class="quick-publish">
+            <h2 class="section-title">
+                <span>🚀</span>
+                快速发布
+            </h2>
+            <form id="publishForm">
+                <div class="form-group">
+                    <label>标题</label>
+                    <input type="text" id="title" placeholder="输入内容标题" required>
+                </div>
+
+                <div class="form-group">
+                    <label>内容</label>
+                    <textarea id="content" placeholder="输入要发布的内容..." required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>关键词（用逗号分隔）</label>
+                    <input type="text" id="keywords" placeholder="定制家具, 全屋定制, 织然家具">
+                </div>
+
+                <div class="form-group">
+                    <label>内容类型</label>
+                    <select id="contentType">
+                        <option value="article">文章</option>
+                        <option value="faq">FAQ问答</option>
+                        <option value="short">短内容</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>封面图片（小红书等平台需要）</label>
+                    <input type="file" id="coverImage" accept="image/*" multiple>
+                    <small style="color: #888; display: block; margin-top: 5px;">
+                        💡 提示：小红书必须上传至少1张图片。如不上传，系统将使用AI自动生成配图。
+                    </small>
+                    <div id="imagePreview" style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>选择发布平台</label>
+                    <div class="platform-select" id="platformSelect">
+                        <!-- 动态加载 -->
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    <span>📤</span>
+                    一键发布
+                </button>
+            </form>
+        </div>
+
+        <!-- 发布任务 -->
+        <div class="tasks-section">
+            <h2 class="section-title">
+                <span>📋</span>
+                发布任务
+            </h2>
+
+            <div class="tasks-filter">
+                <button class="filter-btn active" data-filter="all">全部</button>
+                <button class="filter-btn" data-filter="pending">待发布</button>
+                <button class="filter-btn" data-filter="publishing">发布中</button>
+                <button class="filter-btn" data-filter="success">成功</button>
+                <button class="filter-btn" data-filter="failed">失败</button>
+            </div>
+
+            <div class="task-list" id="taskList">
+                <!-- 动态加载 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 消息提示 -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // 动态获取API地址，支持环境变量配置
+        // 自动检测：如果页面通过localhost访问则用localhost:5000，否则用当前host
+        const API_BASE = (typeof API_HOST !== 'undefined' && API_HOST) ? API_HOST :
+            (window.location.protocol + '//' + window.location.hostname + ':5001') + '/api';
+
+        // 加载平台列表
+        async function loadPlatforms() {
+            try {
+                const response = await fetch(`${API_BASE}/publish/platforms`);
+                const data = await response.json();
+
+                if (data.success) {
+                    renderPlatforms(data.platforms);
+                    renderPlatformSelect(data.platforms);
+                }
+            } catch (error) {
+                showToast('加载平台列表失败', 'error');
+            }
+        }
+
+        // 渲染平台卡片
+        function renderPlatforms(platforms) {
+            const grid = document.getElementById('platformsGrid');
+            grid.innerHTML = platforms.map(p => `
+                <div class="platform-card ${p.configured ? 'configured' : ''}">
+                    <div class="platform-icon">${p.icon}</div>
+                    <div class="platform-name">${p.name}</div>
+                    <div class="platform-desc">${p.description}</div>
+                    <span class="platform-status ${p.configured ? 'configured' : 'not-configured'}">
+                        ${p.configured ? '✅ 已配置' : '⚠️ 未配置'}
+                    </span>
+                </div>
+            `).join('');
+        }
+
+        // 渲染平台选择
+        function renderPlatformSelect(platforms) {
+            const container = document.getElementById('platformSelect');
+            container.innerHTML = platforms.map(p => `
+                <label class="platform-checkbox ${p.configured ? '' : 'disabled'}" data-platform="${p.id}">
+                    <input type="checkbox" value="${p.id}" ${p.configured ? '' : 'disabled'}>
+                    <span>${p.icon} ${p.name}</span>
+                </label>
+            `).join('');
+
+            // 点击选择
+            container.querySelectorAll('.platform-checkbox:not(.disabled)').forEach(checkbox => {
+                checkbox.addEventListener('click', function() {
+                    this.classList.toggle('selected');
+                    this.querySelector('input').checked = this.classList.contains('selected');
+                });
+            });
+        }
+
+        // 加载任务列表
+        async function loadTasks(filter = 'all') {
+            try {
+                let url = `${API_BASE}/publish/tasks`;
+                if (filter !== 'all') {
+                    url += `?status=${filter}`;
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.success) {
+                    renderTasks(data.tasks);
+                }
+            } catch (error) {
+                showToast('加载任务列表失败', 'error');
+            }
+        }
+
+        // 渲染任务列表
+        function renderTasks(tasks) {
+            const list = document.getElementById('taskList');
+
+            if (tasks.length === 0) {
+                list.innerHTML = '<div style="text-align: center; padding: 40px; color: #a0a0a0;">暂无发布任务</div>';
+                return;
+            }
+
+            list.innerHTML = tasks.map(task => {
+                const statusClass = task.status;
+                const statusText = {
+                    'pending': '⏳ 待发布',
+                    'publishing': '📤 发布中',
+                    'success': '✅ 成功',
+                    'failed': '❌ 失败'
+                }[task.status] || task.status;
+
+                // 生成结果链接
+                let resultLinks = '';
+                if (task.platform_results) {
+                    const links = Object.entries(task.platform_results)
+                        .filter(([_, r]) => r.success && r.url)
+                        .map(([platform, result]) => `
+                            <a href="${result.url}" target="_blank" class="result-link">
+                                ${getPlatformIcon(platform)} ${getPlatformName(platform)}
+                            </a>
+                        `).join('');
+
+                    if (links) {
+                        resultLinks = `<div class="result-links">${links}</div>`;
+                    }
+                }
+
+                return `
+                    <div class="task-item">
+                        <div class="task-info">
+                            <h4>${task.title}</h4>
+                            <div class="task-meta">
+                                <span>类型: ${task.content_type}</span>
+                                <span>平台: ${task.target_platforms.map(getPlatformName).join(', ')}</span>
+                                <span>时间: ${new Date(task.created_at).toLocaleString()}</span>
+                            </div>
+                            ${resultLinks}
+                        </div>
+                        <span class="task-status ${statusClass}">${statusText}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 获取平台图标
+        function getPlatformIcon(platform) {
+            const icons = {
+                'zhihu': '📝',
+                'xiaohongshu': '📕',
+                'weibo': '📢',
+                'website_blog': '🌐',
+                'website_faq': '❓'
+            };
+            return icons[platform] || '📄';
+        }
+
+        // 获取平台名称
+        function getPlatformName(platform) {
+            const names = {
+                'zhihu': '知乎',
+                'xiaohongshu': '小红书',
+                'weibo': '微博',
+                'website_blog': '官网博客',
+                'website_faq': '官网FAQ'
+            };
+            return names[platform] || platform;
+        }
+
+        // 图片预览
+        document.getElementById('coverImage').addEventListener('change', function(e) {
+            const preview = document.getElementById('imagePreview');
+            preview.innerHTML = '';
+            
+            Array.from(e.target.files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = document.createElement('img');
+                    img.src = e.target.result;
+                    img.style.width = '100px';
+                    img.style.height = '100px';
+                    img.style.objectFit = 'cover';
+                    img.style.borderRadius = '8px';
+                    preview.appendChild(img);
+                };
+                reader.readAsDataURL(file);
+            });
+        });
+
+        // 发布表单提交
+        document.getElementById('publishForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const selectedPlatforms = Array.from(
+                document.querySelectorAll('.platform-checkbox.selected input')
+            ).map(cb => cb.value);
+
+            if (selectedPlatforms.length === 0) {
+                showToast('请至少选择一个发布平台', 'error');
+                return;
+            }
+
+            // 检查是否选择了小红书但没有上传图片（现在支持AI自动生成，所以只提示）
+            if (selectedPlatforms.includes('xiaohongshu')) {
+                const imageInput = document.getElementById('coverImage');
+                if (!imageInput.files || imageInput.files.length === 0) {
+                    showToast('小红书：未上传图片，系统将使用AI自动生成配图', 'info');
+                }
+            }
+
+            const btn = this.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> 发布中...';
+
+            try {
+                // 准备图片文件
+                const imageInput = document.getElementById('coverImage');
+                let imagesBase64 = [];
+                
+                if (imageInput.files && imageInput.files.length > 0) {
+                    const files = Array.from(imageInput.files);
+                    imagesBase64 = await Promise.all(files.map(file => {
+                        return new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onload = function(e) {
+                                resolve(e.target.result);
+                            };
+                            reader.readAsDataURL(file);
+                        });
+                    }));
+                }
+
+                const response = await fetch(`${API_BASE}/publish/quick`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: document.getElementById('title').value,
+                        content: document.getElementById('content').value,
+                        keywords: document.getElementById('keywords').value.split(',').map(k => k.trim()).filter(k => k),
+                        content_type: document.getElementById('contentType').value,
+                        platforms: selectedPlatforms,
+                        images: imagesBase64
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast('发布成功！', 'success');
+                    this.reset();
+                    document.getElementById('imagePreview').innerHTML = '';
+                    document.querySelectorAll('.platform-checkbox').forEach(cb => cb.classList.remove('selected'));
+                    loadTasks();
+                } else {
+                    showToast(data.error || '发布失败', 'error');
+                }
+            } catch (error) {
+                showToast('发布请求失败', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span>📤</span> 一键发布';
+            }
+        });
+
+        // 筛选按钮
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                loadTasks(this.dataset.filter);
+            });
+        });
+
+        // 显示消息
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // 初始化
+        loadPlatforms();
+        loadTasks();
+
+        // 定时刷新任务列表
+        setInterval(() => {
+            const activeFilter = document.querySelector('.filter-btn.active');
+            loadTasks(activeFilter ? activeFilter.dataset.filter : 'all');
+        }, 10000);
+    </script>
+</body>
+</html>

@@ -17,6 +17,8 @@
 # 详细许可条款请参阅项目根目录下的LICENSE文件。
 # 使用本代码即表示您同意遵守上述原则和LICENSE中的所有条款。
 
+import os
+
 # Basic configuration
 PLATFORM = "x_twitter"  # Platform, xhs | dy | ks | bili | wb | tieba | zhihu | x_twitter
 
@@ -89,7 +91,7 @@ CDP_CONNECT_EXISTING = False
 AUTO_CLOSE_BROWSER = True
 
 # Data saving type option configuration, supports: csv, db, json, jsonl, sqlite, excel, postgres. It is best to save to DB, with deduplication function.
-SAVE_DATA_OPTION = "postgres"  # csv or db or json or jsonl or sqlite or excel or postgres
+SAVE_DATA_OPTION = os.getenv("SAVE_DATA_OPTION", "postgres")  # csv or db or json or jsonl or sqlite or excel or postgres
 
 # Data saving path, if not specified by default, it will be saved to the data folder.
 SAVE_DATA_PATH = ""

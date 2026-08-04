@@ -1,0 +1,129 @@
+{
+  "templates": {
+    "scenario_2_single_account_dedup": {
+      "name": "场景2：单账号去重验证",
+      "description": "1账号×200客户，标记10条已回复后再次取数，验证replied/sent不被重复取数",
+      "create_plan_request": {
+        "method": "POST",
+        "url": "/api/customer-dispatch/plans",
+        "body": {
+          "name": "单账号去重验证-模板",
+          "platform": "douyin",
+          "accounts": [
+            {"account_alias": "账号1", "cookie_id": "c1", "batch_size": 200}
+          ],
+          "customer_lead_ids": "<填入200个lead_id，如9900200-9900399>"
+        }
+      },
+      "steps": [
+        {
+          "step": 1,
+          "action": "账号1 取20个",
+          "curl": "curl -X POST {BASE}/customer-dispatch/plans/{PLAN_ID}/next -H '{AUTH}' -H 'Content-Type: application/json' -d '{\"account_idx\":1,\"batch_size\":20}'",
+          "expected": "seqs=[1-20], own_count=20, leaked_count=0"
+        },
+        {
+          "step": 2,
+          "action": "标记 #0001-0010 为已回复",
+          "curl": "curl -X POST {BASE}/customer-dispatch/plans/{PLAN_ID}/batch-mark -H '{AUTH}' -H 'Content-Type: application/json' -d '{\"customer_lead_ids\":[<前10个lead_id>],\"account_idx\":1}'",
+          "expected": "{\"success\":10,\"total\":10,\"failed\":0}"
+        },
+        {
+          "step": 3,
+          "action": "账号1 再取20个（验证去重）",
+          "curl": "curl -X POST {BASE}/customer-dispatch/plans/{PLAN_ID}/next -H '{AUTH}' -H 'Content-Type: application/json' -d '{\"account_idx\":1,\"batch_size\":20}'",
+          "expected": "seqs=[21-40], own_count=20, leaked_count=0（跳过#0001-0010 replied和#0011-0020 sent）"
+        }
+      ],
+      "verification_points": [
+        "步骤3取到的seqs必须是[21-40]，不含#0001-0020",
+        "replied(#0001-0010)和sent(#0011-0020)均被跳过",
+        "日志: batch_mark_replied 完成: 成功标记replied=10个"
+      ]
+    },
+
+    "scenario_3_overlap_dedup": {
+      "name": "场景3：区间重叠去重验证",
+      "description": "复用单账号计划，让账号2取数触发漏单补发，验证跳过replied客户（等效区间重叠）",
+      "prerequisite": "先完成场景2的步骤1-3",
+      "steps": [
+        {
+          "step": 1,
+          "action": "账号2 取20个（本区间无客户→漏单补发）",
+          "curl": "curl -X POST {BASE}/customer-dispatch/plans/{PLAN_ID}/next -H '{AUTH}' -H 'Content-Type: application/json' -d '{\"account_idx\":2,\"batch_size\":20}'",
+          "expected": "seqs=[11-30], own_count=0, leaked_count=20（跳过#0001-0010 replied）"
+        }
+      ],
+      "verification_points": [
+        "账号2取到的seqs不含#0001-0010（replied被去重跳过）",
+        "账号2取到的seqs包含#0011-0020和#0021-0030（sent未回复被补发）",
+        "日志: 漏单补发命中20条，每条原属账号=1"
+      ]
+    },
+
+    "scenario_1_multi_account_leak_fill": {
+      "name": "场景1：多账号漏单补发+去重",
+      "description": "2账号×100客户，验证账号间漏单补发和replied去重",
+      "create_plan_request": {
+        "method": "POST",
+        "url": "/api/customer-dispatch/plans",
+        "body": {
+          "name": "多账号漏单补发验证-模板",
+          "platform": "douyin",
+          "accounts": [
+            {"account_alias": "账号1", "cookie_id": "c1", "batch_size": 100},
+            {"account_alias": "账号2", "cookie_id": "c2", "batch_size": 100}
+          ],
+          "customer_lead_ids": "<填入200个lead_id>"
+        }
+      },
+      "steps": [
+        {
+          "step": 1,
+          "action": "账号1 取20个",
+          "curl": "curl -X POST {BASE}/customer-dispatch/plans/{PLAN_ID}/next -H '{AUTH}' -H 'Content-Type: application/json' -d '{\"account_idx\":1,\"batch_size\":20}'",
+          "expected": "seqs=[1-20], own_count=20"
+        },
+        {
+          "step": 2,
+          "action": "账号2 取20个",
+          "curl": "curl -X POST {BASE}/customer-dispatch/plans/{PLAN_ID}/next -H '{AUTH}' -H 'Content-Type: application/json' -d '{\"account_idx\":2,\"batch_size\":20}'",
+          "expected": "seqs=[101-120], own_count=20"
+        },
+        {
+          "step": 3,
+          "action": "标记账号2前3个(#0101-0103)为已回复",
+          "curl": "curl -X POST {BASE}/customer-dispatch/plans/{PLAN_ID}/batch-mark -H '{AUTH}' -H 'Content-Type: application/json' -d '{\"customer_lead_ids\":[<账号2前3个lead_id>],\"account_idx\":2}'",
+          "expected": "{\"success\":3,\"total\":3,\"failed\":0}"
+        },
+        {
+          "step": 4,
+          "action": "账号1 取80个（取完本区间剩余）",
+          "curl": "curl -X POST {BASE}/customer-dispatch/plans/{PLAN_ID}/next -H '{AUTH}' -H 'Content-Type: application/json' -d '{\"account_idx\":1,\"batch_size\":80}'",
+          "expected": "seqs=[21-100], own_count=80, leaked_count=0"
+        },
+        {
+          "step": 5,
+          "action": "账号1 再取20个（触发漏单补发）",
+          "curl": "curl -X POST {BASE}/customer-dispatch/plans/{PLAN_ID}/next -H '{AUTH}' -H 'Content-Type: application/json' -d '{\"account_idx\":1,\"batch_size\":20}'",
+          "expected": "seqs=[104-120], own_count=0, leaked_count=17（跳过#0101-0103 replied）"
+        }
+      ],
+      "verification_points": [
+        "步骤5漏单补发命中17条，不含#0101-0103（replied去重）",
+        "17(补发) + 3(replied) = 20(账号2 sent总数)，无遗漏",
+        "日志: 漏单补发命中17条，每条原属账号=2"
+      ]
+    }
+  },
+
+  "usage": {
+    "variables": {
+      "BASE": "http://localhost:80/api",
+      "PLAN_ID": "创建计划后返回的plan_id",
+      "AUTH": "Authorization: Bearer <登录token>"
+    },
+    "login_command": "curl -s -X POST http://localhost:80/api/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"password\":\"admin123\"}'",
+    "note": "batch_size最大200，customer_lead_ids需自行准备或用seq 9900200+生成"
+  }
+}

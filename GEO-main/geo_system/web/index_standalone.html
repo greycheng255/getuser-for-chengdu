@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GEO内容工程系统 - 演示版</title>
+    <style>
+        /* 基础样式 */
+        :root {
+            --primary-color: #667eea;
+            --primary-dark: #5a67d8;
+            --secondary-color: #764ba2;
+            --success-color: #48bb78;
+            --warning-color: #ed8936;
+            --danger-color: #f56565;
+            --info-color: #4299e1;
+            --bg-color: #f7fafc;
+            --card-bg: #ffffff;
+            --text-primary: #2d3748;
+            --text-secondary: #718096;
+            --border-color: #e2e8f0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        /* 演示模式横幅 */
+        .demo-banner {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            padding: 10px;
+            font-size: 14px;
+        }
+
+        .demo-banner a {
+            color: #ffd700;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        /* 布局 */
+        .app-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* 侧边栏 */
+        .sidebar {
+            width: 260px;
+            background: linear-gradient(180deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            padding: 1.5rem;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+
+        .sidebar-header {
+            text-align: center;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 1.5rem;
+        }
+
+        .sidebar-header h1 {
+            font-size: 1.5rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .nav-menu {
+            list-style: none;
+        }
+
+        .nav-item {
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .nav-item:hover, .nav-item.active {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* 主内容 */
+        .main-content {
+            flex: 1;
+            margin-left: 260px;
+            padding: 2rem;
+            margin-top: 40px;
+        }
+
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 头部 */
+        .header {
+            background: var(--card-bg);
+            padding: 1.5rem 2rem;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .header h2 {
+            font-size: 1.75rem;
+        }
+
+        /* 卡片 */
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        /* 指标网格 */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .metric-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        .metric-change {
+            font-size: 0.875rem;
+            color: var(--success-color);
+        }
+
+        /* 功能网格 */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .feature-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px rgba(0,0,0,0.1);
+        }
+
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        /* 表单 */
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        /* 按钮 */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        /* 结果区域 */
+        .result-box {
+            background: var(--bg-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .outline-tree {
+            background: white;
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .outline-item {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border-color);
+            font-family: monospace;
+        }
+
+        .outline-item:last-child {
+            border-bottom: none;
+        }
+
+        textarea.form-control {
+            min-height: 150px;
+            resize: vertical;
+        }
+
+        /* 加载动画 */
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--border-color);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 消息提示 */
+        .message {
+            position: fixed;
+            top: 50px;
+            right: 1rem;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .message-success { background: var(--success-color); color: white; }
+        .message-error { background: var(--danger-color); color: white; }
+
+        /* 金字塔 */
+        .pyramid-visual {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 2rem;
+        }
+
+        .pyramid-level {
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .pyramid-level.level-1 { width: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .pyramid-level.level-2 { width: 65%; background: linear-gradient(135deg, #764ba2 0%, #8b5cf6 100%); }
+        .pyramid-level.level-3 { width: 80%; background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%); }
+        .pyramid-level.level-4 { width: 100%; background: linear-gradient(135deg, #a855f7 0%, #c084fc 100%); }
+    </style>
+</head>
+<body>
+    <div class="demo-banner">
+        🎮 演示模式 - 所有数据为模拟数据 | 
+        <a onclick="alert('启动完整服务需要Python环境：\\n\\n1. 安装Python 3.8+\\n2. pip install -r backend/requirements.txt\\n3. python backend/app.py\\n4. python -m http.server 8080 --directory web')">了解如何启动完整服务</a>
+    </div>
+
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>🚀 GEO系统</h1>
+                <p>AI搜索时代的内容优化</p>
+            </div>
+            <nav>
+                <ul class="nav-menu">
+                    <li class="nav-item active" onclick="showSection('home')">
+                        <span>🏠</span> <span>首页</span>
+                    </li>
+                    <li class="nav-item" onclick="showSection('generate')">
+                        <span>✍️</span> <span>内容生成</span>
+                    </li>
+                    <li class="nav-item" onclick="showSection('analyze')">
+                        <span>🔍</span> <span>内容分析</span>
+                    </li>
+                    <li class="nav-item" onclick="showSection('optimize')">
+                        <span>⚡</span> <span>内容优化</span>
+                    </li>
+                    <li class="nav-item" onclick="showSection('metrics')">
+                        <span>📊</span> <span>数据监测</span>
+                    </li>
+                    <li class="nav-item" onclick="showSection('roi')">
+                        <span>💰</span> <span>ROI计算</span>
+                    </li>
+                    <li class="nav-item" onclick="showSection('authority')">
+                        <span>🏛️</span> <span>信源建设</span>
+                    </li>
+                    <li class="nav-item" onclick="showSection('geo-expert')">
+                        <span>🎯</span> <span>GEO优化专家</span>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <!-- 首页 -->
+            <section id="home" class="section active">
+                <div class="header">
+                    <h2>欢迎使用GEO内容工程系统</h2>
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">AI引用率</div>
+                        <div class="metric-value">45.5%</div>
+                        <div class="metric-change">↑ 5.5%</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">品牌提及率</div>
+                        <div class="metric-value">60.0%</div>
+                        <div class="metric-change">↑ 5.0%</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">答案空间覆盖</div>
+                        <div class="metric-value">35%</div>
+                        <div class="metric-change">↑ 5%</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">综合可见性</div>
+                        <div class="metric-value">65.5</div>
+                        <div class="metric-change">↑ 5.5%</div>
+                    </div>
+                </div>
+
+                <div class="features-grid">
+                    <div class="feature-card" onclick="showSection('generate')">
+                        <div class="feature-icon">✍️</div>
+                        <h3>内容生成</h3>
+                        <p>基于ERE框架智能生成GEO优化文章大纲</p>
+                    </div>
+                    <div class="feature-card" onclick="showSection('analyze')">
+                        <div class="feature-icon">🔍</div>
+                        <h3>内容分析</h3>
+                        <p>全面评估内容质量和GEO合规性</p>
+                    </div>
+                    <div class="feature-card" onclick="showSection('optimize')">
+                        <div class="feature-icon">⚡</div>
+                        <h3>内容优化</h3>
+                        <p>自动优化内容结构和表达方式</p>
+                    </div>
+                    <div class="feature-card" onclick="showSection('metrics')">
+                        <div class="feature-icon">📊</div>
+                        <h3>数据监测</h3>
+                        <p>追踪GEO关键指标</p>
+                    </div>
+                    <div class="feature-card" onclick="showSection('roi')">
+                        <div class="feature-icon">💰</div>
+                        <h3>ROI计算</h3>
+                        <p>评估GEO投资回报</p>
+                    </div>
+                    <div class="feature-card" onclick="showSection('authority')">
+                        <div class="feature-icon">🏛️</div>
+                        <h3>信源建设</h3>
+                        <p>构建四级权威信源体系</p>
+                    </div>
+                    <div class="feature-card" onclick="showSection('geo-expert')">
+                        <div class="feature-icon">🎯</div>
+                        <h3>GEO优化专家</h3>
+                        <p>网站诊断与优化方案生成</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>关于GEO系统</h3>
+                    </div>
+                    <p><strong>核心理念：</strong>不要争排名，要争引用。</p>
+                    <br>
+                    <p>与传统SEO关注搜索引擎排名不同，GEO关注的是<strong>品牌在AI答案中的引用率</strong>。通过ERE框架（实体-关系-证据）构建高质量内容，让AI在回答用户问题时主动引用你的品牌。</p>
+                </div>
+            </section>
+
+            <!-- 内容生成 -->
+            <section id="generate" class="section">
+                <div class="header">
+                    <h2>✍️ 内容生成</h2>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>生成GEO优化文章大纲</h3>
+                    </div>
+                    <form id="generateForm" onsubmit="handleGenerate(event)">
+                        <div class="form-group">
+                            <label>文章标题</label>
+                            <input type="text" id="genTitle" class="form-control" placeholder="输入文章标题" required>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>品牌名称</label>
+                                <input type="text" id="genBrand" class="form-control" placeholder="你的品牌名" required>
+                            </div>
+                            <div class="form-group">
+                                <label>所属行业</label>
+                                <input type="text" id="genIndustry" class="form-control" value="AI营销">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>专业领域（每行一个）</label>
+                            <textarea id="genExpertise" class="form-control" rows="3">GEO
+AI搜索优化
+内容营销</textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>目标平台</label>
+                                <select id="genPlatform" class="form-control">
+                                    <option value="chatgpt">ChatGPT</option>
+                                    <option value="perplexity">Perplexity</option>
+                                    <option value="kimi">Kimi</option>
+                                    <option value="doubao">豆包</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>目标字数</label>
+                                <select id="genWordCount" class="form-control">
+                                    <option value="2000">2000字</option>
+                                    <option value="3000" selected>3000字</option>
+                                    <option value="4000">4000字</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">🚀 生成内容大纲</button>
+                    </form>
+                    <div id="generateResult"></div>
+                </div>
+            </section>
+
+            <!-- 内容分析 -->
+            <section id="analyze" class="section">
+                <div class="header">
+                    <h2>🔍 内容分析</h2>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>分析内容质量</h3>
+                    </div>
+                    <form id="analyzeForm" onsubmit="handleAnalyze(event)">
+                        <div class="form-group">
+                            <label>输入要分析的内容</label>
+                            <textarea id="analyzeContent" class="form-control" rows="10" placeholder="在这里粘贴你的文章内容..." required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">🔍 开始分析</button>
+                    </form>
+                    <div id="analyzeResult"></div>
+                </div>
+            </section>
+
+            <!-- 内容优化 -->
+            <section id="optimize" class="section">
+                <div class="header">
+                    <h2>⚡ 内容优化</h2>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>自动优化内容</h3>
+                    </div>
+                    <form id="optimizeForm" onsubmit="handleOptimize(event)">
+                        <div class="form-group">
+                            <label>输入要优化的内容</label>
+                            <textarea id="optimizeContent" class="form-control" rows="10" placeholder="在这里粘贴需要优化的内容..." required></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>优化级别</label>
+                            <select id="optimizeLevel" class="form-control">
+                                <option value="light">轻度优化</option>
+                                <option value="medium" selected>中度优化</option>
+                                <option value="heavy">重度优化</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary">⚡ 开始优化</button>
+                    </form>
+                    <div id="optimizeResult"></div>
+                </div>
+            </section>
+
+            <!-- 数据监测 -->
+            <section id="metrics" class="section">
+                <div class="header">
+                    <h2>📊 数据监测</h2>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>记录今日指标</h3>
+                    </div>
+                    <form id="metricsForm" onsubmit="handleMetrics(event)">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>AI引用次数</label>
+                                <input type="number" id="citationCount" class="form-control" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label>品牌提及次数</label>
+                                <input type="number" id="mentionCount" class="form-control" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label>覆盖率(0-1)</label>
+                                <input type="number" id="coverage" class="form-control" value="0.5" step="0.01" max="1">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">💾 记录指标</button>
+                    </form>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>查看报告</h3>
+                    </div>
+                    <button class="btn btn-primary" onclick="showMetricsReport()">📊 生成报告</button>
+                    <div id="metricsReport"></div>
+                </div>
+            </section>
+
+            <!-- ROI计算 -->
+            <section id="roi" class="section">
+                <div class="header">
+                    <h2>💰 ROI计算</h2>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>计算GEO投资回报率</h3>
+                    </div>
+                    <form id="roiForm" onsubmit="handleROI(event)">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>内容投资 (¥)</label>
+                                <input type="number" id="contentInv" class="form-control" value="50000">
+                            </div>
+                            <div class="form-group">
+                                <label>技术投资 (¥)</label>
+                                <input type="number" id="techInv" class="form-control" value="30000">
+                            </div>
+                            <div class="form-group">
+                                <label>人力投资 (¥)</label>
+                                <input type="number" id="personnelInv" class="form-control" value="80000">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>引用率提升 (%)</label>
+                                <input type="number" id="citationInc" class="form-control" value="40">
+                            </div>
+                            <div class="form-group">
+                                <label>转化率 (%)</label>
+                                <input type="number" id="conversionRate" class="form-control" value="2.5" step="0.1">
+                            </div>
+                            <div class="form-group">
+                                <label>客户价值 (¥)</label>
+                                <input type="number" id="customerValue" class="form-control" value="5000">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">🧮 计算ROI</button>
+                    </form>
+                    <div id="roiResult"></div>
+                </div>
+            </section>
+
+            <!-- 信源建设 -->
+            <section id="authority" class="section">
+                <div class="header">
+                    <h2>🏛️ 信源建设</h2>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3>四级信源权威金字塔</h3>
+                    </div>
+                    <div class="pyramid-visual">
+                        <div class="pyramid-level level-1">
+                            <strong>官网</strong><br>
+                            <small>权重 40%</small>
+                        </div>
+                        <div class="pyramid-level level-2">
+                            <strong>权威媒体</strong><br>
+                            <small>权重 30%</small>
+                        </div>
+                        <div class="pyramid-level level-3">
+                            <strong>行业社区</strong><br>
+                            <small>权重 20%</small>
+                        </div>
+                        <div class="pyramid-level level-4">
+                            <strong>社交平台</strong><br>
+                            <small>权重 10%</small>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- GEO优化专家 -->
+            <section id="geo-expert" class="section">
+                <div class="header">
+                    <h2>🎯 GEO优化专家</h2>
+                    <p>输入您的网站和品牌信息，获取专业的生成式引擎优化方案</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>输入信息</h3>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <label style="font-weight: 600; color: var(--text-secondary);">品牌名称 *</label>
+                            <input type="text" id="geoBrand" class="form-control" placeholder="如: 织然家具" value="织然家具">
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; color: var(--text-secondary);">网站域名 *</label>
+                            <input type="text" id="geoDomain" class="form-control" placeholder="如: zhiranhome.com" value="zhiranhome.com">
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; color: var(--text-secondary);">所属行业</label>
+                            <select id="geoIndustry" class="form-control">
+                                <option value="家具家居">家具家居</option>
+                                <option value="教育培训">教育培训</option>
+                                <option value="医疗健康">医疗健康</option>
+                                <option value="电商零售">电商零售</option>
+                                <option value="科技软件">科技软件</option>
+                                <option value="其他">其他</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-weight: 600; color: var(--text-secondary);">目标地域</label>
+                            <input type="text" id="geoLocation" class="form-control" placeholder="如: 深圳、广东" value="深圳">
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-weight: 600; color: var(--text-secondary);">核心关键词</label>
+                        <div id="geoKeywordsContainer" style="display: flex; flex-wrap: gap: 0.5rem; min-height: 48px; padding: 0.5rem; border: 2px dashed var(--border-color); border-radius: 8px; margin-bottom: 1rem;">
+                            <span class="keyword-tag">全屋定制</span>
+                            <span class="keyword-tag">整体衣柜</span>
+                            <span class="keyword-tag">橱柜设计</span>
+                            <span class="keyword-tag">家具定制</span>
+                            <input type="text" id="geoKeywordInput" class="form-control" placeholder="输入关键词后按回车添加" style="flex: 1; border: none;">
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 1rem;">
+                        <button onclick="runGeoDiagnose()" class="btn btn-primary">🔍 网站诊断</button>
+                        <button onclick="generateGeoPlan()" class="btn btn-primary">📋 生成优化方案</button>
+                        <button onclick="resetGeoForm()" class="btn btn-secondary">🔄 重置</button>
+                    </div>
+                </div>
+
+                <div id="geoLoading" style="display: none; text-align: center; padding: 2rem;">
+                    <div class="spinner"></div>
+                    <p>正在分析，请稍候...</p>
+                </div>
+
+                <!-- 诊断结果 -->
+                <div id="geoDiagnoseResult" class="section" style="display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>🔍 网站诊断结果</h3>
+                        </div>
+                        <div id="diagnoseContent"></div>
+                    </div>
+                </div>
+
+                <!-- 优化方案 -->
+                <div id="geoPlanResult" class="section" style="display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>🎯 品牌定位分析</h3>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+                            <div style="padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <h4>品牌名称</h4>
+                                <p id="planBrandName"></p>
+                            </div>
+                            <div style="padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <h4>所属行业</h4>
+                                <p id="planIndustry"></p>
+                            </div>
+                            <div style="padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <h4>目标用户</h4>
+                                <p id="planUsers"></p>
+                            </div>
+                            <div style="padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <h4>GEO策略</h4>
+                                <p id="planStrategy"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>🔑 关键词矩阵</h3>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                            <div style="padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <h5 style="color: var(--text-secondary); font-size: 0.875rem;">核心词</h5>
+                                <div id="planCoreKeywords"></div>
+                            </div>
+                            <div style="padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <h5 style="color: var(--text-secondary); font-size: 0.875rem;">长尾词</h5>
+                                <div id="planLongTailKeywords"></div>
+                            </div>
+                            <div style="padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <h5 style="color: var(--text-secondary); font-size: 0.875rem;">地域词</h5>
+                                <div id="planLocationKeywords"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>📅 执行路线图</h3>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+                            <div style="padding: 1rem; background: linear-gradient(135deg, #dbeafe, #bfdbfe); border-radius: 8px;">
+                                <h4>第1个月：基础搭建</h4>
+                                <ul id="planMonth1"></ul>
+                            </div>
+                            <div style="padding: 1rem; background: linear-gradient(135deg, #fef3c7, #fde68a); border-radius: 8px;">
+                                <h4>第2-3个月：内容生产</h4>
+                                <ul id="planMonth23"></ul>
+                            </div>
+                            <div style="padding: 1rem; background: linear-gradient(135deg, #fce7f3, #fbcfe8); border-radius: 8px;">
+                                <h4>持续运营</h4>
+                                <ul id="planOngoing"></ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>📈 效果预期</h3>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
+                            <div style="text-align: center; padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <div style="font-size: 1.5rem; font-weight: bold; color: var(--success-color);" id="planCitation">+150%</div>
+                                <div style="font-size: 0.875rem; color: var(--text-secondary);">AI引用率提升</div>
+                            </div>
+                            <div style="text-align: center; padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <div style="font-size: 1.5rem; font-weight: bold; color: var(--primary-color);" id="planRank">Top 3</div>
+                                <div style="font-size: 0.875rem; color: var(--text-secondary);">本地搜索排名</div>
+                            </div>
+                            <div style="text-align: center; padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <div style="font-size: 1.5rem; font-weight: bold; color: var(--success-color);" id="planConversion">+30%</div>
+                                <div style="font-size: 0.875rem; color: var(--text-secondary);">线索转化率提升</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+        // 切换页面
+        function showSection(sectionId) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById(sectionId).classList.add('active');
+            event.target.closest('.nav-item').classList.add('active');
+        }
+
+        // 显示消息
+        function showMessage(text, type = 'success') {
+            const msg = document.createElement('div');
+            msg.className = `message message-${type}`;
+            msg.textContent = text;
+            document.body.appendChild(msg);
+            setTimeout(() => msg.remove(), 3000);
+        }
+
+        // 显示加载
+        function showLoading(elementId, text = '加载中...') {
+            document.getElementById(elementId).innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>${text}</p>
+                </div>
+            `;
+        }
+
+        // 内容生成
+        async function handleGenerate(e) {
+            e.preventDefault();
+            showLoading('generateResult', '正在生成GEO优化内容...');
+
+            setTimeout(() => {
+                const title = document.getElementById('genTitle').value;
+                const brand = document.getElementById('genBrand').value;
+
+                document.getElementById('generateResult').innerHTML = `
+                    <div class="result-box">
+                        <h4>📄 生成结果</h4>
+                        <div class="outline-tree">
+                            <div class="outline-item"><strong>1. 引言：${title}</strong></div>
+                            <div class="outline-item">&nbsp;&nbsp;1.1 背景介绍</div>
+                            <div class="outline-item">&nbsp;&nbsp;1.2 问题定义</div>
+                            <div class="outline-item"><strong>2. ERE框架详解</strong></div>
+                            <div class="outline-item">&nbsp;&nbsp;2.1 Entity（实体）构建</div>
+                            <div class="outline-item">&nbsp;&nbsp;2.2 Relation（关系）建立</div>
+                            <div class="outline-item">&nbsp;&nbsp;2.3 Evidence（证据）收集</div>
+                            <div class="outline-item"><strong>3. 实战案例：${brand}的GEO实践</strong></div>
+                            <div class="outline-item">&nbsp;&nbsp;3.1 背景分析</div>
+                            <div class="outline-item">&nbsp;&nbsp;3.2 实施过程</div>
+                            <div class="outline-item">&nbsp;&nbsp;3.3 成果展示</div>
+                            <div class="outline-item"><strong>4. 总结与展望</strong></div>
+                        </div>
+                        <br>
+                        <textarea class="form-control" rows="6" readonly>你是一位专业的GEO内容策略专家。请根据ERE框架创作一篇关于"${title}"的高质量文章，自然融入"${brand}"的品牌信息...</textarea>
+                    </div>
+                `;
+                showMessage('内容生成成功（演示模式）');
+            }, 1500);
+        }
+
+        // 内容分析
+        async function handleAnalyze(e) {
+            e.preventDefault();
+            showLoading('analyzeResult', '正在分析内容质量...');
+
+            setTimeout(() => {
+                document.getElementById('analyzeResult').innerHTML = `
+                    <div class="result-box">
+                        <h4>📊 分析结果</h4>
+                        <div style="display: flex; gap: 2rem; margin: 1rem 0;">
+                            <div style="text-align: center;">
+                                <div style="font-size: 3rem; color: var(--primary-color); font-weight: bold;">75.5</div>
+                                <div>综合得分</div>
+                            </div>
+                            <div style="flex: 1;">
+                                <div>结构得分: 85</div>
+                                <div>引用得分: 80</div>
+                                <div>可读性: 75</div>
+                                <div>权威性: 62</div>
+                            </div>
+                        </div>
+                        <p><strong>💡 优化建议：</strong></p>
+                        <ul>
+                            <li>增加更多数据支撑</li>
+                            <li>优化段落长度</li>
+                            <li>添加引用来源</li>
+                        </ul>
+                    </div>
+                `;
+                showMessage('分析完成（演示模式）');
+            }, 1200);
+        }
+
+        // 内容优化
+        async function handleOptimize(e) {
+            e.preventDefault();
+            showLoading('optimizeResult', '正在优化内容...');
+
+            setTimeout(() => {
+                document.getElementById('optimizeResult').innerHTML = `
+                    <div class="result-box">
+                        <h4>⚡ 优化结果</h4>
+                        <p>优化前: 65分 → 优化后: <strong style="color: var(--success-color);">85分</strong> (+20)</p>
+                        <br>
+                        <p><strong>改进内容：</strong></p>
+                        <ul>
+                            <li>✅ 优化了内容结构</li>
+                            <li>✅ 增加了数据支撑</li>
+                            <li>✅ 改进了表达方式</li>
+                        </ul>
+                        <br>
+                        <textarea class="form-control" rows="6" readonly>【优化后的内容】\n\n优化后的内容将在这里显示...</textarea>
+                    </div>
+                `;
+                showMessage('优化完成（演示模式）');
+            }, 1500);
+        }
+
+        // 记录指标
+        async function handleMetrics(e) {
+            e.preventDefault();
+            showMessage('指标记录成功（演示模式）');
+        }
+
+        // 显示报告
+        function showMetricsReport() {
+            document.getElementById('metricsReport').innerHTML = `
+                <div class="result-box">
+                    <h4>📊 月度报告</h4>
+                    <div class="metrics-grid" style="margin-top: 1rem;">
+                        <div class="metric-card">
+                            <div class="metric-label">AI引用率</div>
+                            <div class="metric-value">45.5%</div>
+                            <div class="metric-change">↑ 5.5%</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">品牌提及率</div>
+                            <div class="metric-value">60.0%</div>
+                            <div class="metric-change">↑ 5.0%</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ROI计算
+        async function handleROI(e) {
+            e.preventDefault();
+            showLoading('roiResult', '正在计算ROI...');
+
+            setTimeout(() => {
+                const content = parseFloat(document.getElementById('contentInv').value) || 0;
+                const tech = parseFloat(document.getElementById('techInv').value) || 0;
+                const personnel = parseFloat(document.getElementById('personnelInv').value) || 0;
+                const total = content + tech + personnel;
+
+                document.getElementById('roiResult').innerHTML = `
+                    <div class="result-box">
+                        <h4>💰 ROI计算结果</h4>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 1rem 0;">
+                            <div style="text-align: center; padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <div style="font-size: 0.875rem; color: var(--text-secondary);">总投资</div>
+                                <div style="font-size: 1.5rem; font-weight: bold;">¥${total.toLocaleString()}</div>
+                            </div>
+                            <div style="text-align: center; padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <div style="font-size: 0.875rem; color: var(--text-secondary);">预期收益</div>
+                                <div style="font-size: 1.5rem; font-weight: bold; color: var(--success-color);">¥${(total * 2.5).toLocaleString()}</div>
+                            </div>
+                            <div style="text-align: center; padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                                <div style="font-size: 0.875rem; color: var(--text-secondary);">ROI</div>
+                                <div style="font-size: 1.5rem; font-weight: bold; color: var(--primary-color);">150%</div>
+                            </div>
+                        </div>
+                        <p style="text-align: center; padding: 1rem; background: #c6f6d5; color: #22543d; border-radius: 8px;">
+                            🌟 优秀的投资回报！建议立即实施。
+                        </p>
+                    </div>
+                `;
+                showMessage('ROI计算完成（演示模式）');
+            }, 1000);
+        }
+
+        // GEO优化专家 - 网站诊断
+        function runGeoDiagnose() {
+            const brand = document.getElementById('geoBrand').value;
+            const domain = document.getElementById('geoDomain').value;
+            if (!brand || !domain) {
+                alert('请填写品牌名称和网站域名');
+                return;
+            }
+            
+            document.getElementById('geoLoading').style.display = 'block';
+            document.getElementById('geoDiagnoseResult').style.display = 'none';
+            document.getElementById('geoPlanResult').style.display = 'none';
+
+            setTimeout(() => {
+                document.getElementById('diagnoseContent').innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 2rem; margin-bottom: 2rem;">
+                        <div style="width: 100px; height: 100px; border-radius: 50%; background: linear-gradient(135deg, #10b981, #059669); color: white; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                            <div style="font-size: 2rem; font-weight: bold;">72</div>
+                        </div>
+                        <div>
+                            <h4>追赶者</h4>
+                            <p>网站具备基础GEO能力，需要针对性优化</p>
+                            <p><strong>GEO准备度：中</strong> - 具备基础，需要针对性改进</p>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem;">
+                        <div style="text-align: center; padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                            <div style="font-size: 1.25rem; font-weight: bold;">78</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">内容质量</div>
+                        </div>
+                        <div style="text-align: center; padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                            <div style="font-size: 1.25rem; font-weight: bold;">65</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">结构优化</div>
+                        </div>
+                        <div style="text-align: center; padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                            <div style="font-size: 1.25rem; font-weight: bold;">68</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">权威性</div>
+                        </div>
+                        <div style="text-align: center; padding: 1rem; background: var(--bg-color); border-radius: 8px;">
+                            <div style="font-size: 1.25rem; font-weight: bold;">82</div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary);">技术性能</div>
+                        </div>
+                    </div>
+                    <h4 style="margin-bottom: 1rem;">⚠️ 发现的问题</h4>
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        <div style="padding: 1rem; background: #fef2f2; border-left: 4px solid #ef4444; border-radius: 0 8px 8px 0;">
+                            <strong>高优先级：</strong>内容量不足，建议至少1000字以上
+                        </div>
+                        <div style="padding: 1rem; background: #fef2f2; border-left: 4px solid #ef4444; border-radius: 0 8px 8px 0;">
+                            <strong>高优先级：</strong>缺少Schema.org标记，结构化数据帮助AI理解内容语义
+                        </div>
+                        <div style="padding: 1rem; background: #fffbeb; border-left: 4px solid #f59e0b; border-radius: 0 8px 8px 0;">
+                            <strong>中优先级：</strong>标题层级不完善，建议添加更多H2/H3标题
+                        </div>
+                    </div>
+                `;
+                document.getElementById('geoLoading').style.display = 'none';
+                document.getElementById('geoDiagnoseResult').style.display = 'block';
+                showMessage('网站诊断完成（演示模式）');
+            }, 1500);
+        }
+
+        // GEO优化专家 - 生成优化方案
+        function generateGeoPlan() {
+            const brand = document.getElementById('geoBrand').value;
+            const domain = document.getElementById('geoDomain').value;
+            const industry = document.getElementById('geoIndustry').value;
+            const location = document.getElementById('geoLocation').value;
+            
+            if (!brand) {
+                alert('请填写品牌名称');
+                return;
+            }
+            
+            document.getElementById('geoLoading').style.display = 'block';
+            document.getElementById('geoDiagnoseResult').style.display = 'none';
+            document.getElementById('geoPlanResult').style.display = 'none';
+
+            setTimeout(() => {
+                document.getElementById('planBrandName').textContent = brand;
+                document.getElementById('planIndustry').textContent = industry;
+                document.getElementById('planUsers').textContent = '新中产家庭、装修业主等目标群体';
+                document.getElementById('planStrategy').textContent = '强化"' + brand + '"品牌词在AI搜索中的识别度';
+                
+                document.getElementById('planCoreKeywords').innerHTML = 
+                    '<span style="display: inline-block; padding: 0.25rem 0.75rem; background: white; border: 1px solid var(--border-color); border-radius: 20px; margin: 0.25rem;">全屋定制</span>' +
+                    '<span style="display: inline-block; padding: 0.25rem 0.75rem; background: white; border: 1px solid var(--border-color); border-radius: 20px; margin: 0.25rem;">整体衣柜</span>' +
+                    '<span style="display: inline-block; padding: 0.25rem 0.75rem; background: white; border: 1px solid var(--border-color); border-radius: 20px; margin: 0.25rem;">橱柜设计</span>';
+                
+                document.getElementById('planLongTailKeywords').innerHTML = 
+                    '<span style="display: inline-block; padding: 0.25rem 0.75rem; background: white; border: 1px solid var(--border-color); border-radius: 20px; margin: 0.25rem;">' + location + brand + industry + '推荐</span>' +
+                    '<span style="display: inline-block; padding: 0.25rem 0.75rem; background: white; border: 1px solid var(--border-color); border-radius: 20px; margin: 0.25rem;">' + brand + industry + '怎么样</span>';
+                
+                document.getElementById('planLocationKeywords').innerHTML = 
+                    '<span style="display: inline-block; padding: 0.25rem 0.75rem; background: white; border: 1px solid var(--border-color); border-radius: 20px; margin: 0.25rem;">' + location + '</span>' +
+                    '<span style="display: inline-block; padding: 0.25rem 0.75rem; background: white; border: 1px solid var(--border-color); border-radius: 20px; margin: 0.25rem;">广东</span>';
+                
+                document.getElementById('planMonth1').innerHTML = 
+                    '<li style="padding: 0.25rem 0;">• 统一NAP信息（名称、地址、电话）</li>' +
+                    '<li style="padding: 0.25rem 0;">• 部署Schema结构化数据</li>' +
+                    '<li style="padding: 0.25rem 0;">• 完善地图商家信息</li>';
+                
+                document.getElementById('planMonth23').innerHTML = 
+                    '<li style="padding: 0.25rem 0;">• 产出3-5篇本地痛点文章</li>' +
+                    '<li style="padding: 0.25rem 0;">• 创作3-5个本地案例拆解</li>' +
+                    '<li style="padding: 0.25rem 0;">• 分发至官网及内容平台</li>';
+                
+                document.getElementById('planOngoing').innerHTML = 
+                    '<li style="padding: 0.25rem 0;">• 月度：发布地图动态、解答本地问题</li>' +
+                    '<li style="padding: 0.25rem 0;">• 季度：更新案例、检查结构化数据</li>' +
+                    '<li style="padding: 0.25rem 0;">• 分析数据调整策略</li>';
+                
+                document.getElementById('geoLoading').style.display = 'none';
+                document.getElementById('geoPlanResult').style.display = 'block';
+                showMessage('优化方案生成成功（演示模式）');
+            }, 1500);
+        }
+
+        // GEO优化专家 - 重置表单
+        function resetGeoForm() {
+            document.getElementById('geoBrand').value = '';
+            document.getElementById('geoDomain').value = '';
+            document.getElementById('geoIndustry').value = '家具家居';
+            document.getElementById('geoLocation').value = '';
+            document.getElementById('geoDiagnoseResult').style.display = 'none';
+            document.getElementById('geoPlanResult').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

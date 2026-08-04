@@ -163,6 +163,7 @@ async def export_sent_comments(
     status: str = Query("", description="按状态筛选: success/failed/draft"),
     start_ts: int = Query(0),
     end_ts: int = Query(0),
+    platform: str = Query("", description="按平台筛选: x/dy/xhs/bili/wb/ks（空=全部）"),
 ):
     """导出已发评论
 
@@ -176,6 +177,11 @@ async def export_sent_comments(
         conditions.append(XTwitterSentComment.sent_at >= start_ts)
     if end_ts > 0:
         conditions.append(XTwitterSentComment.sent_at <= end_ts)
+    # 按平台过滤
+    if platform:
+        from api.services.hotpoint_fetcher import normalize_platform_id
+        norm_platform = normalize_platform_id(platform)
+        conditions.append(XTwitterSentComment.platform == norm_platform)
 
     async with get_session() as session:
         stmt = (
@@ -203,6 +209,7 @@ async def export_replies(
     status: str = Query("", description="按AI回复状态筛选: pending/sent/failed"),
     start_ts: int = Query(0),
     end_ts: int = Query(0),
+    platform: str = Query("", description="按平台筛选: x/dy/xhs/bili/wb/ks（空=全部）"),
 ):
     """导出收到的回复
 
@@ -216,6 +223,11 @@ async def export_replies(
         conditions.append(XTwitterReply.add_ts >= start_ts)
     if end_ts > 0:
         conditions.append(XTwitterReply.add_ts <= end_ts)
+    # 按平台过滤（通过 JOIN sent_comment 表）
+    norm_platform = ""
+    if platform:
+        from api.services.hotpoint_fetcher import normalize_platform_id
+        norm_platform = normalize_platform_id(platform)
 
     async with get_session() as session:
         # 查回复
@@ -224,6 +236,12 @@ async def export_replies(
             .order_by(desc(XTwitterReply.id))
             .limit(max_rows)
         )
+        if norm_platform:
+            stmt = stmt.join(
+                XTwitterSentComment,
+                XTwitterReply.sent_comment_id == XTwitterSentComment.id,
+                isouter=True,
+            ).where(XTwitterSentComment.platform == norm_platform)
         if conditions:
             stmt = stmt.where(and_(*conditions))
         result = await session.execute(stmt)

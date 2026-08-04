@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>品牌诊断 - GEO系统</title>
+    <link rel="stylesheet" href="styles.css?v=2">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #333; }
+        
+        .container { display: flex; min-height: 100vh; }
+        
+        .sidebar { width: 260px; background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%); color: #fff; padding: 24px 0; position: fixed; height: 100vh; overflow-y: auto; }
+        .sidebar-header { padding: 0 24px 24px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .sidebar-header h1 { font-size: 1.25rem; margin-bottom: 4px; }
+        .sidebar-header p { font-size: 0.75rem; color: rgba(255,255,255,0.6); }
+        
+        .nav-menu { list-style: none; padding: 16px 0; }
+        .nav-item { padding: 14px 24px; cursor: pointer; display: flex; align-items: center; gap: 12px; transition: all 0.2s; border-left: 3px solid transparent; }
+        .nav-item:hover, .nav-item.active { background: rgba(255,255,255,0.1); border-left-color: #667eea; }
+        .nav-item .nav-icon { font-size: 1.25rem; }
+        
+        .main-content { flex: 1; margin-left: 260px; padding: 32px; }
+        
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
+        .page-title { font-size: 1.75rem; font-weight: 700; color: #1a1a2e; }
+        
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; transition: all 0.3s; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(102,126,234,0.4); }
+        .btn-secondary { background: #fff; color: #667eea; padding: 12px 24px; border: 1px solid #667eea; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
+        .btn-secondary:hover { background: #f8f9ff; }
+        
+        /* 搜索框 */
+        .search-section { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); margin-bottom: 24px; }
+        .search-box { display: flex; gap: 12px; align-items: center; }
+        .search-input { flex: 1; padding: 14px 16px; border: 2px solid #e5e7eb; border-radius: 10px; font-size: 1rem; }
+        .search-input:focus { outline: none; border-color: #667eea; }
+        
+        /* 诊断结果卡片 */
+        .diagnosis-result { background: white; border-radius: 16px; padding: 32px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); margin-bottom: 24px; display: none; }
+        .diagnosis-result.active { display: block; }
+        
+        .result-header { display: flex; align-items: center; gap: 24px; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid #e5e7eb; }
+        .brand-avatar { width: 80px; height: 80px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; color: white; }
+        .brand-info h2 { font-size: 1.75rem; margin-bottom: 8px; }
+        .brand-info p { color: #6b7280; font-size: 0.9rem; }
+        
+        .overall-score { text-align: center; padding: 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; color: white; min-width: 200px; }
+        .overall-score .score { font-size: 4rem; font-weight: 700; line-height: 1; }
+        .overall-score .label { font-size: 1rem; opacity: 0.9; margin-top: 8px; }
+        .overall-score .grade { font-size: 1.5rem; margin-top: 8px; padding: 4px 16px; background: rgba(255,255,255,0.2); border-radius: 20px; display: inline-block; }
+        
+        /* 维度卡片 */
+        .dimensions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 32px; }
+        .dimension-card { padding: 24px; border-radius: 12px; border: 2px solid #e5e7eb; transition: all 0.3s; }
+        .dimension-card:hover { border-color: #667eea; box-shadow: 0 4px 12px rgba(102,126,234,0.15); }
+        .dimension-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .dimension-title { display: flex; align-items: center; gap: 12px; font-size: 1.1rem; font-weight: 600; }
+        .dimension-icon { font-size: 1.5rem; }
+        .dimension-score { font-size: 2rem; font-weight: 700; color: #667eea; }
+        .dimension-bar { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
+        .dimension-bar-fill { height: 100%; border-radius: 4px; transition: width 1s ease; }
+        .dimension-desc { font-size: 0.9rem; color: #6b7280; line-height: 1.6; }
+        
+        .dimension-card.excellent { border-color: #10b981; background: #f0fdf4; }
+        .dimension-card.good { border-color: #3b82f6; background: #eff6ff; }
+        .dimension-card.average { border-color: #f59e0b; background: #fffbeb; }
+        .dimension-card.poor { border-color: #ef4444; background: #fef2f2; }
+        
+        /* 问题与建议 */
+        .suggestions-section { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-top: 24px; }
+        .suggestions-card { background: #f9fafb; border-radius: 12px; padding: 20px; }
+        .suggestions-title { font-size: 1rem; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .suggestion-list { list-style: none; }
+        .suggestion-item { padding: 12px 0; border-bottom: 1px solid #e5e7eb; font-size: 0.9rem; display: flex; align-items: flex-start; gap: 10px; }
+        .suggestion-item:last-child { border-bottom: none; }
+        .suggestion-icon { flex-shrink: 0; }
+        .suggestion-item.issue .suggestion-icon { color: #ef4444; }
+        .suggestion-item.solution .suggestion-icon { color: #10b981; }
+        
+        /* 雷达图 */
+        .radar-section { margin-top: 32px; }
+        .radar-container { max-width: 500px; margin: 0 auto; }
+        
+        /* 加载动画 */
+        .loading { display: none; text-align: center; padding: 60px; }
+        .loading.active { display: block; }
+        .spinner { width: 40px; height: 40px; border: 3px solid #f3f4f6; border-top-color: #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .empty-state { text-align: center; padding: 80px 20px; color: #6b7280; }
+        .empty-state-icon { font-size: 5rem; margin-bottom: 24px; }
+        .empty-state-text { font-size: 1.25rem; margin-bottom: 8px; }
+        .empty-state-desc { font-size: 0.9rem; margin-bottom: 32px; }
+        
+        .toast { position: fixed; bottom: 24px; right: 24px; background: #1a1a2e; color: white; padding: 16px 24px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); z-index: 2000; transform: translateY(100px); opacity: 0; transition: all 0.3s; }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast.success { border-left: 4px solid #10b981; }
+        .toast.error { border-left: 4px solid #ef4444; }
+        
+        /* 快捷品牌 */
+        .quick-brands { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+        .quick-brand { padding: 8px 16px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 20px; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; }
+        .quick-brand:hover { background: #667eea; color: white; border-color: #667eea; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>🚀 GEO系统</h1>
+                <p>AI搜索时代的内容优化</p>
+            </div>
+            <nav>
+                <ul class="nav-menu">
+                    <li class="nav-item" onclick="window.location.href='index.html'"><span class="nav-icon">🏠</span><span>首页</span></li>
+                    <li class="nav-item" onclick="window.location.href='projects.html'"><span class="nav-icon">📁</span><span>我的项目</span></li>
+                    <li class="nav-item" onclick="window.location.href='ai-tasks.html'"><span class="nav-icon">🤖</span><span>AI任务</span></li>
+                    <li class="nav-item" onclick="window.location.href='content-calendar.html'"><span class="nav-icon">📅</span><span>内容日历</span></li>
+                    <li class="nav-item" onclick="window.location.href='content-generator.html'"><span class="nav-icon">✍️</span><span>内容生成</span></li>
+                    <li class="nav-item" onclick="window.location.href='content-analyzer.html'"><span class="nav-icon">🔍</span><span>内容分析</span></li>
+                    <li class="nav-item" onclick="window.location.href='analytics-dashboard.html'"><span class="nav-icon">📈</span><span>数据报表</span></li>
+                    <li class="nav-item" onclick="window.location.href='competitor-analysis.html'"><span class="nav-icon">🎯</span><span>竞品分析</span></li>
+                    <li class="nav-item" onclick="window.location.href='keyword-research.html'"><span class="nav-icon">🔑</span><span>关键词研究</span></li>
+                    <li class="nav-item" onclick="window.location.href='sentiment-monitor.html'"><span class="nav-icon">💬</span><span>舆情监控</span></li>
+                    <li class="nav-item active" onclick="window.location.href='brand-diagnosis.html'"><span class="nav-icon">🏥</span><span>品牌诊断</span></li>
+                    <li class="nav-item" onclick="window.location.href='publish-manager.html'"><span class="nav-icon">📤</span><span>发布管理</span></li>
+                    <li class="nav-item" onclick="window.location.href='monitoring-dashboard.html'"><span class="nav-icon">📊</span><span>效果监控</span></li>
+                </ul>
+            </nav>
+        </aside>
+        
+        <main class="main-content">
+            <div class="page-header">
+                <h1 class="page-title">🏥 品牌诊断</h1>
+                <button class="btn-secondary" onclick="exportDiagnosis()">📥 导出报告</button>
+            </div>
+            
+            <!-- 搜索框 -->
+            <div class="search-section">
+                <div class="search-box">
+                    <input type="text" id="brandName" class="search-input" placeholder="输入品牌名称，如：织然家具" onkeypress="if(event.key==='Enter')runDiagnosis()">
+                    <button class="btn-primary" onclick="runDiagnosis()">🔍 开始诊断</button>
+                </div>
+                <div class="quick-brands">
+                    <span style="font-size: 0.85rem; color: #6b7280;">快捷诊断：</span>
+                    <span class="quick-brand" onclick="quickDiagnose('索菲亚')">索菲亚</span>
+                    <span class="quick-brand" onclick="quickDiagnose('欧派')">欧派</span>
+                    <span class="quick-brand" onclick="quickDiagnose('尚品宅配')">尚品宅配</span>
+                    <span class="quick-brand" onclick="quickDiagnose('全友家居')">全友家居</span>
+                </div>
+            </div>
+            
+            <!-- 加载状态 -->
+            <div class="loading" id="diagnosisLoading">
+                <div class="spinner"></div>
+                <div style="font-size: 1.1rem; color: #6b7280;">正在分析品牌...</div>
+                <div style="font-size: 0.9rem; color: #9ca3af; margin-top: 8px;">这可能需要几秒钟</div>
+            </div>
+            
+            <!-- 空状态 -->
+            <div class="empty-state" id="emptyState">
+                <div class="empty-state-icon">🏥</div>
+                <div class="empty-state-text">输入品牌名称开始诊断</div>
+                <div class="empty-state-desc">我们将分析品牌在AI搜索中的可见度、搜索表现、<br>内容质量、舆情状况等多个维度</div>
+            </div>
+            
+            <!-- 诊断结果 -->
+            <div class="diagnosis-result" id="diagnosisResult">
+                <div class="result-header">
+                    <div class="brand-avatar" id="resultAvatar">Z</div>
+                    <div class="brand-info">
+                        <h2 id="resultBrandName">品牌名称</h2>
+                        <p id="resultIndustry">行业分类</p>
+                    </div>
+                    <div style="flex: 1;"></div>
+                    <div class="overall-score">
+                        <div class="score" id="overallScore">0</div>
+                        <div class="label">综合得分</div>
+                        <div class="grade" id="overallGrade">--</div>
+                    </div>
+                </div>
+                
+                <!-- 雷达图 -->
+                <div class="radar-section">
+                    <div class="radar-container">
+                        <canvas id="radarChart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- 维度卡片 -->
+                <div class="dimensions-grid" id="dimensionsGrid">
+                </div>
+                
+                <!-- 问题与建议 -->
+                <div class="suggestions-section">
+                    <div class="suggestions-card">
+                        <div class="suggestions-title">❌ 发现的问题</div>
+                        <ul class="suggestion-list" id="issuesList"></ul>
+                    </div>
+                    <div class="suggestions-card">
+                        <div class="suggestions-title">✅ 优化建议</div>
+                        <ul class="suggestion-list" id="solutionsList"></ul>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <div class="toast" id="toast"></div>
+    
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        let diagnosisData = null;
+        let radarChart = null;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // 检查URL参数
+            const params = new URLSearchParams(window.location.search);
+            const brand = params.get('brand');
+            if (brand) {
+                document.getElementById('brandName').value = brand;
+                runDiagnosis();
+            }
+        });
+        
+        async function runDiagnosis() {
+            const brand = document.getElementById('brandName').value.trim();
+            
+            if (!brand) {
+                showToast('请输入品牌名称', 'error');
+                return;
+            }
+            
+            const loadingEl = document.getElementById('diagnosisLoading');
+            const emptyEl = document.getElementById('emptyState');
+            const resultEl = document.getElementById('diagnosisResult');
+            
+            loadingEl.classList.add('active');
+            emptyEl.style.display = 'none';
+            resultEl.classList.remove('active');
+            
+            try {
+                const resp = await fetch(`${API_BASE}/brand-diagnosis`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ brand_name: brand })
+                });
+                const data = await resp.json();
+
+                if (data.success && data.report) {
+                    diagnosisData = data.report;
+                    renderDiagnosisResult(diagnosisData);
+                } else if (data.success && data.diagnosis) {
+                    diagnosisData = data.diagnosis;
+                    renderDiagnosisResult(diagnosisData);
+                } else {
+                    showToast(data.error || data.message || '诊断失败', 'error');
+                    emptyEl.style.display = 'block';
+                }
+            } catch (err) {
+                console.error('诊断失败:', err);
+                showToast('诊断服务暂时不可用: ' + err.message, 'error');
+                emptyEl.style.display = 'block';
+            } finally {
+                loadingEl.classList.remove('active');
+            }
+        }
+
+        function quickDiagnose(brand) {
+            document.getElementById('brandName').value = brand;
+            runDiagnosis();
+        }
+
+        function renderDiagnosisResult(data) {
+            const resultEl = document.getElementById('diagnosisResult');
+            
+            // 基本信息
+            document.getElementById('resultAvatar').textContent = data.brand_name.charAt(0);
+            document.getElementById('resultBrandName').textContent = data.brand_name;
+            document.getElementById('resultIndustry').textContent = data.industry || '未知行业';
+            document.getElementById('overallScore').textContent = data.overall_score;
+            document.getElementById('overallGrade').textContent = data.grade;
+            
+            // 渲染雷达图
+            setTimeout(() => renderRadarChart(data.dimensions), 100);
+            
+            // 渲染维度卡片
+            renderDimensionCards(data.dimensions);
+            
+            // 渲染问题和建议
+            renderIssues(data.issues || []);
+            renderSolutions(data.suggestions || []);
+            
+            resultEl.classList.add('active');
+        }
+        
+        function renderRadarChart(dimensions) {
+            const ctx = document.getElementById('radarChart');
+            
+            if (radarChart) radarChart.destroy();
+            
+            const labels = [
+                'AI可见度',
+                '搜索表现',
+                '内容质量',
+                '舆情状况',
+                '竞争态势'
+            ];
+            
+            const values = [
+                dimensions.ai_visibility || 0,
+                dimensions.search_performance || 0,
+                dimensions.content_quality || 0,
+                dimensions.sentiment_status || 0,
+                dimensions.competitive_position || 0
+            ];
+            
+            radarChart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '品牌得分',
+                        data: values,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.2)',
+                        borderWidth: 2,
+                        pointBackgroundColor: '#667eea'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: { stepSize: 20 }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+        
+        function renderDimensionCards(dimensions) {
+            const grid = document.getElementById('dimensionsGrid');
+            
+            const dimensionInfo = [
+                { key: 'ai_visibility', name: 'AI可见度', icon: '🤖', desc: '品牌在AI平台（文心一言、通义千问、Kimi等）上的提及和引用情况' },
+                { key: 'search_performance', name: '搜索表现', icon: '🔍', desc: '在百度、搜狗等搜索引擎上的关键词排名和展现量' },
+                { key: 'content_quality', name: '内容质量', icon: '✍️', desc: '官网内容的SEO优化程度、AI友好度、结构化程度' },
+                { key: 'sentiment_status', name: '舆情状况', icon: '💬', desc: '全网用户对品牌的评价倾向、正负面比例' },
+                { key: 'competitive_position', name: '竞争态势', icon: '🎯', desc: '与同行业竞品相比的综合表现和差异化优势' }
+            ];
+            
+            grid.innerHTML = dimensionInfo.map(d => {
+                const score = dimensions[d.key] || 0;
+                const level = score >= 80 ? 'excellent' : score >= 65 ? 'good' : score >= 50 ? 'average' : 'poor';
+                const color = score >= 80 ? '#10b981' : score >= 65 ? '#3b82f6' : score >= 50 ? '#f59e0b' : '#ef4444';
+                
+                return `
+                    <div class="dimension-card ${level}">
+                        <div class="dimension-header">
+                            <span class="dimension-title">
+                                <span class="dimension-icon">${d.icon}</span>
+                                ${d.name}
+                            </span>
+                            <span class="dimension-score" style="color: ${color}">${score}</span>
+                        </div>
+                        <div class="dimension-bar">
+                            <div class="dimension-bar-fill" style="width: ${score}%; background: ${color}"></div>
+                        </div>
+                        <div class="dimension-desc">${d.desc}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function renderIssues(issues) {
+            const list = document.getElementById('issuesList');
+            list.innerHTML = issues.map(i => `
+                <li class="suggestion-item issue">
+                    <span class="suggestion-icon">⚠️</span>
+                    <div>
+                        <strong>${i.title}</strong>
+                        <p style="color: #6b7280; font-size: 0.85rem; margin-top: 4px;">${i.desc}</p>
+                    </div>
+                </li>
+            `).join('');
+        }
+        
+        function renderSolutions(suggestions) {
+            const list = document.getElementById('solutionsList');
+            list.innerHTML = suggestions.map(s => `
+                <li class="suggestion-item solution">
+                    <span class="suggestion-icon">💡</span>
+                    <div>
+                        <strong>${s.title}</strong>
+                        <p style="color: #6b7280; font-size: 0.85rem; margin-top: 4px;">${s.desc}</p>
+                    </div>
+                </li>
+            `).join('');
+        }
+        
+        function exportDiagnosis() {
+            if (!diagnosisData) {
+                showToast('请先进行品牌诊断', 'error');
+                return;
+            }
+            
+            const report = `
+品牌诊断报告
+================
+品牌名称：${diagnosisData.brand_name}
+诊断时间：${new Date().toLocaleString()}
+综合得分：${diagnosisData.overall_score} (${diagnosisData.grade})
+
+维度得分
+--------
+AI可见度：${diagnosisData.dimensions.ai_visibility}
+搜索表现：${diagnosisData.dimensions.search_performance}
+内容质量：${diagnosisData.dimensions.content_quality}
+舆情状况：${diagnosisData.dimensions.sentiment_status}
+竞争态势：${diagnosisData.dimensions.competitive_position}
+
+发现问题
+--------
+${(diagnosisData.issues || []).map((i, idx) => `${idx + 1}. ${i.title} - ${i.desc}`).join('\n')}
+
+优化建议
+--------
+${(diagnosisData.suggestions || []).map((s, idx) => `${idx + 1}. ${s.title} - ${s.desc}`).join('\n')}
+            `.trim();
+            
+            const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `品牌诊断报告_${diagnosisData.brand_name}_${new Date().toLocaleDateString().replace(/\//g, '-')}.txt`;
+            a.click();
+            
+            showToast('报告已导出', 'success');
+        }
+        
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+    </script>
+</body>
+</html>

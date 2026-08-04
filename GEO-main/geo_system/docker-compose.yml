@@ -1,0 +1,55 @@
+services:
+  geo-backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: geo-backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "5001:5000"
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=production
+      - PORT=5000
+      - DB_HOST=172.18.0.1
+      - DB_PORT=15435
+      - DB_USER=geo
+      - DB_PASSWORD=mh6CYre2S8shJYrm
+      - DB_NAME=geo
+      - AI_URL=https://ai.hropenai.cn/
+      - API_KEY=sk-099e46fe8c0761992b84268f741db298ae44cebe1f216086
+      - AI_MODEL=gpt-4o-mini
+      # 小红书 storage_state 持久化目录
+      - XHS_STATE_DIR=/app/data/xhs_state
+    volumes:
+      # 持久化小红书登录状态（storage_state），避免每次重启都需要重新扫码
+      - xhs_state_data:/app/data/xhs_state
+    restart: unless-stopped
+    networks:
+      - geo-network
+
+  geo-frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: geo-frontend
+    ports:
+      - "38082:80"
+    environment:
+      - PORT=80
+      - API_HOST=geo-backend
+      - API_PORT=5000
+    depends_on:
+      - geo-backend
+    restart: unless-stopped
+    networks:
+      - geo-network
+
+networks:
+  geo-network:
+    driver: bridge
+
+volumes:
+  xhs_state_data:
+    driver: local

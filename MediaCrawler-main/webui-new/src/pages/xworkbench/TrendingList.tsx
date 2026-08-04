@@ -6,6 +6,7 @@ import {
   MessageOutlined,
   PlayCircleOutlined,
   LinkOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import type { WorkbenchPost } from '../../api/xWorkbench';
 
@@ -14,24 +15,40 @@ const { Text } = Typography;
 interface PostCardProps {
   post: WorkbenchPost;
   onOpenBreakdown: (post: WorkbenchPost) => void;
+  onStartAutoPipeline: (post: WorkbenchPost) => void;
+  onOpenComment?: (post: WorkbenchPost) => void;
   selectable?: boolean;
   selected?: boolean;
   onSelectChange?: (postId: string, checked: boolean) => void;
+  primaryColor?: string;
+  PlatformIcon?: React.ComponentType<any>;
 }
 
-/**
- * 单条热点推文卡片
- *
- * 用 React.memo 包裹,只有当 post 或 onOpenBreakdown 变化时才重渲染。
- * 避免父组件输入搜索关键词时,200 条卡片全部重渲染。
- */
-const PostCard = memo<PostCardProps>(({ post, onOpenBreakdown, selectable, selected, onSelectChange }) => {
+const PostCard = memo<PostCardProps>(({
+  post,
+  onOpenBreakdown,
+  onStartAutoPipeline,
+  onOpenComment,
+  selectable,
+  selected,
+  onSelectChange,
+  primaryColor = '#1DA1F2',
+  PlatformIcon = TwitterOutlined,
+}) => {
   return (
     <List.Item
       key={post.post_id}
       actions={[
         <Button
           type="primary"
+          size="small"
+          icon={<ThunderboltOutlined />}
+          onClick={() => onStartAutoPipeline(post)}
+          style={{ backgroundColor: primaryColor, borderColor: primaryColor }}
+        >
+          一键拆解全流程
+        </Button>,
+        <Button
           size="small"
           icon={<VideoCameraOutlined />}
           onClick={() => onOpenBreakdown(post)}
@@ -41,7 +58,7 @@ const PostCard = memo<PostCardProps>(({ post, onOpenBreakdown, selectable, selec
         <Button
           size="small"
           icon={<MessageOutlined />}
-          onClick={() => onOpenBreakdown(post)}
+          onClick={() => (onOpenComment ? onOpenComment(post) : onOpenBreakdown(post))}
         >
           生成评论
         </Button>,
@@ -52,7 +69,7 @@ const PostCard = memo<PostCardProps>(({ post, onOpenBreakdown, selectable, selec
           href={post.post_url}
           target="_blank"
         >
-          打开原推
+          打开原帖
         </Button>,
       ]}
     >
@@ -64,10 +81,10 @@ const PostCard = memo<PostCardProps>(({ post, onOpenBreakdown, selectable, selec
                 checked={selected}
                 onChange={(e) => onSelectChange?.(post.post_id, e.target.checked)}
               />
-              <Avatar icon={<TwitterOutlined />} style={{ backgroundColor: '#1DA1F2' }} />
+              <Avatar icon={<PlatformIcon />} style={{ backgroundColor: primaryColor }} />
             </Space>
           ) : (
-            <Avatar icon={<TwitterOutlined />} style={{ backgroundColor: '#1DA1F2' }} />
+            <Avatar icon={<PlatformIcon />} style={{ backgroundColor: primaryColor }} />
           )
         }
         title={
@@ -113,17 +130,31 @@ PostCard.displayName = 'PostCard';
 interface TrendingListProps {
   posts: WorkbenchPost[];
   onOpenBreakdown: (post: WorkbenchPost) => void;
+  onStartAutoPipeline: (post: WorkbenchPost) => void;
+  onOpenComment?: (post: WorkbenchPost) => void;
   loading: boolean;
   selectable?: boolean;
   selectedIds?: string[];
   onSelectChange?: (postId: string, checked: boolean) => void;
+  primaryColor?: string;
+  PlatformIcon?: React.ComponentType<any>;
 }
 
 /**
- * 热点推文列表(带分页,避免一次渲染 200 条)
+ * 热点内容列表(带分页,避免一次渲染过多)
  */
-const TrendingList = memo<TrendingListProps>(({ posts, onOpenBreakdown, loading, selectable, selectedIds, onSelectChange }) => {
-  // 用 useMemo 缓存 dataSource,避免每次 render 创建新数组
+const TrendingList = memo<TrendingListProps>(({
+  posts,
+  onOpenBreakdown,
+  onStartAutoPipeline,
+  onOpenComment,
+  loading,
+  selectable,
+  selectedIds,
+  onSelectChange,
+  primaryColor,
+  PlatformIcon,
+}) => {
   const dataSource = useMemo(() => posts, [posts]);
 
   if (loading) return null;
@@ -145,9 +176,13 @@ const TrendingList = memo<TrendingListProps>(({ posts, onOpenBreakdown, loading,
           key={post.post_id}
           post={post}
           onOpenBreakdown={onOpenBreakdown}
+          onStartAutoPipeline={onStartAutoPipeline}
+          onOpenComment={onOpenComment}
           selectable={selectable}
           selected={selectedIds?.includes(post.post_id)}
           onSelectChange={onSelectChange}
+          primaryColor={primaryColor}
+          PlatformIcon={PlatformIcon}
         />
       )}
     />

@@ -1,17 +1,6 @@
+import { message } from '../../utils/antdMessage';
 import React, { useEffect, useState, useCallback } from 'react';
-import {
-  Modal,
-  Spin,
-  Empty,
-  List,
-  Avatar,
-  Tag,
-  Button,
-  Space,
-  Input,
-  Typography,
-  message,
-} from 'antd';
+import { Modal, Spin, Empty, List, Avatar, Tag, Button, Space, Input, Typography } from 'antd';
 import {
   MessageOutlined,
   LinkOutlined,
@@ -113,7 +102,7 @@ const RepliesModal: React.FC<RepliesModalProps> = ({ open, sc, onClose, onChange
       onCancel={onClose}
       footer={null}
       width={900}
-      bodyStyle={{ padding: 24 }}
+      styles={{ body: { padding: 24 } }}
     >
       <div style={{ marginBottom: 20, padding: 16, background: '#f5f5f5', borderRadius: 8 }}>
         <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 8 }}>

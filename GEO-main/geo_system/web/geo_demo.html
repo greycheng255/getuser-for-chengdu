@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GEO优化专家 - 智能网站优化分析</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        
+        .geo-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .geo-hero {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 3rem 2rem;
+            border-radius: 16px;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .geo-hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+        }
+        
+        .geo-hero p {
+            font-size: 1.125rem;
+            opacity: 0.9;
+        }
+        
+        .input-section {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .input-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .form-group label {
+            font-weight: 600;
+            color: #374151;
+        }
+        
+        .form-control {
+            padding: 0.875rem 1rem;
+            font-size: 1rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: #10b981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+        }
+        
+        .form-control.select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            padding-right: 2.5rem;
+        }
+        
+        .keywords-input {
+            display: flex;
+            flex-wrap: gap: 0.5rem;
+            min-height: 48px;
+            padding: 0.5rem;
+            border: 2px dashed #e2e8f0;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        
+        .keywords-input:focus-within {
+            border-color: #10b981;
+        }
+        
+        .keyword-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.75rem;
+            background: #d1fae5;
+            color: #065f46;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            margin: 0.25rem;
+        }
+        
+        .keyword-tag button {
+            background: none;
+            border: none;
+            color: #065f46;
+            cursor: pointer;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 1.5rem;
+        }
+        
+        .btn {
+            padding: 1rem 2rem;
+            font-size: 1.125rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f1f5f9;
+            color: #374151;
+        }
+        
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .loading-overlay {
+            display: none;
+            text-align: center;
+            padding: 3rem;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .loading-overlay.active {
+            display: block;
+        }
+        
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid #e2e8f0;
+            border-top-color: #10b981;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .result-section {
+            display: none;
+        }
+        
+        .result-section.active {
+            display: block;
+        }
+        
+        .plan-section {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .plan-section h3 {
+            color: #1e293b;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 2px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .plan-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .plan-card {
+            padding: 1.5rem;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+        
+        .plan-card h4 {
+            color: #1e293b;
+            margin-bottom: 1rem;
+            font-size: 1rem;
+        }
+        
+        .plan-card ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .plan-card li {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .plan-card li:last-child {
+            border-bottom: none;
+        }
+        
+        .plan-card li::before {
+            content: '✓';
+            color: #10b981;
+            font-weight: bold;
+        }
+        
+        .keyword-matrix {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .keyword-group {
+            padding: 1rem;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+        
+        .keyword-group h5 {
+            color: #374151;
+            margin-bottom: 0.75rem;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .keyword-group .keywords {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        
+        .keyword-item {
+            padding: 0.25rem 0.75rem;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 20px;
+            font-size: 0.875rem;
+        }
+        
+        .schema-code {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 1.5rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.875rem;
+            line-height: 1.6;
+        }
+        
+        .roadmap {
+            display: flex;
+            gap: 1rem;
+            overflow-x: auto;
+            padding-bottom: 1rem;
+        }
+        
+        .roadmap-phase {
+            flex-shrink: 0;
+            width: 280px;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+            border-radius: 12px;
+            border: 1px solid #bbf7d0;
+        }
+        
+        .roadmap-phase.month-1 {
+            background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+            border-color: #93c5fd;
+        }
+        
+        .roadmap-phase.month-2-3 {
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border-color: #fcd34d;
+        }
+        
+        .roadmap-phase.ongoing {
+            background: linear-gradient(135deg, #fce7f3, #fbcfe8);
+            border-color: #f9a8d4;
+        }
+        
+        .roadmap-phase h4 {
+            color: #1e293b;
+            margin-bottom: 1rem;
+        }
+        
+        .roadmap-phase ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .roadmap-phase li {
+            padding: 0.5rem 0;
+            font-size: 0.875rem;
+        }
+        
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+        
+        .result-item {
+            text-align: center;
+            padding: 1.5rem;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+        
+        .result-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #10b981;
+        }
+        
+        .result-label {
+            font-size: 0.875rem;
+            color: #64748b;
+            margin-top: 0.5rem;
+        }
+        
+        .authority-pyramid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+        }
+        
+        .pyramid-tier {
+            padding: 1rem;
+            text-align: center;
+            border-radius: 8px;
+        }
+        
+        .pyramid-tier.tier-1 {
+            background: linear-gradient(135deg, #fef3c7, #fde68a);
+        }
+        
+        .pyramid-tier.tier-2 {
+            background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+        }
+        
+        .pyramid-tier.tier-3 {
+            background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+        }
+        
+        .pyramid-tier.tier-4 {
+            background: linear-gradient(135deg, #fce7f3, #fbcfe8);
+        }
+        
+        .pyramid-tier h5 {
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-bottom: 0.5rem;
+        }
+        
+        .pyramid-tier .actions {
+            font-size: 0.875rem;
+            color: #1e293b;
+        }
+        
+        .diagnose-result {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .diagnose-summary {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .diagnose-score {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+        
+        .diagnose-score.value {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+        
+        .diagnose-status {
+            flex: 1;
+        }
+        
+        .diagnose-status h4 {
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+        }
+        
+        .diagnose-status p {
+            color: #64748b;
+        }
+        
+        .diagnose-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+        
+        .detail-item {
+            text-align: center;
+            padding: 1rem;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+        
+        .detail-item .score {
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: #1e293b;
+        }
+        
+        .detail-item .label {
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-top: 0.25rem;
+        }
+        
+        .issues-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        
+        .issue-item {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem;
+            background: #fef2f2;
+            border-left: 4px solid #ef4444;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .issue-item.medium {
+            background: #fffbeb;
+            border-left-color: #f59e0b;
+        }
+        
+        .issue-item.low {
+            background: #eff6ff;
+            border-left-color: #3b82f6;
+        }
+        
+        .issue-severity {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: white;
+            flex-shrink: 0;
+        }
+        
+        .issue-item.high .issue-severity { background: #ef4444; }
+        .issue-item.medium .issue-severity { background: #f59e0b; }
+        .issue-item.low .issue-severity { background: #3b82f6; }
+        
+        .suggestions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+        
+        .suggestion-card {
+            padding: 1.5rem;
+            background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+            border-radius: 12px;
+            border: 1px solid #bbf7d0;
+        }
+        
+        .suggestion-card.priority-high {
+            background: linear-gradient(135deg, #fef2f2, #fee2e2);
+            border-color: #fecaca;
+        }
+        
+        .suggestion-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+        
+        .suggestion-category {
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: #059669;
+            text-transform: uppercase;
+        }
+        
+        .suggestion-card.priority-high .suggestion-category {
+            color: #dc2626;
+        }
+        
+        .suggestion-card h4 {
+            margin-bottom: 0.5rem;
+            color: #1e293b;
+        }
+        
+        .suggestion-card p {
+            color: #64748b;
+            font-size: 0.875rem;
+        }
+        
+        .suggestion-action {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            background: white;
+            border-radius: 6px;
+            font-size: 0.875rem;
+        }
+        
+        .suggestion-impact {
+            margin-top: 0.5rem;
+            font-size: 0.75rem;
+            color: #059669;
+            font-weight: 500;
+        }
+        
+        .suggestion-card.priority-high .suggestion-impact {
+            color: #dc2626;
+        }
+        
+        .message {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        
+        .message-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .message-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .message-error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+    </style>
+</head>
+<body>
+    <div id="messageContainer"></div>
+    
+    <div class="geo-container">
+        <div class="geo-hero">
+            <h1>🚀 GEO优化专家</h1>
+            <p>输入您的网站和品牌信息，获取专业的生成式引擎优化方案</p>
+        </div>
+        
+        <div class="input-section">
+            <h2 style="margin-bottom: 1.5rem; color: #1e293b;">📝 输入信息</h2>
+            
+            <div class="input-grid">
+                <div class="form-group">
+                    <label for="brandName">品牌名称 *</label>
+                    <input type="text" id="brandName" class="form-control" placeholder="如: 织然家具">
+                </div>
+                
+                <div class="form-group">
+                    <label for="domain">网站域名 *</label>
+                    <input type="text" id="domain" class="form-control" placeholder="如: zhiranhome.com">
+                </div>
+                
+                <div class="form-group">
+                    <label for="industry">所属行业</label>
+                    <select id="industry" class="form-control select">
+                        <option value="">请选择行业</option>
+                        <option value="家具家居">家具家居</option>
+                        <option value="教育培训">教育培训</option>
+                        <option value="医疗健康">医疗健康</option>
+                        <option value="电商零售">电商零售</option>
+                        <option value="科技软件">科技软件</option>
+                        <option value="金融服务">金融服务</option>
+                        <option value="餐饮美食">餐饮美食</option>
+                        <option value="旅游出行">旅游出行</option>
+                        <option value="其他">其他</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="location">目标地域</label>
+                    <input type="text" id="location" class="form-control" placeholder="如: 深圳、广东">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>核心关键词</label>
+                <div class="keywords-input" id="keywordsContainer">
+                    <input type="text" id="keywordInput" class="form-control" placeholder="输入关键词后按回车添加" style="flex: 1; border: none;">
+                </div>
+            </div>
+            
+            <div class="action-buttons">
+                <button onclick="runDiagnose()" class="btn btn-primary" id="diagnoseBtn">
+                    <span>🔍</span>
+                    <span>网站诊断</span>
+                </button>
+                <button onclick="generatePlan()" class="btn btn-primary" id="planBtn">
+                    <span>📋</span>
+                    <span>生成优化方案</span>
+                </button>
+                <button onclick="resetForm()" class="btn btn-secondary">
+                    <span>🔄</span>
+                    <span>重置</span>
+                </button>
+            </div>
+        </div>
+        
+        <div class="loading-overlay" id="loadingOverlay">
+            <div class="loading-spinner"></div>
+            <p>正在分析，请稍候...</p>
+            <p style="color: #64748b; font-size: 0.875rem;">预计需要10-30秒</p>
+        </div>
+        
+        <div class="result-section" id="diagnoseResult">
+            <div class="diagnose-result">
+                <h3>🔍 网站诊断结果</h3>
+                <div class="diagnose-summary" id="diagnoseSummary"></div>
+                <div class="diagnose-details" id="diagnoseDetails"></div>
+                
+                <div style="margin-top: 2rem;">
+                    <h4 style="margin-bottom: 1rem; color: #1e293b;">⚠️ 发现的问题</h4>
+                    <div class="issues-list" id="issuesList"></div>
+                </div>
+                
+                <div style="margin-top: 2rem;">
+                    <h4 style="margin-bottom: 1rem; color: #1e293b;">💡 优化建议</h4>
+                    <div class="suggestions-grid" id="diagnoseSuggestions"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="result-section" id="planResult">
+            <div class="plan-section">
+                <h3>🎯 品牌定位分析</h3>
+                <div class="plan-grid">
+                    <div class="plan-card">
+                        <h4>品牌名称</h4>
+                        <p id="brandPositionName"></p>
+                    </div>
+                    <div class="plan-card">
+                        <h4>所属行业</h4>
+                        <p id="brandPositionIndustry"></p>
+                    </div>
+                    <div class="plan-card">
+                        <h4>目标用户</h4>
+                        <p id="brandPositionUsers"></p>
+                    </div>
+                    <div class="plan-card">
+                        <h4>GEO策略</h4>
+                        <p id="brandPositionStrategy"></p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="plan-section">
+                <h3>🔑 关键词矩阵</h3>
+                <div class="keyword-matrix">
+                    <div class="keyword-group">
+                        <h5>核心词</h5>
+                        <div class="keywords" id="coreKeywords"></div>
+                    </div>
+                    <div class="keyword-group">
+                        <h5>长尾词</h5>
+                        <div class="keywords" id="longTailKeywords"></div>
+                    </div>
+                    <div class="keyword-group">
+                        <h5>地域词</h5>
+                        <div class="keywords" id="locationKeywords"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="plan-section">
+                <h3>📊 Schema结构化数据优化</h3>
+                <div style="margin-bottom: 1.5rem;">
+                    <h4>FAQ页面优化建议</h4>
+                    <div class="plan-grid" id="faqList"></div>
+                </div>
+                <div>
+                    <h4>Organization Schema代码</h4>
+                    <pre class="schema-code" id="schemaCode"></pre>
+                </div>
+            </div>
+            
+            <div class="plan-section">
+                <h3>📝 内容优化策略</h3>
+                <div class="plan-grid">
+                    <div class="plan-card">
+                        <h4>内容类型</h4>
+                        <ul id="contentTypes"></ul>
+                    </div>
+                    <div class="plan-card">
+                        <h4>内容主题</h4>
+                        <ul id="contentTopics"></ul>
+                    </div>
+                    <div class="plan-card">
+                        <h4>分发平台</h4>
+                        <ul id="contentPlatforms"></ul>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="plan-section">
+                <h3>🏛️ 信源建设策略</h3>
+                <div class="authority-pyramid">
+                    <div class="pyramid-tier tier-1">
+                        <h5>官网权威</h5>
+                        <div class="actions" id="authorityTier1"></div>
+                    </div>
+                    <div class="pyramid-tier tier-2">
+                        <h5>搜索生态</h5>
+                        <div class="actions" id="authorityTier2"></div>
+                    </div>
+                    <div class="pyramid-tier tier-3">
+                        <h5>行业媒体</h5>
+                        <div class="actions" id="authorityTier3"></div>
+                    </div>
+                    <div class="pyramid-tier tier-4">
+                        <h5>内容平台</h5>
+                        <div class="actions" id="authorityTier4"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="plan-section">
+                <h3>📅 GEO优化执行路线图</h3>
+                <div class="roadmap">
+                    <div class="roadmap-phase month-1">
+                        <h4>第1个月：基础搭建</h4>
+                        <ul id="roadmapMonth1"></ul>
+                    </div>
+                    <div class="roadmap-phase month-2-3">
+                        <h4>第2-3个月：内容生产</h4>
+                        <ul id="roadmapMonth23"></ul>
+                    </div>
+                    <div class="roadmap-phase ongoing">
+                        <h4>持续运营：长期优化</h4>
+                        <ul id="roadmapOngoing"></ul>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="plan-section">
+                <h3>📈 效果预期</h3>
+                <div class="results-grid">
+                    <div class="result-item">
+                        <div class="result-value" id="resultCitation"></div>
+                        <div class="result-label">AI引用率提升</div>
+                    </div>
+                    <div class="result-item">
+                        <div class="result-value" id="resultRank"></div>
+                        <div class="result-label">本地搜索排名</div>
+                    </div>
+                    <div class="result-item">
+                        <div class="result-value" id="resultConversion"></div>
+                        <div class="result-label">线索转化率提升</div>
+                    </div>
+                    <div class="result-item">
+                        <div class="result-value" id="resultPeriod"></div>
+                        <div class="result-label">监测周期</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let keywords = [];
+        
+        document.getElementById('keywordInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const value = e.target.value.trim();
+                if (value && !keywords.includes(value)) {
+                    keywords.push(value);
+                    updateKeywordsDisplay();
+                }
+                e.target.value = '';
+            }
+        });
+        
+        function updateKeywordsDisplay() {
+            const container = document.getElementById('keywordsContainer');
+            const input = document.getElementById('keywordInput');
+            const tags = container.querySelectorAll('.keyword-tag');
+            tags.forEach(tag => tag.remove());
+            keywords.forEach(keyword => {
+                const tag = document.createElement('span');
+                tag.className = 'keyword-tag';
+                tag.innerHTML = `${keyword} <button onclick="removeKeyword('${keyword}')">×</button>`;
+                container.insertBefore(tag, input);
+            });
+        }
+        
+        function removeKeyword(keyword) {
+            keywords = keywords.filter(k => k !== keyword);
+            updateKeywordsDisplay();
+        }
+        
+        function resetForm() {
+            document.getElementById('brandName').value = '';
+            document.getElementById('domain').value = '';
+            document.getElementById('industry').value = '';
+            document.getElementById('location').value = '';
+            keywords = [];
+            updateKeywordsDisplay();
+            document.getElementById('diagnoseResult').classList.remove('active');
+            document.getElementById('planResult').classList.remove('active');
+        }
+        
+        function showMessage(message, type = 'info') {
+            const container = document.getElementById('messageContainer');
+            if (!container) return;
+            const el = document.createElement('div');
+            el.className = `message message-${type}`;
+            el.textContent = message;
+            container.appendChild(el);
+            setTimeout(() => el.remove(), 3000);
+        }
+        
+        function validateForm(requireDomain = true) {
+            const brandName = document.getElementById('brandName').value.trim();
+            const domain = document.getElementById('domain').value.trim();
+            if (!brandName) {
+                showMessage('请输入品牌名称', 'warning');
+                return false;
+            }
+            if (requireDomain && !domain) {
+                showMessage('请输入网站域名', 'warning');
+                return false;
+            }
+            return true;
+        }
+        
+        function generateMockDiagnoseResult(brandName, domain) {
+            return {
+                domain: domain,
+                scores: {
+                    overall: 72.5,
+                    content: 78,
+                    structure: 65,
+                    authority: 68,
+                    technical: 82
+                },
+                competitive_position: '追赶者 - 网站具备基础GEO能力，需要针对性优化',
+                geo_readiness: {
+                    level: '中',
+                    description: '具备基础，需要针对性改进',
+                    next_steps: '优先解决高严重度问题，实施ERE框架'
+                },
+                issues: [
+                    { severity: 'high', category: 'content', title: '内容量不足', description: '页面字数较少，建议至少1000字以上' },
+                    { severity: 'high', category: 'authority', title: '缺少Schema.org标记', description: '结构化数据帮助AI理解内容语义' },
+                    { severity: 'medium', category: 'structure', title: '标题层级不完善', description: '建议添加更多H2/H3标题' },
+                    { severity: 'low', category: 'technical', title: '图片缺少ALT标签', description: '部分图片没有ALT描述' }
+                ],
+                suggestions: [
+                    { category: 'content', priority: 'high', title: '扩充内容深度', description: '增加详细的产品介绍、使用案例、FAQ等内容', action: '撰写至少2000字的深度内容', expected_impact: '提升AI引用率20-30%' },
+                    { category: 'authority', priority: 'high', title: '添加结构化数据', description: '实施Schema.org标记帮助AI理解内容', action: '添加Organization、Product类型的Schema', expected_impact: '显著提升AI引用概率' },
+                    { category: 'structure', priority: 'medium', title: '优化内容结构', description: '使用H2/H3标签创建清晰的内容层级', action: '添加3-5个H2小标题', expected_impact: '提升可读性和AI理解度' },
+                    { category: 'geo_strategy', priority: 'high', title: '实施ERE内容框架', description: 'Entity-Relation-Evidence框架优化内容', action: '明确定义实体、建立关系、提供证据支撑', expected_impact: 'GEO合规性提升40%' }
+                ]
+            };
+        }
+        
+        async function runDiagnose() {
+            if (!validateForm()) return;
+            showLoading(true);
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            const brandName = document.getElementById('brandName').value.trim();
+            const domain = document.getElementById('domain').value.trim();
+            const result = generateMockDiagnoseResult(brandName, domain);
+            displayDiagnoseResult(result);
+            showMessage('诊断完成', 'success');
+            showLoading(false);
+        }
+        
+        function displayDiagnoseResult(result) {
+            const container = document.getElementById('diagnoseResult');
+            container.classList.add('active');
+            document.getElementById('planResult').classList.remove('active');
+            
+            document.getElementById('diagnoseSummary').innerHTML = `
+                <div class="diagnose-score">
+                    <span class="value">${result.scores.overall}</span>
+                </div>
+                <div class="diagnose-status">
+                    <h4>${result.competitive_position.split(' - ')[0]}</h4>
+                    <p>${result.competitive_position.split(' - ')[1]}</p>
+                    <p style="margin-top: 0.5rem;">
+                        <strong>GEO准备度：${result.geo_readiness.level}</strong> - ${result.geo_readiness.description}
+                    </p>
+                </div>
+            `;
+            
+            document.getElementById('diagnoseDetails').innerHTML = `
+                <div class="detail-item">
+                    <div class="score">${result.scores.content}</div>
+                    <div class="label">内容质量</div>
+                </div>
+                <div class="detail-item">
+                    <div class="score">${result.scores.structure}</div>
+                    <div class="label">结构优化</div>
+                </div>
+                <div class="detail-item">
+                    <div class="score">${result.scores.authority}</div>
+                    <div class="label">权威性</div>
+                </div>
+                <div class="detail-item">
+                    <div class="score">${result.scores.technical}</div>
+                    <div class="label">技术性能</div>
+                </div>
+            `;
+            
+            const issuesList = document.getElementById('issuesList');
+            issuesList.innerHTML = result.issues.map(issue => `
+                <div class="issue-item ${issue.severity}">
+                    <span class="issue-severity">${issue.severity === 'high' ? '高' : issue.severity === 'medium' ? '中' : '低'}</span>
+                    <div>
+                        <h5 style="margin-bottom: 0.25rem;">${issue.title}</h5>
+                        <p style="color: #64748b; font-size: 0.875rem;">${issue.description}</p>
+                    </div>
+                </div>
+            `).join('');
+            
+            const suggestionsGrid = document.getElementById('diagnoseSuggestions');
+            suggestionsGrid.innerHTML = result.suggestions.map(suggestion => `
+                <div class="suggestion-card ${suggestion.priority === 'high' ? 'priority-high' : ''}">
+                    <div class="suggestion-header">
+                        <span class="suggestion-category">${suggestion.category}</span>
+                    </div>
+                    <h4>${suggestion.title}</h4>
+                    <p>${suggestion.description}</p>
+                    <div class="suggestion-action">
+                        <strong>行动：</strong>${suggestion.action}
+                    </div>
+                    <div class="suggestion-impact">
+                        📈 预期效果：${suggestion.expected_impact}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function generateMockPlan(brandName, domain, industry, location) {
+            const servicesMap = {
+                '家具家居': ['全屋定制', '衣柜定制', '橱柜定制', '家具设计'],
+                '教育培训': ['课程培训', '在线教育', '职业培训', '考试辅导'],
+                '医疗健康': ['健康咨询', '体检服务', '专科诊疗', '康复护理'],
+                '电商零售': ['商品销售', '售后服务', '物流配送', '会员服务'],
+                '科技软件': ['软件开发', '技术咨询', '系统集成', '运维服务'],
+                '其他': ['服务1', '服务2', '服务3']
+            };
+            
+            const faqMap = {
+                '家具家居': [
+                    {question: '定制周期是多久？', answer: '标准定制周期为25-30天，包含设计、生产、安装全流程。'},
+                    {question: '深圳地区是否提供免费上门量尺服务？', answer: '是的，深圳及周边地区提供免费上门量尺和设计咨询服务。'},
+                    {question: '使用什么材质？', answer: '采用E0级环保板材，符合国家最高环保标准，确保家人健康。'},
+                    {question: '售后服务如何？', answer: '提供5年质保，终身维护服务，让您售后无忧。'}
+                ],
+                '教育培训': [
+                    {question: '课程时长是多少？', answer: '根据课程类型从几小时到数月不等。'},
+                    {question: '是否有试听课程？', answer: '是的，提供免费试听课程。'},
+                    {question: '师资力量如何？', answer: '全部为行业资深讲师。'},
+                    {question: '学习效果有保障吗？', answer: '提供学习效果承诺和退款保障。'}
+                ],
+                '其他': [
+                    {question: '服务流程是怎样的？', answer: '请联系客服了解详细流程。'},
+                    {question: '收费标准是什么？', answer: '根据服务类型有所不同。'},
+                    {question: '支持哪些支付方式？', answer: '支持微信支付、支付宝、银行卡等多种支付方式。'},
+                    {question: '售后服务如何？', answer: '提供完善的售后服务支持。'}
+                ]
+            };
+            
+            return {
+                brand_positioning: {
+                    brand_name: brandName,
+                    industry: industry || '其他',
+                    geo_strategy: `强化'${brandName}'品牌词在AI搜索中的识别度`,
+                    target_users: '新中产家庭、行业客户等目标群体',
+                    core_advantages: '专业服务、品质保障'
+                },
+                keyword_matrix: {
+                    core_keywords: keywords.length > 0 ? keywords.slice(0, 3) : ['核心词1', '核心词2'],
+                    long_tail_keywords: [
+                        `${location}${brandName}${industry || '服务'}推荐`,
+                        `${brandName}${industry || '服务'}怎么样`,
+                        `${location}${industry || '服务'}哪家好`,
+                        `${brandName}${industry || '服务'}价格`,
+                        `${brandName}${industry || '服务'}对比`
+                    ],
+                    location_keywords: [location || '本地词']
+                },
+                schema_optimization: {
+                    organization: {
+                        name: brandName,
+                        description: `${brandName}专注${industry || '服务'}领域，为用户提供专业服务`,
+                        url: `https://www.${domain}`,
+                        services: servicesMap[industry] || servicesMap['其他']
+                    },
+                    faq: faqMap[industry] || faqMap['其他'],
+                    markup_code: JSON.stringify({
+                        "@context": "https://schema.org",
+                        "@type": "Organization",
+                        "name": brandName,
+                        "description": `${brandName}专注${industry || '服务'}领域，为用户提供优质服务`,
+                        "url": `https://www.${domain}`,
+                        "sameAs": [
+                            `https://weibo.com/${brandName}`,
+                            `https://www.zhihu.com/people/${brandName}`
+                        ]
+                    }, null, 2)
+                },
+                content_strategy: {
+                    content_types: ['行业洞察', '产品评测', '使用指南', '案例分析'],
+                    content_topics: [
+                        `${location}${industry || '行业'}趋势分析`,
+                        `${brandName}${industry || '服务'}案例分享`,
+                        `${industry || '行业'}选购指南`,
+                        `${location}${industry || '行业'}市场调研`
+                    ],
+                    platform_distribution: ['官网', '知乎', '小红书', '微信公众号']
+                },
+                authority_building: {
+                    official_site: ['完善产品页面', '建立案例库', '添加FAQ'],
+                    search_ecosystem: ['百度百科', '百度地图', '百度知道'],
+                    industry_media: ['行业媒体报道', '协会认证'],
+                    content_platforms: ['知乎专栏', '行业垂直平台']
+                },
+                execution_roadmap: {
+                    month_1: ['统一NAP信息', '部署Schema标记', '完善地图商家信息'],
+                    month_2_3: ['产出3-5篇深度文章', '创作案例拆解', '多平台分发'],
+                    ongoing: ['月度地图动态更新', '季度案例更新', '数据监测优化']
+                },
+                expected_results: {
+                    ai_citation_increase: '+150%',
+                    local_rank_improvement: 'Top 3',
+                    conversion_rate_increase: '+30%',
+                    monitoring_period: '6个月'
+                }
+            };
+        }
+        
+        async function generatePlan() {
+            if (!validateForm(false)) return;
+            showLoading(true);
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            const brandName = document.getElementById('brandName').value.trim();
+            const domain = document.getElementById('domain').value.trim() || 'example.com';
+            const industry = document.getElementById('industry').value;
+            const location = document.getElementById('location').value.trim();
+            const plan = generateMockPlan(brandName, domain, industry, location);
+            displayPlanResult(plan);
+            showMessage('优化方案生成成功', 'success');
+            showLoading(false);
+        }
+        
+        function displayPlanResult(plan) {
+            const container = document.getElementById('planResult');
+            container.classList.add('active');
+            document.getElementById('diagnoseResult').classList.remove('active');
+            
+            document.getElementById('brandPositionName').textContent = plan.brand_positioning.brand_name;
+            document.getElementById('brandPositionIndustry').textContent = plan.brand_positioning.industry;
+            document.getElementById('brandPositionUsers').textContent = plan.brand_positioning.target_users;
+            document.getElementById('brandPositionStrategy').textContent = plan.brand_positioning.geo_strategy;
+            
+            document.getElementById('coreKeywords').innerHTML = plan.keyword_matrix.core_keywords.map(k => `<span class="keyword-item">${k}</span>`).join('');
+            document.getElementById('longTailKeywords').innerHTML = plan.keyword_matrix.long_tail_keywords.map(k => `<span class="keyword-item">${k}</span>`).join('');
+            document.getElementById('locationKeywords').innerHTML = plan.keyword_matrix.location_keywords.map(k => `<span class="keyword-item">${k}</span>`).join('');
+            
+            document.getElementById('faqList').innerHTML = plan.schema_optimization.faq.map(faq => `
+                <div class="plan-card">
+                    <h4>Q: ${faq.question}</h4>
+                    <p style="color: #64748b; font-size: 0.875rem;">A: ${faq.answer}</p>
+                </div>
+            `).join('');
+            
+            document.getElementById('schemaCode').textContent = plan.schema_optimization.markup_code;
+            
+            document.getElementById('contentTypes').innerHTML = plan.content_strategy.content_types.map(t => `<li>${t}</li>`).join('');
+            document.getElementById('contentTopics').innerHTML = plan.content_strategy.content_topics.map(t => `<li>${t}</li>`).join('');
+            document.getElementById('contentPlatforms').innerHTML = plan.content_strategy.platform_distribution.map(p => `<li>${p}</li>`).join('');
+            
+            document.getElementById('authorityTier1').innerHTML = plan.authority_building.official_site.join('<br>');
+            document.getElementById('authorityTier2').innerHTML = plan.authority_building.search_ecosystem.join('<br>');
+            document.getElementById('authorityTier3').innerHTML = plan.authority_building.industry_media.join('<br>');
+            document.getElementById('authorityTier4').innerHTML = plan.authority_building.content_platforms.join('<br>');
+            
+            document.getElementById('roadmapMonth1').innerHTML = plan.execution_roadmap.month_1.map(t => `<li>• ${t}</li>`).join('');
+            document.getElementById('roadmapMonth23').innerHTML = plan.execution_roadmap.month_2_3.map(t => `<li>• ${t}</li>`).join('');
+            document.getElementById('roadmapOngoing').innerHTML = plan.execution_roadmap.ongoing.map(t => `<li>• ${t}</li>`).join('');
+            
+            document.getElementById('resultCitation').textContent = plan.expected_results.ai_citation_increase;
+            document.getElementById('resultRank').textContent = plan.expected_results.local_rank_improvement;
+            document.getElementById('resultConversion').textContent = plan.expected_results.conversion_rate_increase;
+            document.getElementById('resultPeriod').textContent = plan.expected_results.monitoring_period;
+        }
+        
+        function showLoading(show) {
+            const overlay = document.getElementById('loadingOverlay');
+            const diagnoseBtn = document.getElementById('diagnoseBtn');
+            const planBtn = document.getElementById('planBtn');
+            if (show) {
+                overlay.classList.add('active');
+                diagnoseBtn.disabled = true;
+                planBtn.disabled = true;
+            } else {
+                overlay.classList.remove('active');
+                diagnoseBtn.disabled = false;
+                planBtn.disabled = false;
+            }
+        }
+        
+        function loadExample() {
+            document.getElementById('brandName').value = '织然家具';
+            document.getElementById('domain').value = 'zhiranhome.com';
+            document.getElementById('industry').value = '家具家居';
+            document.getElementById('location').value = '深圳';
+            keywords = ['全屋定制', '整体衣柜', '橱柜设计', '家具定制'];
+            updateKeywordsDisplay();
+        }
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            loadExample();
+        });
+    </script>
+</body>
+</html>

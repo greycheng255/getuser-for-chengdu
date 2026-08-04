@@ -1,5 +1,6 @@
+import { message } from '../utils/antdMessage';
 import React, { useState } from 'react';
-import { Form, Input, Button, Card, message, Tabs } from 'antd';
+import { Form, Input, Button, Card, Tabs } from 'antd';
 import { UserOutlined, LockOutlined, RobotOutlined, MailOutlined } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { login, register, authStorage } from '../api/auth';

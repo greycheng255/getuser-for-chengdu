@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GEO内容工程系统</title>
+    <link rel="stylesheet" href="styles.css?v=3">
+    <style>
+        /* 首页特定样式 */
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-xl);
+            padding-bottom: var(--space-lg);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .welcome-section h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: var(--space-sm);
+        }
+
+        .welcome-section p {
+            color: var(--text-muted);
+        }
+
+        .user-section {
+            display: flex;
+            align-items: center;
+            gap: var(--space-md);
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: var(--primary-gradient);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+
+        /* 快速操作卡片 */
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: var(--space-lg);
+            margin-bottom: var(--space-xl);
+        }
+
+        .action-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: var(--space-xl);
+            cursor: pointer;
+            transition: var(--transition-normal);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .action-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: var(--primary-gradient);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .action-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+            border-color: rgba(102, 126, 234, 0.3);
+        }
+
+        .action-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .action-icon {
+            width: 48px;
+            height: 48px;
+            background: rgba(102, 126, 234, 0.15);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: var(--space-md);
+        }
+
+        .action-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: var(--space-sm);
+        }
+
+        .action-desc {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        .action-arrow {
+            position: absolute;
+            right: var(--space-lg);
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            transition: var(--transition-fast);
+        }
+
+        .action-card:hover .action-arrow {
+            color: var(--primary-color);
+            transform: translateY(-50%) translateX(4px);
+        }
+
+        /* 两栏布局 */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: var(--space-xl);
+        }
+
+        @media (max-width: 1024px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* 最近项目 */
+        .recent-projects {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: var(--space-xl);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-lg);
+        }
+
+        .section-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        .view-all {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-size: 0.875rem;
+        }
+
+        .project-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-md);
+        }
+
+        .project-item {
+            display: flex;
+            align-items: center;
+            gap: var(--space-md);
+            padding: var(--space-md);
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            transition: var(--transition-fast);
+            cursor: pointer;
+        }
+
+        .project-item:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .project-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--primary-gradient);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+
+        .project-info {
+            flex: 1;
+        }
+
+        .project-name {
+            font-weight: 600;
+            margin-bottom: var(--space-xs);
+        }
+
+        .project-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .project-status {
+            padding: var(--space-xs) var(--space-sm);
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .project-status.active {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success-color);
+        }
+
+        /* 系统状态 */
+        .system-status {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: var(--space-xl);
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--space-md) 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .status-item:last-child {
+            border-bottom: none;
+        }
+
+        .status-label {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            color: var(--text-secondary);
+        }
+
+        .status-value {
+            font-weight: 600;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-dot.online {
+            background: var(--success-color);
+            box-shadow: 0 0 8px var(--success-color);
+        }
+
+        /* 快捷入口 */
+        .quick-links {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: var(--space-md);
+            margin-bottom: var(--space-xl);
+        }
+
+        @media (max-width: 768px) {
+            .quick-links {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .quick-link {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: var(--space-sm);
+            padding: var(--space-lg);
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            text-decoration: none;
+            color: var(--text-secondary);
+            transition: var(--transition-fast);
+        }
+
+        .quick-link:hover {
+            background: rgba(102, 126, 234, 0.1);
+            border-color: var(--primary-color);
+            color: var(--text-primary);
+            transform: translateY(-2px);
+        }
+
+        .quick-link-icon {
+            font-size: 1.5rem;
+        }
+
+        .quick-link-text {
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        /* 空状态 */
+        .empty-state {
+            text-align: center;
+            padding: var(--space-2xl);
+            color: var(--text-muted);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: var(--space-md);
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>🚀 GEO系统</h1>
+                <p>AI搜索时代的内容优化</p>
+            </div>
+
+            <nav>
+                <ul class="nav-menu">
+                    <li class="nav-item active" data-section="home">
+                        <span class="nav-icon">🏠</span>
+                        <span>首页</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='projects.html'">
+                        <span class="nav-icon">📁</span>
+                        <span>我的项目</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='ai-tasks.html'">
+                        <span class="nav-icon">🤖</span>
+                        <span>AI任务</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='content-calendar.html'">
+                        <span class="nav-icon">📅</span>
+                        <span>内容日历</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='content-generator.html'">
+                        <span class="nav-icon">✍️</span>
+                        <span>内容生成</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='content-analyzer.html'">
+                        <span class="nav-icon">🔍</span>
+                        <span>内容分析</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='content-optimizer.html'">
+                        <span class="nav-icon">⚡</span>
+                        <span>内容优化</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='analytics-dashboard.html'">
+                        <span class="nav-icon">📈</span>
+                        <span>数据报表</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='competitor-analysis.html'">
+                        <span class="nav-icon">🎯</span>
+                        <span>竞品分析</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='keyword-research.html'">
+                        <span class="nav-icon">🔑</span>
+                        <span>关键词研究</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='sentiment-monitor.html'">
+                        <span class="nav-icon">💬</span>
+                        <span>舆情监控</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='brand-diagnosis.html'">
+                        <span class="nav-icon">🏥</span>
+                        <span>品牌诊断</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='publish-manager.html'">
+                        <span class="nav-icon">📤</span>
+                        <span>发布管理</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='active-publish.html'">
+                        <span class="nav-icon">🚀</span>
+                        <span>主动发布</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='monitoring-dashboard.html'">
+                        <span class="nav-icon">📊</span>
+                        <span>效果监控</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='metrics-tracker.html'">
+                        <span class="nav-icon">📊</span>
+                        <span>数据监测</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='roi-calculator.html'">
+                        <span class="nav-icon">💰</span>
+                        <span>ROI计算</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='authority-builder.html'">
+                        <span class="nav-icon">🏛️</span>
+                        <span>信源建设</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='platform-accounts.html'">
+                        <span class="nav-icon">🔐</span>
+                        <span>平台账号</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='geo_optimizer.html'">
+                        <span class="nav-icon">🎯</span>
+                        <span>GEO优化专家</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='website_diagnose.html'">
+                        <span class="nav-icon">🔎</span>
+                        <span>网站诊断</span>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 头部 -->
+            <div class="dashboard-header">
+                <div class="welcome-section">
+                    <h1>欢迎使用GEO内容工程系统</h1>
+                    <p>优化您的内容，提升AI搜索引用率</p>
+                </div>
+                <div class="user-section">
+                    <span id="currentUser">加载中...</span>
+                    <div class="user-avatar" id="userAvatar">👤</div>
+                    <button class="btn btn-secondary" onclick="logout()">退出</button>
+                </div>
+            </div>
+
+            <!-- 核心指标 -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">AI引用率</div>
+                    <div class="metric-value" id="metricAiCitation">--%</div>
+                    <div class="metric-change positive" id="metricAiCitationChange" style="display:none;">
+                        <span>↑</span>
+                        <span></span>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">品牌提及率</div>
+                    <div class="metric-value" id="metricBrandMention">--%</div>
+                    <div class="metric-change positive" id="metricBrandMentionChange" style="display:none;">
+                        <span>↑</span>
+                        <span></span>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">答案空间覆盖</div>
+                    <div class="metric-value" id="metricAnswerSpace">--%</div>
+                    <div class="metric-change positive" id="metricAnswerSpaceChange" style="display:none;">
+                        <span>↑</span>
+                        <span></span>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">综合可见性</div>
+                    <div class="metric-value" id="metricVisibility">--</div>
+                    <div class="metric-change positive" id="metricVisibilityChange" style="display:none;">
+                        <span>↑</span>
+                        <span></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 快捷入口 -->
+            <div class="quick-links">
+                <a href="geo_optimizer.html" class="quick-link">
+                    <span class="quick-link-icon">🎯</span>
+                    <span class="quick-link-text">GEO优化</span>
+                </a>
+                <a href="content-generator.html" class="quick-link">
+                    <span class="quick-link-icon">✍️</span>
+                    <span class="quick-link-text">内容生成</span>
+                </a>
+                <a href="ai-tasks.html" class="quick-link">
+                    <span class="quick-link-icon">🤖</span>
+                    <span class="quick-link-text">AI任务</span>
+                </a>
+                <a href="projects.html" class="quick-link">
+                    <span class="quick-link-icon">📁</span>
+                    <span class="quick-link-text">项目管理</span>
+                </a>
+            </div>
+
+            <!-- 快速操作 -->
+        <h2 style="margin-bottom: var(--space-lg); font-size: 1.25rem; font-weight: 600;">快速操作</h2>
+        <div class="quick-actions">
+            <div class="action-card" style="background: linear-gradient(135deg, rgba(102,126,234,0.15), rgba(118,75,162,0.15));border-color:rgba(102,126,234,0.4);" onclick="openWorkflowModal()">
+                <div class="action-icon">🚀</div>
+                <div class="action-title">一键启动 GEO 闭环</div>
+                <div class="action-desc">自动完成：关键词→诊断→生成→分析→优化→排期→发布→监控</div>
+                <span class="action-arrow">→</span>
+            </div>
+            <div class="action-card" onclick="window.location.href='geo_optimizer.html'">
+                <div class="action-icon">🎯</div>
+                <div class="action-title">生成优化方案</div>
+                <div class="action-desc">输入品牌信息，自动生成完整的GEO优化策略</div>
+                <span class="action-arrow">→</span>
+            </div>
+            <div class="action-card" onclick="window.location.href='website_diagnose.html'">
+                <div class="action-icon">🔎</div>
+                <div class="action-title">网站诊断</div>
+                <div class="action-desc">全面分析网站GEO优化现状和问题</div>
+                <span class="action-arrow">→</span>
+            </div>
+        </div>
+
+        <!-- 工作流总览 -->
+        <div class="chart-card" style="margin-bottom: var(--space-xl); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-xl);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 style="font-size: 1.1rem; font-weight: 600;">🔄 自动化工作流</h3>
+                <button class="btn-small" onclick="loadWorkflows()">🔄 刷新</button>
+            </div>
+            <div id="workflowList" style="display: grid; gap: 12px;">
+                <div style="color: var(--text-muted); text-align: center; padding: 20px;">暂无工作流，点击上方"一键启动"开始</div>
+            </div>
+        </div>
+
+        <!-- 工作流启动模态框 -->
+        <div id="workflowModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;justify-content:center;align-items:center;">
+            <div style="background:#1a1a2e;border-radius:12px;padding:32px;max-width:560px;width:90%;max-height:90vh;overflow-y:auto;border:1px solid rgba(102,126,234,0.3);">
+                <h3 style="color:#fff;font-size:1.4rem;margin-bottom:16px;">🚀 启动 GEO 自动化闭环</h3>
+                <p style="color:#a0a0a0;font-size:0.9rem;margin-bottom:20px;">系统将自动完成以下9个阶段，数据自动串联，无需手动操作：</p>
+                <div style="background:rgba(102,126,234,0.1);border-radius:8px;padding:12px;margin-bottom:20px;font-size:0.85rem;color:#fff;line-height:1.8;">
+                    🔑 关键词研究 → 🏥 品牌诊断 → ✍️ 内容生成 → 🔍 内容分析<br>
+                    → ⚡ 内容优化 → 🤖 AI任务 → 📅 排期 → 📤 发布 → 📊 监控
+                </div>
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label style="color:#a0a0a0;font-size:0.9rem;display:block;margin-bottom:6px;">品牌名称</label>
+                    <input type="text" id="wfBrandName" value="织然家具" style="width:100%;padding:10px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;">
+                </div>
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label style="color:#a0a0a0;font-size:0.9rem;display:block;margin-bottom:6px;">行业</label>
+                    <input type="text" id="wfIndustry" value="定制家具" style="width:100%;padding:10px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;">
+                </div>
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label style="color:#a0a0a0;font-size:0.9rem;display:block;margin-bottom:6px;">关键词（逗号分隔，留空自动生成）</label>
+                    <input type="text" id="wfKeywords" placeholder="例如：定制家具,实木家具,全屋定制" style="width:100%;padding:10px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;">
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
+                    <button onclick="closeWorkflowModal()" style="padding:8px 16px;background:rgba(255,255,255,0.1);border:none;border-radius:6px;color:#fff;cursor:pointer;">取消</button>
+                    <button onclick="startWorkflow()" style="padding:8px 16px;background:linear-gradient(135deg,#667eea,#764ba2);border:none;border-radius:6px;color:#fff;cursor:pointer;font-weight:600;">🚀 启动闭环</button>
+                </div>
+            </div>
+        </div>
+
+            <!-- 两栏布局 -->
+            <div class="dashboard-grid">
+                <!-- 最近项目 -->
+                <div class="recent-projects">
+                    <div class="section-header">
+                        <h3 class="section-title">📁 最近项目</h3>
+                        <a href="projects.html" class="view-all">查看全部 →</a>
+                    </div>
+                    <div class="project-list" id="projectList">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📁</div>
+                            <p>暂无项目</p>
+                            <button class="btn btn-primary mt-2" onclick="window.location.href='geo_optimizer.html'">
+                                创建第一个项目
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 系统状态 -->
+                <div class="system-status">
+                    <div class="section-header">
+                        <h3 class="section-title">📊 系统状态</h3>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">
+                            <span class="status-dot online"></span>
+                            <span>AI服务</span>
+                        </div>
+                        <span class="status-value" style="color: var(--success-color);">运行中</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">
+                            <span class="status-dot online"></span>
+                            <span>数据库</span>
+                        </div>
+                        <span class="status-value" style="color: var(--success-color);">正常</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">
+                            <span>📋</span>
+                            <span>待处理任务</span>
+                        </div>
+                        <span class="status-value" id="pendingTasks">0</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">
+                            <span>✅</span>
+                            <span>已完成任务</span>
+                        </div>
+                        <span class="status-value" id="completedTasks">0</span>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">
+                            <span>📅</span>
+                            <span>今日生成</span>
+                        </div>
+                        <span class="status-value">0 篇</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // 优先级：1. API_HOST环境变量 2. 当前页面origin(端口改为5000)
+        const API_BASE_URL = (typeof API_HOST !== 'undefined' && API_HOST) ? API_HOST :
+            (window.location.protocol + '//' + window.location.hostname + ':5001') + '/api';
+
+        // 检查登录状态
+        function checkAuth() {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                window.location.href = 'login.html';
+                return false;
+            }
+            return true;
+        }
+
+        // 获取当前用户
+        async function getCurrentUser() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('currentUser').textContent = data.data.username;
+                    document.getElementById('userAvatar').textContent = data.data.username.charAt(0).toUpperCase();
+                }
+            } catch (error) {
+                console.error('获取用户信息失败:', error);
+            }
+        }
+
+        // 加载最近项目
+        async function loadRecentProjects() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/optimization/plans?limit=5`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+                const data = await response.json();
+
+                if (data.success && data.data && data.data.length > 0) {
+                    const projectList = document.getElementById('projectList');
+                    projectList.innerHTML = data.data.slice(0, 5).map(plan => `
+                        <div class="project-item" onclick="window.location.href='plan_detail.html?id=${plan.id}'">
+                            <div class="project-icon">📋</div>
+                            <div class="project-info">
+                                <div class="project-name">${plan.brand_name || '未命名项目'}</div>
+                                <div class="project-meta">${plan.industry || '未分类'} · ${new Date(plan.created_at).toLocaleDateString()}</div>
+                            </div>
+                            <span class="project-status active">进行中</span>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('加载项目失败:', error);
+            }
+        }
+
+        // 加载任务统计
+        async function loadTaskStats() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/ai-tasks`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+                const data = await response.json();
+
+                if (data.success && data.data) {
+                    const pending = data.data.filter(t => t.status === 'pending').length;
+                    const completed = data.data.filter(t => t.status === 'completed').length;
+                    document.getElementById('pendingTasks').textContent = pending;
+                    document.getElementById('completedTasks').textContent = completed;
+                }
+            } catch (error) {
+                console.error('加载任务统计失败:', error);
+            }
+        }
+
+        // 加载核心指标 - 真实数据
+        async function loadMetrics() {
+            try {
+                // 优先调用 AI 引用率统计 API
+                const response = await fetch(`${API_BASE_URL}/monitoring/ai-citation/stats?days=30`);
+                const data = await response.json();
+
+                if (data.success && data.stats) {
+                    const s = data.stats;
+                    // AI引用率
+                    const aiCitation = s.mention_rate !== undefined ? s.mention_rate :
+                                       (s.total_queries > 0 ? (s.mentioned_count / s.total_queries * 100) : 0);
+                    document.getElementById('metricAiCitation').textContent = aiCitation.toFixed(1) + '%';
+
+                    // 品牌提及率（同 AI引用率，因为没有独立统计）
+                    document.getElementById('metricBrandMention').textContent = aiCitation.toFixed(1) + '%';
+
+                    // 答案空间覆盖（用平台覆盖率代替）
+                    const platformsCovered = s.platforms_covered || 1;
+                    const totalPlatforms = s.total_platforms || 4;
+                    const answerSpace = (platformsCovered / totalPlatforms * 100);
+                    document.getElementById('metricAnswerSpace').textContent = answerSpace.toFixed(0) + '%';
+
+                    // 综合可见性（AI引用率 + 答案空间覆盖 + 品牌提及率 的平均）
+                    const visibility = (aiCitation + answerSpace + aiCitation) / 3;
+                    document.getElementById('metricVisibility').textContent = visibility.toFixed(1);
+
+                    // 变化趋势
+                    const change = s.trend || s.change || 0;
+                    if (change !== 0) {
+                        const changeEl = document.getElementById('metricAiCitationChange');
+                        changeEl.style.display = 'inline-flex';
+                        changeEl.classList.toggle('positive', change >= 0);
+                        changeEl.classList.toggle('negative', change < 0);
+                        changeEl.querySelector('span:first-child').textContent = change >= 0 ? '↑' : '↓';
+                        changeEl.querySelector('span:last-child').textContent = Math.abs(change).toFixed(1) + '%';
+                    }
+                }
+            } catch (error) {
+                console.error('加载指标失败:', error);
+                // 失败时保持 --% 占位符
+            }
+        }
+
+        // ============ 工作流引擎 ============
+
+        function openWorkflowModal() {
+            document.getElementById('workflowModal').style.display = 'flex';
+        }
+
+        function closeWorkflowModal() {
+            document.getElementById('workflowModal').style.display = 'none';
+        }
+
+        async function startWorkflow() {
+            const brandName = document.getElementById('wfBrandName').value.trim();
+            const industry = document.getElementById('wfIndustry').value.trim() || '定制家具';
+            const kwText = document.getElementById('wfKeywords').value.trim();
+            const keywords = kwText ? kwText.split(/[,，\s]+/).filter(Boolean) : [];
+
+            if (!brandName) {
+                alert('请输入品牌名称');
+                return;
+            }
+
+            closeWorkflowModal();
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/workflow/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    },
+                    body: JSON.stringify({
+                        brand_name: brandName,
+                        industry: industry,
+                        keywords: keywords,
+                        auto_run: true
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert(`✅ 工作流已启动！ID: ${data.workflow_id}\n后台自动执行中，可查看进度`);
+                    loadWorkflows();
+                    // 开始轮询更新进度
+                    startWorkflowPolling(data.workflow_id);
+                } else {
+                    alert(data.error || data.message || '启动失败');
+                }
+            } catch (error) {
+                alert('启动失败: ' + error.message);
+            }
+        }
+
+        let workflowPollingTimer = null;
+        function startWorkflowPolling(wfId) {
+            if (workflowPollingTimer) clearInterval(workflowPollingTimer);
+            workflowPollingTimer = setInterval(() => {
+                loadWorkflows();
+                // 工作流完成时停止轮询
+                fetch(`${API_BASE_URL}/workflow/${wfId}/status`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success && (data.workflow.status === 'completed' || data.workflow.status === 'failed')) {
+                            if (workflowPollingTimer) {
+                                clearInterval(workflowPollingTimer);
+                                workflowPollingTimer = null;
+                                if (data.workflow.status === 'completed') {
+                                    loadMetrics(); // 刷新顶部指标
+                                }
+                            }
+                        }
+                    })
+                    .catch(() => {});
+            }, 5000);
+        }
+
+        async function loadWorkflows() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/workflow/list?limit=10`);
+                const data = await response.json();
+                if (data.success && data.workflows && data.workflows.length > 0) {
+                    const listDiv = document.getElementById('workflowList');
+                    listDiv.innerHTML = data.workflows.map(wf => {
+                        const statusColor = wf.status === 'completed' ? '#10b981' :
+                                          wf.status === 'failed' ? '#ef4444' :
+                                          wf.status === 'running' ? '#667eea' : '#a0a0a0';
+                        const statusText = wf.status === 'completed' ? '✅ 已完成' :
+                                          wf.status === 'failed' ? '❌ 失败' :
+                                          wf.status === 'running' ? '🔄 执行中' : '⏸ 待执行';
+                        const progressBar = `
+                            <div style="width:100%;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;margin-top:6px;overflow:hidden;">
+                                <div style="width:${wf.progress}%;height:100%;background:linear-gradient(90deg,#667eea,#764ba2);transition:width 0.5s;"></div>
+                            </div>
+                        `;
+                        return `
+                            <div onclick="viewWorkflowDetail('${wf.id}')" style="padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,0.05);">
+                                <div style="display:flex;justify-content:space-between;align-items:center;">
+                                    <div>
+                                        <span style="color:#fff;font-weight:600;">${wf.brand_name}</span>
+                                        <span style="color:${statusColor};font-size:0.85rem;margin-left:8px;">${statusText}</span>
+                                    </div>
+                                    <span style="color:#a0a0a0;font-size:0.85rem;">${wf.progress}%</span>
+                                </div>
+                                ${progressBar}
+                                <div style="margin-top:6px;font-size:0.8rem;color:#a0a0a0;">
+                                    ${wf.current_stage ? `当前阶段: ${wf.current_stage}` : (wf.completed_at ? `完成于 ${wf.completed_at}` : '')}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    document.getElementById('workflowList').innerHTML =
+                        '<div style="color: var(--text-muted); text-align: center; padding: 20px;">暂无工作流，点击上方"一键启动"开始</div>';
+                }
+            } catch (error) {
+                console.error('加载工作流失败:', error);
+            }
+        }
+
+        async function viewWorkflowDetail(wfId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/workflow/${wfId}/status`);
+                const data = await response.json();
+                if (!data.success) return;
+
+                const wf = data.workflow;
+                const stagesHtml = wf.stages.map(s => {
+                    const statusIcon = s.status === 'completed' ? '✅' :
+                                       s.status === 'failed' ? '❌' :
+                                       s.status === 'running' ? '🔄' : '⏸';
+                    const result = s.result ? `<details style="margin-top:6px;color:#a0a0a0;font-size:0.8rem;"><summary>查看结果</summary><pre style="white-space:pre-wrap;color:#fff;max-height:150px;overflow-y:auto;background:rgba(0,0,0,0.3);padding:8px;border-radius:4px;margin-top:4px;">${JSON.stringify(s.result, null, 2).replace(/</g, '&lt;')}</pre></details>` : '';
+                    const error = s.error ? `<div style="color:#ef4444;font-size:0.8rem;margin-top:4px;">错误: ${s.error}</div>` : '';
+                    return `
+                        <div style="padding:10px;background:rgba(255,255,255,0.03);border-radius:6px;margin-bottom:8px;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="font-size:1.2rem;">${s.icon}</span>
+                                <span style="color:#fff;font-weight:600;">${s.name}</span>
+                                <span style="margin-left:auto;">${statusIcon}</span>
+                            </div>
+                            <div style="color:#a0a0a0;font-size:0.85rem;margin-top:4px;">${s.description}</div>
+                            ${error}
+                            ${result}
+                        </div>
+                    `;
+                }).join('');
+
+                const actionBtn = wf.status === 'failed' ?
+                    `<button onclick="resumeWorkflow('${wf.id}')" style="padding:6px 12px;background:rgba(102,126,234,0.2);border:1px solid #667eea;border-radius:6px;color:#fff;cursor:pointer;">▶ 恢复执行</button>` : '';
+
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1001;display:flex;justify-content:center;align-items:center;';
+                modal.innerHTML = `
+                    <div style="background:#1a1a2e;border-radius:12px;padding:24px;max-width:700px;width:90%;max-height:90vh;overflow-y:auto;border:1px solid rgba(102,126,234,0.3);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                            <h3 style="color:#fff;font-size:1.3rem;">🔄 工作流详情 - ${wf.brand_name}</h3>
+                            <button onclick="this.closest('div[style*=\"position:fixed\"]').remove()" style="background:none;border:none;color:#fff;font-size:1.5rem;cursor:pointer;">×</button>
+                        </div>
+                        <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
+                            <span style="color:#a0a0a0;">状态:</span>
+                            <span style="color:${wf.status === 'completed' ? '#10b981' : wf.status === 'failed' ? '#ef4444' : '#667eea'};font-weight:600;">${wf.status}</span>
+                            <span style="color:#a0a0a0;">进度:</span>
+                            <span style="color:#fff;font-weight:600;">${wf.progress}%</span>
+                            ${actionBtn}
+                        </div>
+                        ${stagesHtml}
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            } catch (error) {
+                alert('加载详情失败: ' + error.message);
+            }
+        }
+
+        async function resumeWorkflow(wfId) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/workflow/${wfId}/resume`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert('✅ 工作流已恢复');
+                    document.querySelectorAll('div[style*="position:fixed"]').forEach(el => el.remove());
+                    loadWorkflows();
+                    startWorkflowPolling(wfId);
+                } else {
+                    alert(data.error || '恢复失败');
+                }
+            } catch (error) {
+                alert('恢复失败: ' + error.message);
+            }
+        }
+
+        // 退出登录
+        function logout() {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('username');
+            window.location.href = 'login.html';
+        }
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', () => {
+            if (checkAuth()) {
+                getCurrentUser();
+                loadRecentProjects();
+                loadTaskStats();
+                loadMetrics();
+                loadWorkflows();
+            }
+        });
+    </script>
+</body>
+</html>

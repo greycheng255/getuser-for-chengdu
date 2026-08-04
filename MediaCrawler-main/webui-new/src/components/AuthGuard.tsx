@@ -54,7 +54,7 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
           justifyContent: 'center',
         }}
       >
-        <Spin size="large" tip="正在校验登录状态..." />
+        <Spin size="large" description="正在校验登录状态..." />
       </div>
     );
   }

@@ -1,0 +1,127 @@
+{
+  "test_info": {
+    "website": "www.zhiranrome.com",
+    "keyword": "家居设计",
+    "brand": "织然家具",
+    "test_time": "2026-05-18T20:13:17.994769",
+    "elapsed_time": 0.011055469512939453
+  },
+  "results": [
+    {
+      "time": "20:13:17",
+      "step": "阶段1",
+      "message": "开始AI内容生成测试",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "1.1",
+      "message": "生成GEO优化文章",
+      "data": {
+        "keyword": "家居设计"
+      }
+    },
+    {
+      "time": "20:13:17",
+      "step": "1.1",
+      "message": "文章生成异常: HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/content/generate (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=5001): Failed to establish a new connection: [Errno 111] Connection refused\"))",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "1.2",
+      "message": "创建AI生成任务",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "1.2",
+      "message": "任务创建异常: HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/ai-tasks/create-from-plan (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=5001): Failed to establish a new connection: [Errno 111] Connection refused\"))",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "阶段2",
+      "message": "开始一键分发测试",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "2.1",
+      "message": "获取发布平台列表",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "2.1",
+      "message": "获取平台列表异常: HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/publish/platforms (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=5001): Failed to establish a new connection: [Errno 111] Connection refused\"))",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "2.2",
+      "message": "测试快速发布功能",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "2.2",
+      "message": "快速发布异常: HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/publish/quick (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=5001): Failed to establish a new connection: [Errno 111] Connection refused\"))",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "阶段3",
+      "message": "开始效果监控测试",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "3.1",
+      "message": "获取监控仪表板数据",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "3.1",
+      "message": "仪表板数据获取异常: HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/monitoring/dashboard?days=7 (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=5001): Failed to establish a new connection: [Errno 111] Connection refused\"))",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "3.2",
+      "message": "检查关键词排名: 家居设计",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "3.2",
+      "message": "排名检查异常: HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/monitoring/search-rank/check (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=5001): Failed to establish a new connection: [Errno 111] Connection refused\"))",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "3.3",
+      "message": "检查AI引用情况",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "3.3",
+      "message": "查询'家居设计哪个品牌好'异常: HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/monitoring/ai-citation/check (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=5001): Failed to establish a new connection: [Errno 111] Connection refused\"))",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "3.3",
+      "message": "查询'织然家具怎么样'异常: HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/monitoring/ai-citation/check (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=5001): Failed to establish a new connection: [Errno 111] Connection refused\"))",
+      "data": null
+    },
+    {
+      "time": "20:13:17",
+      "step": "3.3",
+      "message": "查询'定制家具推荐'异常: HTTPConnectionPool(host='localhost', port=5001): Max retries exceeded with url: /api/monitoring/ai-citation/check (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=5001): Failed to establish a new connection: [Errno 111] Connection refused\"))",
+      "data": null
+    }
+  ]
+}

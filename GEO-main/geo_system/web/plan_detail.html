@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>优化方案详情 - GEO系统</title>
+    <link rel="stylesheet" href="styles.css?v=3">
+    <style>
+        /* 页面特定样式 */
+        .plan-detail-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-bottom: var(--space-lg);
+            font-weight: 500;
+            transition: var(--transition-fast);
+        }
+
+        .back-link:hover {
+            color: var(--primary-color);
+        }
+
+        /* 方案头部卡片 */
+        .plan-header-card {
+            background: var(--primary-gradient);
+            border-radius: var(--radius-lg);
+            padding: var(--space-xl);
+            margin-bottom: var(--space-xl);
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .plan-header-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -10%;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            border-radius: 50%;
+        }
+
+        .plan-brand {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: var(--space-sm);
+            position: relative;
+            z-index: 1;
+        }
+
+        .plan-domain {
+            font-size: 1rem;
+            opacity: 0.9;
+            margin-bottom: var(--space-lg);
+            position: relative;
+            z-index: 1;
+        }
+
+        .plan-meta {
+            display: flex;
+            gap: var(--space-xl);
+            flex-wrap: wrap;
+            position: relative;
+            z-index: 1;
+        }
+
+        .plan-meta-item {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            font-size: 0.875rem;
+        }
+
+        /* 内容卡片 */
+        .content-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: var(--space-xl);
+            margin-bottom: var(--space-lg);
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: var(--space-md);
+            margin-bottom: var(--space-lg);
+            padding-bottom: var(--space-md);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .section-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--primary-gradient);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* 关键词标签 */
+        .keywords-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--space-sm);
+        }
+
+        .keyword-tag {
+            padding: var(--space-sm) var(--space-md);
+            background: rgba(102, 126, 234, 0.15);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 20px;
+            font-size: 0.875rem;
+            color: var(--primary-color);
+            transition: var(--transition-fast);
+        }
+
+        .keyword-tag:hover {
+            background: rgba(102, 126, 234, 0.25);
+            transform: translateY(-2px);
+        }
+
+        /* 策略网格 */
+        .strategy-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: var(--space-lg);
+        }
+
+        .strategy-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: var(--space-lg);
+            transition: var(--transition-normal);
+        }
+
+        .strategy-card:hover {
+            border-color: var(--primary-color);
+            transform: translateY(-2px);
+        }
+
+        .strategy-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: var(--space-md);
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+        }
+
+        .strategy-content {
+            color: var(--text-secondary);
+            line-height: 1.8;
+            font-size: 0.875rem;
+        }
+
+        .strategy-content ul {
+            margin: 0;
+            padding-left: var(--space-lg);
+        }
+
+        .strategy-content li {
+            margin-bottom: var(--space-sm);
+        }
+
+        /* 详细内容展示 */
+        .detail-section {
+            margin-bottom: var(--space-xl);
+        }
+
+        .detail-item {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            padding: var(--space-lg);
+            margin-bottom: var(--space-md);
+        }
+
+        .detail-label {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: var(--space-sm);
+            font-size: 0.875rem;
+        }
+
+        .detail-value {
+            color: var(--text-secondary);
+            line-height: 1.8;
+        }
+
+        /* 行动按钮 */
+        .action-bar {
+            display: flex;
+            gap: var(--space-md);
+            margin-top: var(--space-xl);
+            padding-top: var(--space-xl);
+            border-top: 1px solid var(--border-color);
+        }
+
+        /* 加载状态 */
+        .loading-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: var(--space-2xl);
+        }
+
+        .loading-spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 错误状态 */
+        .error-state {
+            text-align: center;
+            padding: var(--space-2xl);
+            color: var(--danger-color);
+        }
+
+        /* 原始JSON内容展示 */
+        .raw-content {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            padding: var(--space-lg);
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.75rem;
+            line-height: 1.6;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: var(--text-secondary);
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        /* 折叠面板 */
+        .collapse-panel {
+            margin-bottom: var(--space-md);
+        }
+
+        .collapse-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: var(--space-md);
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: var(--transition-fast);
+        }
+
+        .collapse-header:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .collapse-content {
+            padding: var(--space-md);
+            display: none;
+        }
+
+        .collapse-content.active {
+            display: block;
+        }
+
+        .collapse-arrow {
+            transition: transform 0.3s;
+        }
+
+        .collapse-header.active .collapse-arrow {
+            transform: rotate(180deg);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>🚀 GEO系统</h1>
+                <p>AI搜索时代的内容优化</p>
+            </div>
+
+            <nav>
+                <ul class="nav-menu">
+                    <li class="nav-item" onclick="window.location.href='index.html'">
+                        <span class="nav-icon">🏠</span>
+                        <span>首页</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='projects.html'">
+                        <span class="nav-icon">📁</span>
+                        <span>我的项目</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='ai-tasks.html'">
+                        <span class="nav-icon">🤖</span>
+                        <span>AI任务</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='content-generator.html'">
+                        <span class="nav-icon">✍️</span>
+                        <span>内容生成</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='content-analyzer.html'">
+                        <span class="nav-icon">🔍</span>
+                        <span>内容分析</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='content-optimizer.html'">
+                        <span class="nav-icon">⚡</span>
+                        <span>内容优化</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='metrics-tracker.html'">
+                        <span class="nav-icon">📊</span>
+                        <span>数据监测</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='roi-calculator.html'">
+                        <span class="nav-icon">💰</span>
+                        <span>ROI计算</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='authority-builder.html'">
+                        <span class="nav-icon">🏛️</span>
+                        <span>信源建设</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='geo_optimizer.html'">
+                        <span class="nav-icon">🎯</span>
+                        <span>GEO优化专家</span>
+                    </li>
+                    <li class="nav-item" onclick="window.location.href='website_diagnose.html'">
+                        <span class="nav-icon">🔎</span>
+                        <span>网站诊断</span>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <div class="plan-detail-container">
+                <a href="projects.html" class="back-link">
+                    <span>←</span>
+                    <span>返回项目列表</span>
+                </a>
+
+                <div class="page-header">
+                    <h1 class="page-title">优化方案详情</h1>
+                </div>
+
+                <div id="contentArea">
+                    <div class="loading-state">
+                        <div class="loading-spinner"></div>
+                        <p style="margin-top: var(--space-lg); color: var(--text-muted);">加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // 自动检测：如果页面通过localhost访问则用localhost:5000，否则用当前host
+        const API_BASE_URL = (typeof API_HOST !== 'undefined' && API_HOST) ? API_HOST :
+            (window.location.protocol + '//' + window.location.hostname + ':5001') + '/api';
+
+        // 检查登录状态
+        function checkAuth() {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                window.location.href = 'login.html';
+                return false;
+            }
+            return true;
+        }
+
+        // 获取URL参数
+        function getUrlParam(param) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(param);
+        }
+
+        // 格式化对象为可读文本
+        function formatObject(obj, indent = 0) {
+            if (obj === null || obj === undefined) {
+                return '暂无数据';
+            }
+
+            if (typeof obj === 'string') {
+                return obj;
+            }
+
+            if (typeof obj === 'number' || typeof obj === 'boolean') {
+                return String(obj);
+            }
+
+            if (Array.isArray(obj)) {
+                if (obj.length === 0) return '暂无数据';
+                return '<ul>' + obj.map(item => `<li>${formatObject(item, indent + 1)}</li>`).join('') + '</ul>';
+            }
+
+            if (typeof obj === 'object') {
+                let html = '';
+                for (const [key, value] of Object.entries(obj)) {
+                    const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    html += `<div style="margin-bottom: 8px;"><strong>${formattedKey}:</strong> ${formatObject(value, indent + 1)}</div>`;
+                }
+                return html;
+            }
+
+            return String(obj);
+        }
+
+        // 渲染列表数据
+        function renderList(data) {
+            if (!data || data.length === 0) {
+                return '<p style="color: var(--text-muted);">暂无数据</p>';
+            }
+
+            if (typeof data[0] === 'string') {
+                return `<ul>${data.map(item => `<li>${item}</li>`).join('')}</ul>`;
+            }
+
+            return data.map((item, index) => `
+                <div class="detail-item">
+                    ${typeof item === 'object' ? formatObject(item) : item}
+                </div>
+            `).join('');
+        }
+
+        // 加载方案详情
+        async function loadPlanDetail() {
+            const planId = getUrlParam('id');
+            if (!planId) {
+                document.getElementById('contentArea').innerHTML = `
+                    <div class="error-state">
+                        <p>❌ 未找到方案ID</p>
+                    </div>
+                `;
+                return;
+            }
+
+            try {
+                const token = localStorage.getItem('access_token');
+                const response = await fetch(`${API_BASE_URL}/plan/${planId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    renderPlanDetail(data.data);
+                } else {
+                    document.getElementById('contentArea').innerHTML = `
+                        <div class="error-state">
+                            <p>❌ ${data.message || '加载失败'}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('加载方案详情失败:', error);
+                document.getElementById('contentArea').innerHTML = `
+                    <div class="error-state">
+                        <p>❌ 网络错误，请稍后重试</p>
+                    </div>
+                `;
+            }
+        }
+
+        // 渲染方案详情
+        function renderPlanDetail(plan) {
+            const planData = plan.plan_data || {};
+            const keywords = plan.keywords || [];
+
+            // 提取各个策略部分
+            const brandPositioning = planData.brand_positioning || {};
+            const keywordMatrix = planData.keyword_matrix || {};
+            const keywordInvestment = planData.keyword_investment || {};
+            const dataFeeding = planData.data_feeding || {};
+            const contentStrategy = planData.content_strategy || {};
+            const authorityBuilding = planData.authority_building || {};
+            const executionRoadmap = planData.execution_roadmap || {};
+            const expectedResults = planData.expected_results || {};
+
+            document.getElementById('contentArea').innerHTML = `
+                <!-- 方案头部 -->
+                <div class="plan-header-card">
+                    <div class="plan-brand">${plan.brand_name || '未命名品牌'}</div>
+                    <div class="plan-domain">${plan.domain || ''}</div>
+                    <div class="plan-meta">
+                        <div class="plan-meta-item">
+                            <span>🏭</span>
+                            <span>${plan.industry || '未分类'}</span>
+                        </div>
+                        <div class="plan-meta-item">
+                            <span>📍</span>
+                            <span>${plan.location || '未设置'}</span>
+                        </div>
+                        <div class="plan-meta-item">
+                            <span>📅</span>
+                            <span>${new Date(plan.created_at).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 核心关键词 -->
+                <div class="content-card">
+                    <div class="section-header">
+                        <div class="section-icon">🎯</div>
+                        <h2 class="section-title">核心关键词</h2>
+                    </div>
+                    <div class="keywords-list">
+                        ${keywords.length > 0 
+                            ? keywords.map(kw => `<span class="keyword-tag">${kw}</span>`).join('')
+                            : '<span style="color: var(--text-muted);">暂无关键词</span>'
+                        }
+                    </div>
+                </div>
+
+                <!-- 品牌定位分析 -->
+                ${Object.keys(brandPositioning).length > 0 ? `
+                <div class="content-card">
+                    <div class="section-header">
+                        <div class="section-icon">🎯</div>
+                        <h2 class="section-title">品牌定位分析</h2>
+                    </div>
+                    <div class="strategy-content">
+                        ${formatObject(brandPositioning)}
+                    </div>
+                </div>
+                ` : ''}
+
+                <!-- 关键词矩阵 -->
+                ${Object.keys(keywordMatrix).length > 0 ? `
+                <div class="content-card">
+                    <div class="section-header">
+                        <div class="section-icon">🔑</div>
+                        <h2 class="section-title">关键词矩阵</h2>
+                    </div>
+                    <div class="strategy-content">
+                        ${formatObject(keywordMatrix)}
+                    </div>
+                </div>
+                ` : ''}
+
+                <!-- 词条投入计划 -->
+                ${Object.keys(keywordInvestment).length > 0 ? `
+                <div class="content-card">
+                    <div class="section-header">
+                        <div class="section-icon">💰</div>
+                        <h2 class="section-title">词条投入计划</h2>
+                    </div>
+                    <div class="strategy-content">
+                        ${formatObject(keywordInvestment)}
+                    </div>
+                </div>
+                ` : ''}
+
+                <!-- 数据喂养策略 -->
+                ${Object.keys(dataFeeding).length > 0 ? `
+                <div class="content-card">
+                    <div class="section-header">
+                        <div class="section-icon">🍼</div>
+                        <h2 class="section-title">数据喂养策略</h2>
+                    </div>
+                    <div class="strategy-content">
+                        ${formatObject(dataFeeding)}
+                    </div>
+                </div>
+                ` : ''}
+
+                <!-- 内容策略 -->
+                ${Object.keys(contentStrategy).length > 0 ? `
+                <div class="content-card">
+                    <div class="section-header">
+                        <div class="section-icon">📝</div>
+                        <h2 class="section-title">内容策略</h2>
+                    </div>
+                    <div class="strategy-content">
+                        ${formatObject(contentStrategy)}
+                    </div>
+                </div>
+                ` : ''}
+
+                <!-- 信源建设 -->
+                ${Object.keys(authorityBuilding).length > 0 ? `
+                <div class="content-card">
+                    <div class="section-header">
+                        <div class="section-icon">🏛️</div>
+                        <h2 class="section-title">信源建设</h2>
+                    </div>
+                    <div class="strategy-content">
+                        ${formatObject(authorityBuilding)}
+                    </div>
+                </div>
+                ` : ''}
+
+                <!-- 执行路线图 -->
+                ${Object.keys(executionRoadmap).length > 0 ? `
+                <div class="content-card">
+                    <div class="section-header">
+                        <div class="section-icon">🗺️</div>
+                        <h2 class="section-title">执行路线图</h2>
+                    </div>
+                    <div class="strategy-content">
+                        ${formatObject(executionRoadmap)}
+                    </div>
+                </div>
+                ` : ''}
+
+                <!-- 效果预期 -->
+                ${Object.keys(expectedResults).length > 0 ? `
+                <div class="content-card">
+                    <div class="section-header">
+                        <div class="section-icon">📈</div>
+                        <h2 class="section-title">效果预期</h2>
+                    </div>
+                    <div class="strategy-content">
+                        ${formatObject(expectedResults)}
+                    </div>
+                </div>
+                ` : ''}
+
+                <!-- 原始AI生成内容 -->
+                ${planData.ai_generated_content ? `
+                <div class="content-card">
+                    <div class="section-header">
+                        <div class="section-icon">🤖</div>
+                        <h2 class="section-title">AI生成原始内容</h2>
+                    </div>
+                    <div class="raw-content">${planData.ai_generated_content}</div>
+                </div>
+                ` : ''}
+
+                <!-- 行动按钮 -->
+                <div class="action-bar">
+                    <button class="btn btn-primary" onclick="createAITasks(${plan.id}, '${plan.brand_name}')">
+                        <span>🤖</span>
+                        <span>生成AI任务</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="exportPlan()">
+                        <span>📥</span>
+                        <span>导出方案</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="window.location.href='projects.html'">
+                        <span>←</span>
+                        <span>返回列表</span>
+                    </button>
+                </div>
+            `;
+        }
+
+        // 创建AI任务
+        async function createAITasks(planId, brandName) {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                showMessage('请先登录', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/ai-tasks/create-from-plan`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ plan_id: planId })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    if (confirm(`✅ 成功创建 ${data.data.count} 个AI任务！\n\n点击确定前往AI任务页面查看。`)) {
+                        window.location.href = 'ai-tasks.html';
+                    }
+                } else {
+                    showMessage(data.message || '创建AI任务失败', 'error');
+                }
+            } catch (error) {
+                console.error('创建AI任务失败:', error);
+                showMessage('网络错误，请稍后重试', 'error');
+            }
+        }
+
+        // 导出方案
+        async function exportPlan() {
+            const planId = getUrlParam('id');
+            if (!planId) {
+                showMessage('未找到方案ID', 'error');
+                return;
+            }
+
+            showMessage('正在生成导出文件...', 'info');
+
+            try {
+                const token = localStorage.getItem('access_token');
+                const response = await fetch(`${API_BASE_URL}/plan/${planId}/export`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('导出失败');
+                }
+
+                // 获取文件名
+                const contentDisposition = response.headers.get('content-disposition');
+                let filename = '优化方案.docx';
+                if (contentDisposition) {
+                    const match = contentDisposition.match(/filename="(.+)"/);
+                    if (match) {
+                        filename = match[1];
+                    }
+                }
+
+                // 下载文件
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+                showMessage('方案导出成功！', 'success');
+            } catch (error) {
+                console.error('导出方案失败:', error);
+                showMessage('导出失败，请稍后重试', 'error');
+            }
+        }
+
+        // 显示消息
+        function showMessage(message, type = 'info') {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message message-${type}`;
+            messageDiv.textContent = message;
+            document.body.appendChild(messageDiv);
+
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 3000);
+        }
+
+        // 页面加载
+        document.addEventListener('DOMContentLoaded', () => {
+            if (checkAuth()) {
+                loadPlanDetail();
+            }
+        });
+    </script>
+</body>
+</html>
