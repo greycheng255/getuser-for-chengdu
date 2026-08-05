@@ -356,12 +356,10 @@ class CopyrightDetector:
     ) -> bool:
         """添加到版权库"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
-            import json
+import json
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return False
             await self._ensure_library_table(engine)

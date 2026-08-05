@@ -369,6 +369,13 @@ def _check_cookie_has_session(platform: str, cookie: str) -> bool:
 _cookie_session_factory = None
 
 
+def _get_engine():
+    """获取异步数据库引擎（公共方法，消除重复导入）"""
+    from database.db_session import get_async_engine
+    import config
+    return get_async_engine(config.SAVE_DATA_OPTION)
+
+
 async def _get_user_cookie_session():
     """获取数据库会话(用于用户级别 Cookie 操作)
 
@@ -378,9 +385,7 @@ async def _get_user_cookie_session():
     if _cookie_session_factory is not None:
         return _cookie_session_factory
     try:
-        from database.db_session import get_async_engine
-        import config
-        engine = get_async_engine(config.SAVE_DATA_OPTION)
+        engine = _get_engine()
         if not engine:
             return None
         from sqlalchemy.orm import sessionmaker
@@ -422,6 +427,77 @@ async def get_user_cookie(user_id: int, platform: str) -> str:
             print(f"[cookie_manager] get_user_cookie DB error: {e}")
 
     # 退回全局 .env(管理员或旧数据兼容)
+    return get_cookie(platform)
+
+
+async def get_outreach_cookie(user_id: int, platform: str) -> str:
+    """获取获客采集专用 Cookie(优先 outreach 用途,退回 both,再退回任意 active,最后 .env)
+
+    用途分离策略(从 getuser-canrun 迁移):
+    1. 优先 purpose=outreach 的 Cookie(获客专用,不被采集风控影响)
+    2. 其次 purpose=both 的 Cookie(通用 Cookie)
+    3. 最后任意 active Cookie(兼容旧数据,purpose 字段可能为空)
+    4. 都没有则退回全局 .env
+
+    Args:
+        user_id: 用户ID
+        platform: 平台标识 dy/xhs/ks/bili/wb
+    Returns:
+        Cookie 字符串,空字符串表示无
+    """
+    factory = await _get_user_cookie_session()
+    if factory:
+        try:
+            from database.user_models import UserCookieModel
+            from sqlalchemy import select
+            async with factory() as session:
+                # 1. 优先 outreach 专用 Cookie
+                result = await session.execute(
+                    select(UserCookieModel.cookie_str, UserCookieModel.alias, UserCookieModel.purpose)
+                    .where(UserCookieModel.user_id == user_id)
+                    .where(UserCookieModel.platform == platform)
+                    .where(UserCookieModel.status == "active")
+                    .where(UserCookieModel.purpose == "outreach")
+                    .order_by(UserCookieModel.created_ts.desc())
+                    .limit(1)
+                )
+                row = result.first()
+                if row and row.cookie_str:
+                    print(f"[cookie_manager] get_outreach_cookie: found outreach-only cookie (alias={row.alias})")
+                    return row.cookie_str
+
+                # 2. 其次 both 通用 Cookie
+                result = await session.execute(
+                    select(UserCookieModel.cookie_str, UserCookieModel.alias, UserCookieModel.purpose)
+                    .where(UserCookieModel.user_id == user_id)
+                    .where(UserCookieModel.platform == platform)
+                    .where(UserCookieModel.status == "active")
+                    .where(UserCookieModel.purpose == "both")
+                    .order_by(UserCookieModel.created_ts.desc())
+                    .limit(1)
+                )
+                row = result.first()
+                if row and row.cookie_str:
+                    print(f"[cookie_manager] get_outreach_cookie: using both-purpose cookie (alias={row.alias})")
+                    return row.cookie_str
+
+                # 3. 最后任意 active Cookie(兼容旧数据,purpose 字段可能为空)
+                result = await session.execute(
+                    select(UserCookieModel.cookie_str, UserCookieModel.alias)
+                    .where(UserCookieModel.user_id == user_id)
+                    .where(UserCookieModel.platform == platform)
+                    .where(UserCookieModel.status == "active")
+                    .order_by(UserCookieModel.created_ts.desc())
+                    .limit(1)
+                )
+                row = result.first()
+                if row and row.cookie_str:
+                    print(f"[cookie_manager] get_outreach_cookie: using legacy cookie (alias={row.alias})")
+                    return row.cookie_str
+        except Exception as e:
+            print(f"[cookie_manager] get_outreach_cookie DB error: {e}")
+
+    # 4. 退回全局 .env
     return get_cookie(platform)
 
 

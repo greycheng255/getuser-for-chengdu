@@ -159,11 +159,9 @@ class QuotaConfigService:
         """获取配置（不存在则返回默认值）"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return self._default_config(platform, owner_user_id)
             async with engine.connect() as conn:
@@ -204,11 +202,9 @@ class QuotaConfigService:
             cfg.config_id = f"quota_{uuid.uuid4().hex[:12]}"
         cfg.updated_at = datetime.now().isoformat()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return False
             async with engine.begin() as conn:
@@ -247,11 +243,9 @@ class QuotaConfigService:
     ) -> List[QuotaConfig]:
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             async with engine.connect() as conn:
@@ -344,11 +338,9 @@ class QuotaConfigService:
         """记录配额使用"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return False
             async with engine.begin() as conn:
@@ -377,11 +369,9 @@ class QuotaConfigService:
     ) -> int:
         """查询今日使用量"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return 0
             async with engine.connect() as conn:

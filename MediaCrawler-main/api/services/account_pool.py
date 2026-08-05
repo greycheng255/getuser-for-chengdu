@@ -241,6 +241,11 @@ class AccountPool:
         self._bad_ips: Dict[str, float] = {}  # 被标记为坏的IP → 标记时间戳
         self._bad_ip_ttl = 600  # 坏IP标记有效期 10 分钟（避免被风控的IP被快速重试）
         self._db_session_factory = None
+        # 搜索熔断器(从 getuser-canrun 迁移): 所有IP都bad且刷新后无新IP时触发,
+        # 熔断期间搜索任务应主动跳过,避免无意义重试加重风控
+        self._search_circuit_breaker_until: float = 0.0  # 熔断到期时间戳
+        self._search_circuit_breaker_cooldown: int = 1800  # 熔断 30 分钟
+        self._consecutive_no_new_ip: int = 0  # 连续无新IP计数(达到阈值触发熔断)
 
     def set_db_session_factory(self, factory):
         """设置数据库session工厂"""
@@ -708,6 +713,54 @@ class AccountPool:
             self._bad_ips.pop(k, None)
         if expired:
             logger.info(f"[AccountPool] Expired bad IPs cleared: {expired}")
+
+    # ==================== 搜索熔断器(从 getuser-canrun 迁移) ====================
+    # 用途: 所有IP都bad且刷新后无新IP时触发,熔断期间搜索任务应主动跳过,
+    #       避免无意义重试加重风控。默认冷却 30 分钟。
+    # 不迁移: 每日发送配额(record_daily_send / MAX_DAILY_SENDS)属营销触达(B类)
+
+    def is_search_circuit_open(self) -> bool:
+        """检查搜索任务是否处于熔断状态(用于搜索任务开始前判断)。
+
+        用法: 在 DouYinCrawler.search() 入口处调用,若返回 True 则跳过本次搜索,
+              等待熔断恢复(默认 30 分钟)。
+        """
+        return self._search_circuit_breaker_until > time.time()
+
+    def get_circuit_breaker_remaining(self) -> int:
+        """获取熔断剩余秒数(用于日志/前端展示)"""
+        if not self.is_search_circuit_open():
+            return 0
+        return int(self._search_circuit_breaker_until - time.time())
+
+    def _trigger_search_circuit_breaker(self):
+        """触发搜索熔断: 所有IP都bad且刷新后无新IP时调用。
+
+        熔断期间搜索任务应主动跳过,避免无意义重试加重风控。
+        """
+        now = time.time()
+        if self._search_circuit_breaker_until > now:
+            # 已在熔断中,不重复触发
+            return
+        self._search_circuit_breaker_until = now + self._search_circuit_breaker_cooldown
+        until_str = time.strftime('%H:%M:%S', time.localtime(self._search_circuit_breaker_until))
+        logger.warning(
+            f"[AccountPool] 🚫 Search circuit breaker TRIGGERED for {self.platform}: "
+            f"all IPs bad and no new IP detected after refresh. "
+            f"Search tasks should pause for {self._search_circuit_breaker_cooldown // 60} minutes "
+            f"(until {until_str}). Consecutive no-new-ip count: {self._consecutive_no_new_ip}"
+        )
+
+    def reset_search_circuit_breaker(self):
+        """重置搜索熔断状态(成功获取新IP或成功请求时调用)"""
+        if self._search_circuit_breaker_until > 0 or self._consecutive_no_new_ip > 0:
+            logger.info(
+                f"[AccountPool] ✅ Search circuit breaker reset for {self.platform} "
+                f"(was blocked until {time.strftime('%H:%M:%S', time.localtime(self._search_circuit_breaker_until))}, "
+                f"consecutive_no_new_ip was {self._consecutive_no_new_ip})"
+            )
+        self._search_circuit_breaker_until = 0.0
+        self._consecutive_no_new_ip = 0
 
     def _check_cookie_format(self, cookie: str) -> Dict:
         """检查Cookie格式是否包含平台必需的登录态字段（快速检查，不发网络请求）

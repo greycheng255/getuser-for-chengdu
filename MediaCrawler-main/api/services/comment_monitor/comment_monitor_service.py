@@ -187,11 +187,9 @@ class CommentMonitorService:
             "updated_at": now,
         }
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             async with engine.begin() as conn:
                 await conn.execute(
                     sql_text(
@@ -238,11 +236,9 @@ class CommentMonitorService:
     ) -> Dict:
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             conditions = []
             params: Dict[str, Any] = {}
             if not is_admin and owner_user_id:
@@ -289,11 +285,9 @@ class CommentMonitorService:
     async def get_task(self, task_id: str, owner_user_id: str = "", is_admin: bool = False) -> Optional[Dict]:
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             conditions = ["task_id = :tid"]
             params = {"tid": task_id}
             if not is_admin and owner_user_id:
@@ -334,11 +328,9 @@ class CommentMonitorService:
         if not updates:
             return False
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             conditions = ["task_id = :tid"]
             params: Dict[str, Any] = {"tid": task_id, "ua": int(time.time())}
             if not is_admin and owner_user_id:
@@ -367,11 +359,9 @@ class CommentMonitorService:
         # 先停掉运行中的协程
         await self.stop_task(task_id, owner_user_id=owner_user_id, is_admin=is_admin)
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             conditions = ["task_id = :tid"]
             params = {"tid": task_id}
             if not is_admin and owner_user_id:
@@ -440,11 +430,9 @@ class CommentMonitorService:
         """应用启动时恢复所有 status=running 的任务（main.py startup 调用）"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             async with engine.connect() as conn:
                 rows = await conn.execute(
                     sql_text(
@@ -704,11 +692,9 @@ class CommentMonitorService:
         lead_id: int,
     ) -> None:
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             now = int(time.time())
             async with engine.begin() as conn:
                 await conn.execute(
@@ -753,11 +739,9 @@ class CommentMonitorService:
     ) -> int:
         """插入 customer_lead 表（复用现有模型），返回 lead id"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             now = int(time.time())
             platform = task["platform"]
             owner_user_id = task.get("owner_user_id") or ""
@@ -938,11 +922,9 @@ class CommentMonitorService:
 
     async def _update_check_status(self, task_id: str, new_count: int, error: str):
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             async with engine.begin() as conn:
                 await conn.execute(
                     sql_text(
@@ -961,11 +943,9 @@ class CommentMonitorService:
 
     async def _set_last_error(self, task_id: str, err: str):
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             async with engine.begin() as conn:
                 await conn.execute(
                     sql_text(
@@ -992,11 +972,9 @@ class CommentMonitorService:
     ) -> Dict:
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             conditions = ["r.task_id = :tid"]
             params: Dict[str, Any] = {"tid": task_id}
             # owner 隔离：通过 join task 表
@@ -1060,11 +1038,9 @@ class CommentMonitorService:
     async def get_task_stats(self, task_id: str, owner_user_id: str = "", is_admin: bool = False) -> Dict:
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             conditions = ["r.task_id = :tid"]
             params: Dict[str, Any] = {"tid": task_id}
             if not is_admin and owner_user_id:

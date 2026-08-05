@@ -111,15 +111,20 @@ class InteractionConfigService:
     TABLE_NAME = "interaction_configs"
     _ensured = False  # DDL 仅首次执行一次，避免每次请求都跑 CREATE TABLE/INDEX
 
+    @staticmethod
+    def _get_engine():
+        """获取异步数据库引擎（公共方法，消除重复导入）"""
+        from database.db_session import get_async_engine
+        import config
+        return get_async_engine(config.SAVE_DATA_OPTION)
+
     async def ensure_table(self):
         if InteractionConfigService._ensured:
             return
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
             async with engine.begin() as conn:
@@ -188,11 +193,9 @@ class InteractionConfigService:
         if not cfg.created_at:
             cfg.created_at = now.isoformat()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
             async with engine.begin() as conn:
@@ -257,11 +260,9 @@ class InteractionConfigService:
 
     async def get(self, config_id: str) -> Optional[InteractionConfig]:
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
             async with engine.connect() as conn:
@@ -286,11 +287,9 @@ class InteractionConfigService:
         """查找匹配的配置：优先平台+场景+用户，回退到全局"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
 
@@ -343,11 +342,9 @@ class InteractionConfigService:
     async def list(self, platform: str = "", owner_user_id: Optional[int] = None) -> List[InteractionConfig]:
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             conditions = ["is_active=TRUE"]
@@ -369,11 +366,9 @@ class InteractionConfigService:
 
     async def deactivate(self, config_id: str) -> bool:
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return False
             async with engine.begin() as conn:

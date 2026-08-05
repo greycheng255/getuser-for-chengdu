@@ -1,20 +1,5 @@
-# Local runtime and downloaded toolchains
+./MediaCrawler-main/browser_data/*
+./google-chrome-stable_current_amd64.deb
 /nodejs/
-/node-*.tar.*
-/google-chrome-stable_current_amd64.deb
-
-# OS/editor/build caches
-.DS_Store
-/.vite/
-
-# Application-local generated data
-/MediaCrawler-main/browser_data/
-/MediaCrawler-main/webui-new/node_modules/
-/MediaCrawler-main/webui-new/dist/
-
-# Archived source snapshots already extracted elsewhere
-/geo/*.zip
-
-# Root-level BDMS exploration scripts (not part of the application test suite)
-/test_bdms*.py
-/test_find_bdms.py
+./node-v22.15.0-linux-x64.tar.xz
+./MediaCrawler-main/webui-new/node_modules/*

@@ -484,11 +484,9 @@ class CustomerDispatchService:
             return {"ok": False, "reason": "计划不存在或无权限"}
 
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             now = int(time.time())
             customer_lead_ids: List[int] = []
             logger.info(
@@ -625,11 +623,9 @@ class CustomerDispatchService:
         if not plan:
             return False
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             now = int(time.time())
             async with engine.begin() as conn:
                 res = await conn.execute(
@@ -694,11 +690,9 @@ class CustomerDispatchService:
         """获取计划进度：已发/已回复/待发/漏单"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             async with engine.connect() as conn:
                 rows = await conn.execute(
                     sql_text(
@@ -741,11 +735,9 @@ class CustomerDispatchService:
         if not plan:
             return {"total": 0, "page": page, "page_size": page_size, "items": []}
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             conditions = ["r.plan_id = :pid"]
             params: Dict[str, Any] = {"pid": plan_id}
             if account_idx is not None:
@@ -812,11 +804,9 @@ class CustomerDispatchService:
     ) -> List[int]:
         """从 customer_lead 表按条件查询客户ID列表"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             conditions = ["status != 'deleted'"]
             params: Dict[str, Any] = {}
             if platform:
@@ -851,11 +841,9 @@ class CustomerDispatchService:
         if not lead_ids:
             return []
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             async with engine.connect() as conn:
                 rows = await conn.execute(
                     sql_text(

@@ -279,11 +279,9 @@ class ViralReviewService:
 
     async def _save_report(self, report: ViralReviewReport) -> None:
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
             async with engine.begin() as conn:
@@ -323,11 +321,9 @@ class ViralReviewService:
     ) -> List[Dict[str, Any]]:
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             async with engine.connect() as conn:

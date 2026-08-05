@@ -55,6 +55,7 @@ class UserCookieModel(Base):
     cookie_str = Column(Text, nullable=False, comment='Cookie 字符串')
     alias = Column(String(64), default='', comment='Cookie 别名(可选)')
     status = Column(String(20), default='active', comment='状态: active / invalid / disabled')
+    purpose = Column(String(20), default='both', comment='用途: crawl(采集) / outreach(私信) / both(通用)')
     created_ts = Column(BigInteger, comment='创建时间戳')
     last_check_ts = Column(BigInteger, default=0, comment='最后校验时间戳')
 

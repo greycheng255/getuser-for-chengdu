@@ -801,6 +801,12 @@ async def _task_to_dict(task: CrawlerTaskModel, session: AsyncSession = None) ->
             "promo_config": promo_config,
             "publish_time_type": task.publish_time_type or 0,
             "owner_user_id": getattr(task, "owner_user_id", "") or "",
+            # 精准获客字段(从 getuser-canrun 迁移)
+            "business_intent": getattr(task, "business_intent", "") or "",
+            "intent_keywords": json.loads(getattr(task, "intent_keywords", "") or "[]") if getattr(task, "intent_keywords", "") else [],
+            "exclude_keywords": json.loads(getattr(task, "exclude_keywords", "") or "[]") if getattr(task, "exclude_keywords", "") else [],
+            "target_role": getattr(task, "target_role", "不限") or "不限",
+            "target_regions": json.loads(getattr(task, "target_regions", "") or "[]") if getattr(task, "target_regions", "") else [],
         }
     finally:
         if need_close:
@@ -836,6 +842,12 @@ class TaskCreateRequest(BaseModel):
     created_ts: Optional[int] = None
     promo_config: Optional[PromoConfig] = None
     publish_time_type: int = 0
+    # 精准获客字段(从 getuser-canrun 迁移):业务意图+意向词+排除词+角色+地区
+    business_intent: str = ""
+    intent_keywords: List[str] = []
+    exclude_keywords: List[str] = []
+    target_role: str = "c端用户"
+    target_regions: List[str] = []
 
 
 class UpdatePromoRequest(BaseModel):
@@ -861,6 +873,12 @@ class TaskResponse(BaseModel):
     promo_config: Optional[dict] = None
     publish_time_type: int = 0
     owner_user_id: str = ""
+    # 精准获客字段(从 getuser-canrun 迁移)
+    business_intent: str = ""
+    intent_keywords: List[str] = []
+    exclude_keywords: List[str] = []
+    target_role: str = "不限"
+    target_regions: List[str] = []
 
 
 @router.get("", response_model=List[TaskResponse])
@@ -945,6 +963,12 @@ async def create_task(request: TaskCreateRequest, current_user: dict = Depends(g
             promo_config=promo_config_json,
             publish_time_type=adjusted_publish_time,
             owner_user_id=_owner_id(current_user),
+            # 精准获客字段(从 getuser-canrun 迁移)
+            business_intent=request.business_intent or "",
+            intent_keywords=json.dumps(request.intent_keywords or [], ensure_ascii=False),
+            exclude_keywords=json.dumps(request.exclude_keywords or [], ensure_ascii=False),
+            target_role=request.target_role or "c端用户",
+            target_regions=json.dumps(request.target_regions or [], ensure_ascii=False),
         )
         # 计算 next_scheduled_ts
         if request.schedule_type in ("daily", "weekly"):
@@ -1370,6 +1394,53 @@ async def update_task_promo(task_id: str, request: UpdatePromoRequest, current_u
             return {"success": True, "message": "推广配置已更新"}
         else:
             return {"success": False, "message": "推广配置为空"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await session.close()
+
+
+class LeadConfigRequest(BaseModel):
+    """精准获客配置请求(从 getuser-canrun 迁移)"""
+    business_intent: str = ""
+    intent_keywords: List[str] = []
+    exclude_keywords: List[str] = []
+    target_role: str = "不限"
+    target_regions: List[str] = []
+
+
+@router.put("/{task_id}/lead-config")
+async def update_task_lead_config(task_id: str, request: LeadConfigRequest, current_user: dict = Depends(get_current_user)):
+    """更新任务精准获客配置(业务意图/意向词/排除词/目标角色/目标地区)"""
+    session = await _get_db_session()
+    try:
+        result = await session.execute(select(CrawlerTaskModel).where(CrawlerTaskModel.id == task_id))
+        task = result.scalar_one_or_none()
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        _require_task_owned_by(task, current_user)
+
+        task.business_intent = request.business_intent or ""
+        task.intent_keywords = json.dumps(request.intent_keywords or [], ensure_ascii=False)
+        task.exclude_keywords = json.dumps(request.exclude_keywords or [], ensure_ascii=False)
+        task.target_role = request.target_role or "不限"
+        task.target_regions = json.dumps(request.target_regions or [], ensure_ascii=False)
+        task.updated_ts = int(time.time() * 1000)
+        await session.commit()
+        if task_id in _tasks_cache:
+            del _tasks_cache[task_id]
+        return {
+            "success": True,
+            "message": "获客配置已更新",
+            "business_intent": task.business_intent,
+            "intent_keywords": request.intent_keywords,
+            "exclude_keywords": request.exclude_keywords,
+            "target_role": task.target_role,
+            "target_regions": request.target_regions,
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -2313,6 +2384,52 @@ async def scan_task_leads(
         task_name = task.name or ""
         task_desc = getattr(task, "description", "") or ""
 
+        # 精准获客字段(从 getuser-canrun 迁移):如果任务配置了 intent_keywords,
+        # 使用 CustomerLeadDetector.detect 严格双词匹配;否则回退到 calculate_user_value_for_task
+        task_intent_keywords = []
+        task_exclude_keywords = []
+        task_business_intent = ""
+        use_strict_detect = False
+        try:
+            task_business_intent = getattr(task, "business_intent", "") or ""
+            ikw_raw = getattr(task, "intent_keywords", "") or ""
+            if ikw_raw:
+                ikw = json.loads(ikw_raw)
+                if isinstance(ikw, list):
+                    task_intent_keywords = [str(k) for k in ikw if k]
+            ekw_raw = getattr(task, "exclude_keywords", "") or ""
+            if ekw_raw:
+                ekw = json.loads(ekw_raw)
+                if isinstance(ekw, list):
+                    task_exclude_keywords = [str(k) for k in ekw if k]
+            # 配置了意向词才启用严格模式(排除词单独配置不启用,因为需要双词命中)
+            if task_intent_keywords:
+                use_strict_detect = True
+        except Exception as e:
+            utils.logger.warning(f"[scan_task_leads] Failed to load lead config: {e}")
+
+        # 目标客户类型(c端用户/厂家供应商/不限):决定供方/需求方过滤方向
+        task_target_role = getattr(task, "target_role", "不限") or "不限"
+
+        # 目标地区过滤: 仅保留指定地区的线索,基于ip_location匹配
+        task_target_regions = []
+        try:
+            tr_raw = getattr(task, "target_regions", "") or ""
+            if tr_raw:
+                task_target_regions = [str(r) for r in json.loads(tr_raw) if r]
+        except Exception:
+            pass
+
+        if use_strict_detect:
+            utils.logger.info(
+                f"[scan_task_leads] Using STRICT detect mode for task {task_id}: "
+                f"intent_keywords={task_intent_keywords}, exclude_keywords={task_exclude_keywords}, "
+                f"business_intent={task_business_intent[:50]}, target_role={task_target_role}"
+            )
+
+        # 供方/需求方角色分类器(行业无关行为信号,配合 target_role 过滤)
+        from store.customer_lead import CustomerLeadDetector
+
         # 增量扫描:查询该任务已有线索的最大 add_ts(上次扫描水位)
         # 只处理 last_modify_ts > 水位 的新评论,避免全量重扫
         owner_uid = str(current_user["id"])
@@ -2414,6 +2531,9 @@ async def scan_task_leads(
         total_scanned = len(all_comments)
         total_saved = 0
         skipped_existing = 0  # 增量模式下跳过的已存在评论数
+        skipped_supplier = 0  # 供方(服务商/厂家)广告过滤数:target_role=c端用户时排除供方
+        kept_supplier = 0  # 供方广告保留数:target_role=厂家供应商/不限时保留并打标
+        skipped_region = 0  # 地区过滤数:target_regions 指定时排除非目标地区的评论
         batch_dicts: List[Dict] = []
 
         async def flush_batch():
@@ -2443,9 +2563,13 @@ async def scan_task_leads(
                 return True
             return False
 
-        # 同任务内 content 去重集合(避免不同用户发相同表情/简短内容重复入库)
+        # 同用户相似内容去重:同一用户发的高度相似广告模板评论只保留1条
         seen_contents: set = set()
+        skipped_dup = 0
         skipped_low_quality = 0
+        # 同用户相似内容去重工具:识别广告模板(首句不同但主体相同)
+        from store.customer_lead import content_fingerprint as _calc_fp, is_similar_content as _is_sim
+        seen_user_contents: dict = {}
 
         for comment in all_comments:
             content = comment.content or ""
@@ -2459,18 +2583,90 @@ async def scan_task_leads(
             if _is_low_quality(content):
                 skipped_low_quality += 1
                 continue
-            # 同任务内 content 去重(避免不同用户发相同简短内容重复)
-            content_key = content.strip()
-            if content_key in seen_contents:
-                continue
-            seen_contents.add(content_key)
-            value = calculate_user_value_for_task(
-                content=content,
-                like_count=str(comment.like_count or "0"),
-                task_name=task_name,
-                task_keywords=task_keywords,
-                task_desc=task_desc,
-            )
+            # 目标地区过滤:
+            # 1. ip_location 包含任一目标地区 → 保留
+            # 2. ip_location 为空 → 保留(兜底策略,可能是目标地区用户)
+            # 3. ip_location 明确是其他地区 → 过滤
+            if task_target_regions:
+                c_ip_location = getattr(comment, "ip_location", "") or ""
+                if not c_ip_location.strip():
+                    pass  # 保留,不跳过
+                else:
+                    matched_region = any(region in c_ip_location for region in task_target_regions)
+                    if not matched_region:
+                        skipped_region += 1
+                        continue
+            # 同用户相似内容去重(同一用户发的高度相似广告模板评论只保留1条)
+            c_user_id = comment.user_id or ""
+            c_fp = _calc_fp(content)
+            if c_user_id:
+                dup_hit = False
+                for (exist_fp, exist_content) in seen_user_contents.get(c_user_id, []):
+                    if c_fp and exist_fp and c_fp == exist_fp:
+                        dup_hit = True
+                        break
+                    if _is_sim(content, exist_content):
+                        dup_hit = True
+                        break
+                if dup_hit:
+                    skipped_dup += 1
+                    continue
+                seen_user_contents.setdefault(c_user_id, []).append((c_fp, content))
+            else:
+                # 无 user_id 时退化为同任务内精确内容去重
+                if content.strip() in seen_contents:
+                    skipped_dup += 1
+                    continue
+                seen_contents.add(content.strip())
+
+            # ============ 供方/需求方角色分类 + target_role 过滤 ============
+            # 严格模式由 detect() 内部统一处理(传入 target_role);回退模式在此显式过滤
+            role_tag = "neutral"
+            if use_strict_detect:
+                # 源视频标题作为额外上下文
+                src_info_tmp = source_map.get(getattr(comment, comment_ref_field, "") or "", {}) if comment_ref_field else {}
+                extra_title = src_info_tmp.get("source_video_title", "")
+                detect_result = CustomerLeadDetector.detect(
+                    content=content,
+                    title=extra_title,
+                    task_keywords=task_keywords,
+                    intent_keywords=task_intent_keywords,
+                    exclude_keywords=task_exclude_keywords,
+                    business_intent=task_business_intent,
+                    target_role=task_target_role,
+                )
+                # 严格模式下,detect 判定非线索则跳过(不写入 CustomerLead)
+                if not detect_result.is_lead:
+                    if detect_result.match_mode == "supplier_excluded":
+                        skipped_supplier += 1
+                    continue
+                role_tag = detect_result.role_tag or "neutral"
+                if role_tag == "supplier":
+                    kept_supplier += 1
+                level_cn = {"high": "高", "medium": "中", "low": "低"}.get(detect_result.intent_level, "低")
+                value = {
+                    "score": detect_result.lead_score,
+                    "level": level_cn,
+                    "intent": detect_result.intent_type,
+                    "matched_keywords": detect_result.matched_keywords,
+                    "reason": f"strict_mode:{detect_result.match_mode}",
+                }
+            else:
+                # 回退模式:先做角色分类 + target_role 过滤
+                role_tag = CustomerLeadDetector.classify_role(content.lower(), task_keywords=task_keywords)
+                if task_target_role == "c端用户" and role_tag == "supplier":
+                    skipped_supplier += 1
+                    continue
+                if role_tag == "supplier":
+                    kept_supplier += 1
+                value = calculate_user_value_for_task(
+                    content=content,
+                    like_count=str(comment.like_count or "0"),
+                    task_name=task_name,
+                    task_keywords=task_keywords,
+                    task_desc=task_desc,
+                )
+
             level_cn = value.get("level", "低")
             if level_cn == "高":
                 high_count += 1
@@ -2508,6 +2704,11 @@ async def scan_task_leads(
                 "source_video_url": src_info.get("source_video_url", ""),
                 "source_cover_url": src_info.get("source_cover_url", ""),
                 "source_author_nickname": src_info.get("source_author_nickname", ""),
+                # 去重字段:归一化内容指纹(同用户相似内容去重)+ 重复计数
+                "content_hash": c_fp,
+                "dup_count": 1,
+                # 角色标签:供方/需求方/中性(行业无关行为信号分析,配合 target_role 过滤)
+                "role_tag": role_tag,
             })
             if len(batch_dicts) >= BATCH_SIZE:
                 await flush_batch()
@@ -2531,10 +2732,17 @@ async def scan_task_leads(
         existing_data_ids.clear()  # 释放去重集合内存
 
         mode_label = "增量扫描" if incremental_mode else "全量扫描"
+        # 供方统计:过滤数(c端用户模式排除) + 保留数(厂家/不限模式打标)
+        supplier_stat = f"供方广告 过滤{skipped_supplier}/保留{kept_supplier}" if kept_supplier > 0 else f"供方广告 {skipped_supplier}"
+        region_stat = f"地区过滤 {skipped_region} 条" if task_target_regions else ""
+        extra_filters = [x for x in [region_stat, supplier_stat] if x]
+        filters_str = ",".join(extra_filters) if extra_filters else ""
+        if filters_str:
+            filters_str = f",{filters_str}"
         if incremental_mode and skipped_existing > 0:
-            msg = f"[{mode_label}] 新增评论 {total_scanned} 条(跳过已存在 {skipped_existing} 条,低质量 {skipped_low_quality} 条),生成 {total_saved} 条新线索(高{high_count}/中{medium_count}/低{low_count})"
+            msg = f"[{mode_label}] 新增评论 {total_scanned} 条(跳过已存在 {skipped_existing} 条,低质量 {skipped_low_quality} 条{filters_str}),生成 {total_saved} 条新线索(高{high_count}/中{medium_count}/低{low_count})"
         else:
-            msg = f"[{mode_label}] 已扫描 {total_scanned} 条评论(过滤低质量 {skipped_low_quality} 条),生成 {total_saved} 条线索(高{high_count}/中{medium_count}/低{low_count})"
+            msg = f"[{mode_label}] 已扫描 {total_scanned} 条评论(过滤低质量 {skipped_low_quality} 条{filters_str}),生成 {total_saved} 条线索(高{high_count}/中{medium_count}/低{low_count})"
 
         return {
             "success": True,
@@ -2546,6 +2754,9 @@ async def scan_task_leads(
             "saved": total_saved,
             "incremental": incremental_mode,
             "skipped_existing": skipped_existing,
+            "skipped_supplier": skipped_supplier,
+            "kept_supplier": kept_supplier,
+            "skipped_region": skipped_region,
             "message": msg,
         }
     except HTTPException:

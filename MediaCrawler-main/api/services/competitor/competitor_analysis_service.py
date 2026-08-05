@@ -362,11 +362,9 @@ class CompetitorAnalysisService:
         """根据ID获取竞品"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
 
@@ -596,11 +594,9 @@ class CompetitorAnalysisService:
         """保存指标数据"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
 
@@ -628,11 +624,9 @@ class CompetitorAnalysisService:
         """更新最后分析时间"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
 
@@ -742,11 +736,9 @@ class CompetitorAnalysisService:
         await self.ensure_table()
         metrics: Dict[str, float] = {}
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return {d.value: 50 for d in ComparisonDimension}
 
@@ -988,11 +980,9 @@ class CompetitorAnalysisService:
         """保存对比报告"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
 
@@ -1039,11 +1029,9 @@ class CompetitorAnalysisService:
             competitor_id = str(competitor_id)
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
 

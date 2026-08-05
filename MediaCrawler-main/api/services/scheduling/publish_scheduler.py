@@ -181,11 +181,9 @@ class PublishScheduler:
         if not task.scheduled_at:
             task.scheduled_at = datetime.utcnow() + timedelta(minutes=10)
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
             async with engine.begin() as conn:
@@ -224,11 +222,9 @@ class PublishScheduler:
         """列出待执行任务"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             async with engine.connect() as conn:
@@ -258,11 +254,9 @@ class PublishScheduler:
     async def list_all_tasks(self, limit: int = 100) -> List[Dict[str, Any]]:
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             async with engine.connect() as conn:
@@ -294,11 +288,9 @@ class PublishScheduler:
 
     async def cancel_task(self, task_id: int) -> bool:
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return False
             async with engine.begin() as conn:
@@ -356,11 +348,9 @@ class PublishScheduler:
     async def _execute_due_tasks(self):
         """执行到期的定时任务"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
             now = datetime.utcnow()
@@ -519,11 +509,9 @@ class PublishScheduler:
     ):
         try:
             import json
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
             async with engine.begin() as conn:

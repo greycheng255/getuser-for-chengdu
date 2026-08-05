@@ -11,7 +11,6 @@ import asyncio
 import logging
 import os
 import subprocess
-import tempfile
 import time
 from typing import Any, Dict, Optional
 
@@ -20,7 +19,7 @@ import httpx
 logger = logging.getLogger("digital_human_service")
 
 FFMPEG_BIN = "/usr/bin/ffmpeg"
-TMP_DIR = os.path.join(tempfile.gettempdir(), "talking_head")
+TMP_DIR = "/tmp/talking_head"
 os.makedirs(TMP_DIR, exist_ok=True)
 
 # 环境变量

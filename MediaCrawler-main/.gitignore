@@ -124,7 +124,6 @@ celerybeat.pid
 .venv
 env/
 venv/
-venv_new/
 ENV/
 env.bak/
 venv.bak/
@@ -166,21 +165,6 @@ cython_debug/
 /temp_image/
 /browser_data/
 /data/
-/uploads/
-
-# Legacy/generated frontend copies. The source is webui-new/ and the bundled
-# FastAPI build currently lives in api/webui/.
-/webui/
-/webui-static/
-/api/static/
-
-# Browser automation debugging artifacts written into the project root.
-/comment_*.png
-/login_*.png
-/test_*.png
-/douyin_qr*.png
-/test_upload*.py
-/verify_tweet.py
 
 */.DS_Store
 .vscode

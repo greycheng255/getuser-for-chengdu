@@ -151,11 +151,8 @@ class KeywordResearchService:
         """
         if self._table_ensured:
             return
-        from database.db_session import get_async_engine
         from sqlalchemy import text as sql_text
-        import config
-
-        engine = get_async_engine(config.SAVE_DATA_OPTION)
+        engine = self._get_engine()
         if engine is None:
             logger.warning("[KeywordResearch] 数据库引擎不可用（可能为 csv/json 存储），跳过建表")
             return

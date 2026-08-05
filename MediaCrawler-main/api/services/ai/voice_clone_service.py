@@ -11,7 +11,6 @@ import asyncio
 import logging
 import os
 import subprocess
-import tempfile
 import time
 from typing import Any, Dict, Optional
 
@@ -20,7 +19,7 @@ import httpx
 logger = logging.getLogger("voice_clone_service")
 
 # 临时目录
-TMP_DIR = os.path.join(tempfile.gettempdir(), "talking_head")
+TMP_DIR = "/tmp/talking_head"
 os.makedirs(TMP_DIR, exist_ok=True)
 
 # 环境变量配置

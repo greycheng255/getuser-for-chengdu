@@ -40,6 +40,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import douyin as douyin_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager
+from tools.anti_detect import get_anti_detect_script
 from var import crawler_type_var, source_keyword_var
 
 from .client import DouYinClient
@@ -1352,34 +1353,10 @@ class DouYinCrawler(AbstractCrawler):
             )
 
         # 注入反检测脚本（在页面创建前注入，确保首屏请求就不暴露）
-        anti_detect_js = """
-        // 隐藏 webdriver 标志
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        // 添加 chrome.runtime（正常浏览器有此属性）
-        if (!window.chrome) { window.chrome = {}; }
-        if (!window.chrome.runtime) { window.chrome.runtime = { connect: () => {}, sendMessage: () => {} }; }
-        // 修改 plugins 长度（正常浏览器有插件）
-        Object.defineProperty(navigator, 'plugins', {
-            get: () => [1, 2, 3, 4, 5],
-        });
-        // 修改 languages
-        Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
-        // 隐藏 Playwright 特征
-        delete window.__playwright__evaluation_script;
-        // 修改 permissions API
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters) =>
-            parameters.name === 'notifications'
-                ? Promise.resolve({ state: Notification.permission })
-                : originalQuery(parameters);
-        // WebGL 渲染器伪装
-        const getParameter = WebGLRenderingContext.prototype.getParameter;
-        WebGLRenderingContext.prototype.getParameter = function(parameter) {
-            if (parameter === 37445) return 'Intel Inc.';  // UNMASKED_VENDOR_WEBGL
-            if (parameter === 37446) return 'Intel Iris OpenGL Engine';  // UNMASKED_RENDERER_WEBGL
-            return getParameter.call(this, parameter);
-        };
-        """
+        # 使用 tools/anti_detect.py 统一管理的增强版脚本(从 getuser-canrun 迁移):
+        #   WebRTC IP 泄漏防护 + AudioContext 指纹随机化 + WebGL2 伪装 +
+        #   deviceMemory 伪装 + iframe contentWindow.webdriver 清除 + cdc_ 特征清除
+        anti_detect_js = get_anti_detect_script()
         await browser_context.add_init_script(anti_detect_js)
         # 再叠加 stealth.min.js（如果存在）
         try:

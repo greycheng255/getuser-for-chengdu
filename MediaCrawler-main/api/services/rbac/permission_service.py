@@ -191,11 +191,9 @@ class PermissionService:
         """写入默认权限与角色映射(幂等)"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
             async with engine.begin() as conn:
@@ -244,11 +242,9 @@ class PermissionService:
             return
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
             async with engine.connect() as conn:
@@ -307,11 +303,9 @@ class PermissionService:
         """列出所有权限定义(含模块分组)"""
         await self._load_cache()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             async with engine.connect() as conn:
@@ -363,11 +357,9 @@ class PermissionService:
             return False  # admin 默认拥有全部,不可显式设置
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return False
             async with engine.begin() as conn:

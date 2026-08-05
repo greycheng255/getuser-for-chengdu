@@ -135,11 +135,9 @@ class ReviewWorkflowService:
             owner_user_id=owner_user_id,
         )
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return task
             async with engine.begin() as conn:
@@ -177,11 +175,9 @@ class ReviewWorkflowService:
         """列出待复核任务"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             async with engine.connect() as conn:
@@ -216,11 +212,9 @@ class ReviewWorkflowService:
         if decision not in (ReviewStatus.APPROVED.value, ReviewStatus.REJECTED.value):
             return False
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return False
             async with engine.begin() as conn:
@@ -262,11 +256,9 @@ class ReviewWorkflowService:
     async def get_review(self, review_id: str) -> Optional[Dict[str, Any]]:
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
             async with engine.connect() as conn:
@@ -288,11 +280,9 @@ class ReviewWorkflowService:
         """最近复核记录（含已完成）"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             async with engine.connect() as conn:

@@ -7,9 +7,7 @@
 适配点（相对原 GEO-main 实现）：
 1. 数据库层：原文件使用 psycopg2 + 同步连接（PostgreSQLDatabase.get_connection），
    现统一改为 MediaCrawler 的异步 PostgreSQL 引擎：
-       from database.db_session import get_async_engine
-       import config
-       engine = get_async_engine(config.SAVE_DATA_OPTION)
+       engine = self._get_engine()
        from sqlalchemy import text as sql_text
        async with engine.connect() as conn:
            rows = await conn.execute(sql_text("SELECT ..."), {...})
@@ -38,6 +36,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import requests
+from sqlalchemy import text as sql_text
 
 logger = logging.getLogger(__name__)
 
@@ -160,15 +159,12 @@ class MonitoringService:
 
     # ---------------- 数据库基础设施 ----------------
 
-    async def _get_engine(self):
-        """获取 MediaCrawler 异步引擎"""
-        try:
-            from database.db_session import get_async_engine
-            import config
-            return get_async_engine(config.SAVE_DATA_OPTION)
-        except Exception as e:
-            logger.error(f"[Monitor] 获取数据库引擎失败: {e}")
-            return None
+    @staticmethod
+    def _get_engine():
+        """获取异步数据库引擎（公共方法，消除重复导入）"""
+        from database.db_session import get_async_engine
+        import config
+        return get_async_engine(config.SAVE_DATA_OPTION)
 
     async def ensure_table(self) -> bool:
         """确保所有监控相关表存在（幂等）。

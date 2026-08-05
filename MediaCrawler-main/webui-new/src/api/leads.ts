@@ -93,3 +93,26 @@ export const batchDeleteLeads = (ids: number[]): Promise<{ success: boolean; del
 export const deleteLeadsByTask = (taskId: string): Promise<{ success: boolean; deleted_count: number }> => {
   return request.delete(`/leads/task/${taskId}`);
 };
+
+// 采集单条线索的用户主页联系方式(手机号/微信号/简介)
+// 后端端点: POST /leads/{lead_id}/collect-contact (从 getuser-canrun 迁移)
+export const collectLeadContact = (leadId: number): Promise<{
+  success: boolean;
+  message: string;
+  contact_phone?: string;
+  contact_wechat?: string;
+  bio_text?: string;
+  contact_status?: string;
+}> => {
+  return request.post(`/leads/${leadId}/collect-contact`);
+};
+
+// 手动触发单条线索的评论回复监测
+// 后端端点: POST /leads/{lead_id}/monitor-replies (从 getuser-canrun 迁移)
+export const monitorLeadReplies = (leadId: number): Promise<{
+  success: boolean;
+  message: string;
+  new_replies?: number;
+}> => {
+  return request.post(`/leads/${leadId}/monitor-replies`);
+};

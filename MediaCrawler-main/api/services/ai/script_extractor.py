@@ -24,7 +24,7 @@ FFMPEG_BIN = "/usr/bin/ffmpeg"
 FFPROBE_BIN = "/usr/bin/ffprobe"
 
 # 临时文件目录
-TMP_DIR = os.path.join(tempfile.gettempdir(), "talking_head")
+TMP_DIR = "/tmp/talking_head"
 
 # 外部视频解析服务（API.md 描述，已封装抖音/小红书/B站反爬和 ASR 识别）
 PARSE_SERVICE_BASE_URL = "http://122.51.51.177:8002"

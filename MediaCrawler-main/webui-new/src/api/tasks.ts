@@ -223,3 +223,23 @@ export const getOutreachTaskLogs = (outreachTaskId: string): Promise<{
 }> => {
   return request.get(`/tasks/outreach-task/${outreachTaskId}/logs`);
 };
+
+// 更新任务精准获客配置(从 getuser-canrun 迁移)
+// 后端端点: PUT /tasks/{task_id}/lead-config
+export const updateTaskLeadConfig = (taskId: string, data: {
+  business_intent?: string;
+  intent_keywords?: string[];
+  exclude_keywords?: string[];
+  target_role?: string;
+  target_regions?: string[];
+}): Promise<{
+  success: boolean;
+  message: string;
+  business_intent: string;
+  intent_keywords: string[];
+  exclude_keywords: string[];
+  target_role: string;
+  target_regions: string[];
+}> => {
+  return request.put(`/tasks/${taskId}/lead-config`, data);
+};

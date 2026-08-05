@@ -1,6 +1,6 @@
 import { message } from '../utils/antdMessage';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Card, Button, Tag, Space, Modal, Form, Input, Select, notification, Radio, Row, Col, Statistic, Empty, Progress, Spin, Alert, Steps, Tooltip, Tabs, Descriptions, Badge, List, Popover, Popconfirm } from 'antd';
+import { Card, Button, Tag, Space, Modal, Form, Input, Select, notification, Radio, Row, Col, Statistic, Empty, Progress, Spin, Alert, Steps, Tooltip, Tabs, Descriptions, Badge, List, Popover, Popconfirm, Collapse } from 'antd';
 import {
   PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined,
   PlusOutlined, RobotOutlined, ReloadOutlined,
@@ -1246,6 +1246,12 @@ const TaskManager: React.FC = () => {
         crawl_type: values.crawl_type || 'search',
         max_notes: values.max_notes || 50000,
         promo_config: values.promo_config || {},
+        // 精准获客配置(从 getuser-canrun 迁移)
+        business_intent: values.business_intent || '',
+        intent_keywords: values.intent_keywords || [],
+        exclude_keywords: values.exclude_keywords || [],
+        target_role: values.target_role || 'c端用户',
+        target_regions: values.target_regions || [],
       });
     }
     setCreateStep(createStep + 1);
@@ -1461,6 +1467,61 @@ const TaskManager: React.FC = () => {
                 </Radio.Group>
               </Form.Item>
 
+              {/* 精准获客配置(从 getuser-canrun 迁移) - 可折叠,默认展开 */}
+              <Collapse
+                defaultActiveKey={['lead-config']}
+                style={{ marginBottom: 16 }}
+                items={[{
+                  key: 'lead-config',
+                  label: <span style={{ fontSize: 14, fontWeight: 500 }}>🎯 精准获客配置（可选）</span>,
+                  children: (
+                    <>
+                      <div style={{ fontSize: 12, color: '#999', marginBottom: 12 }}>
+                        配置业务意图和意向词后,系统采用严格双词匹配 + 角色分类,精准识别 C 端求方用户,过滤服务商广告。
+                      </div>
+                      <Form.Item name="business_intent" label="业务意图">
+                        <Input.TextArea
+                          placeholder="描述你的获客目标,例如：寻找需要学琵琶的零基础用户"
+                          rows={2}
+                          style={{ fontSize: 13 }}
+                        />
+                      </Form.Item>
+                      <Form.Item name="intent_keywords" label="意向词（严格匹配,命中即判定为线索）">
+                        <Select
+                          mode="tags"
+                          placeholder="输入意向词后回车,如：想学、求推荐、哪里学"
+                          style={{ width: '100%' }}
+                          tokenSeparators={[',', '，']}
+                        />
+                      </Form.Item>
+                      <Form.Item name="exclude_keywords" label="排除词（命中即丢弃）">
+                        <Select
+                          mode="tags"
+                          placeholder="输入排除词后回车,如：代运营、招代理、厂家直销"
+                          style={{ width: '100%' }}
+                          tokenSeparators={[',', '，']}
+                        />
+                      </Form.Item>
+                      <Form.Item name="target_role" label="目标角色" initialValue="c端用户" tooltip="c端用户=排除服务商广告; 厂家供应商=保留服务商线索; 不限=全部保留">
+                        <Radio.Group>
+                          <Radio.Button value="c端用户">👤 C端用户（推荐）</Radio.Button>
+                          <Radio.Button value="厂家供应商">🏭 厂家供应商</Radio.Button>
+                          <Radio.Button value="不限">📋 不限</Radio.Button>
+                        </Radio.Group>
+                      </Form.Item>
+                      <Form.Item name="target_regions" label="目标地区（可选,留空=不限地区）">
+                        <Select
+                          mode="tags"
+                          placeholder="输入地区后回车,如：四川、北京、上海"
+                          style={{ width: '100%' }}
+                          tokenSeparators={[',', '，']}
+                        />
+                      </Form.Item>
+                    </>
+                  ),
+                }]}
+              />
+
               {/* 推广配置折叠(简化向导,默认填充,可选展开) */}
               <Form.Item name={['promo_config', 'product_name']} hidden initialValue="AI聚合平台"><Input /></Form.Item>
               <Form.Item name={['promo_config', 'product_desc']} hidden initialValue="一站式AI工具平台，集成ChatGPT、Claude、Gemini等主流大模型"><Input /></Form.Item>
@@ -1480,6 +1541,11 @@ const TaskManager: React.FC = () => {
               <Form.Item name="keywords" hidden><Input /></Form.Item>
               <Form.Item name="crawl_type" hidden><Input /></Form.Item>
               <Form.Item name="max_notes" hidden><Input type="number" /></Form.Item>
+              <Form.Item name="business_intent" hidden><Input /></Form.Item>
+              <Form.Item name="intent_keywords" hidden><Input /></Form.Item>
+              <Form.Item name="exclude_keywords" hidden><Input /></Form.Item>
+              <Form.Item name="target_role" hidden><Input /></Form.Item>
+              <Form.Item name="target_regions" hidden><Input /></Form.Item>
 
               <div style={{ padding: 16, background: '#f6ffed', borderRadius: 8, marginBottom: 16 }}>
                 <h4 style={{ margin: '0 0 12px' }}>📋 任务预览</h4>
@@ -1491,6 +1557,26 @@ const TaskManager: React.FC = () => {
                   <div><strong>预计耗时：</strong>取决于关键词热度</div>
                 </div>
               </div>
+
+              {/* 精准获客配置预览(从 getuser-canrun 迁移) */}
+              {(previewData.business_intent || (previewData.intent_keywords && previewData.intent_keywords.length > 0) || (previewData.exclude_keywords && previewData.exclude_keywords.length > 0)) && (
+                <div style={{ padding: 16, background: '#e6f7ff', borderRadius: 8, marginBottom: 16 }}>
+                  <h4 style={{ margin: '0 0 12px' }}>🎯 精准获客配置</h4>
+                  <div style={{ fontSize: 14, lineHeight: 2, wordBreak: 'break-all', whiteSpace: 'normal' }}>
+                    {previewData.business_intent && <div><strong>业务意图：</strong>{previewData.business_intent}</div>}
+                    {previewData.intent_keywords && previewData.intent_keywords.length > 0 && (
+                      <div><strong>意向词：</strong>{previewData.intent_keywords.map((kw: string, i: number) => <Tag key={i} style={{ marginBottom: 2 }}>{kw}</Tag>)}</div>
+                    )}
+                    {previewData.exclude_keywords && previewData.exclude_keywords.length > 0 && (
+                      <div><strong>排除词：</strong>{previewData.exclude_keywords.map((kw: string, i: number) => <Tag key={i} color="red" style={{ marginBottom: 2 }}>{kw}</Tag>)}</div>
+                    )}
+                    <div><strong>目标角色：</strong>{previewData.target_role || 'c端用户'}</div>
+                    {previewData.target_regions && previewData.target_regions.length > 0 && (
+                      <div><strong>目标地区：</strong>{previewData.target_regions.map((r: string, i: number) => <Tag key={i} color="blue" style={{ marginBottom: 2 }}>{r}</Tag>)}</div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {previewData.promo_config && (
                 <div style={{ padding: 16, background: '#fff7e6', borderRadius: 8, marginBottom: 16 }}>

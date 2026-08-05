@@ -35,6 +35,12 @@ export interface Lead {
   comment_url?: string;
   profile_url?: string;
   platform_display_id?: string;
+  // 获客采集增强字段(从 getuser-canrun 迁移)
+  role_tag?: string;        // 角色分类: supplier(供方) / consumer(求方) / neutral(中性)
+  contact_phone?: string;   // 采集到的联系电话
+  contact_wechat?: string;  // 采集到的微信号
+  contact_status?: string;  // 联系方式采集状态: none/pending/found/not_found
+  dup_count?: number;       // 重复命中次数(相似内容累加)
 }
 
 export interface LeadListResponse {
@@ -91,6 +97,12 @@ export interface CrawlerTask {
   comment_count?: number;
   promo_config?: PromoConfig;
   publish_time_type?: number;
+  // 精准获客配置(从 getuser-canrun 迁移)
+  business_intent?: string;       // 业务意图描述(如"寻找需要学琵琶的用户")
+  intent_keywords?: string[];     // 意向词(严格双词匹配)
+  exclude_keywords?: string[];    // 排除词(命中即丢弃)
+  target_role?: string;           // 目标角色: c端用户 / 厂家供应商 / 不限
+  target_regions?: string[];      // 目标地区
 }
 
 export interface DashboardData {
@@ -145,4 +157,19 @@ export const STATUS_MAP: Record<string, { text: string; color: string }> = {
   converted: { text: '已转化', color: '#fa8c16' },
   failed: { text: '发送失败', color: '#ff4d4f' },
   ignored: { text: '已忽略', color: '#bfbfbf' },
+};
+
+// 角色分类映射(从 getuser-canrun 迁移:供方/求方/中性)
+export const ROLE_MAP: Record<string, { text: string; color: string }> = {
+  supplier: { text: '供方', color: '#fa541c' },   // 服务商/厂家(广告引流)
+  consumer: { text: '求方', color: '#52c41a' },   // C端用户(咨询求购,精准目标)
+  neutral: { text: '中性', color: '#8c8c8c' },    // 普通/无法判定
+};
+
+// 联系方式采集状态映射
+export const CONTACT_STATUS_MAP: Record<string, { text: string; color: string }> = {
+  none: { text: '未采集', color: '#bfbfbf' },
+  pending: { text: '采集中', color: '#1890ff' },
+  found: { text: '已采集', color: '#52c41a' },
+  not_found: { text: '无联系方式', color: '#8c8c8c' },
 };

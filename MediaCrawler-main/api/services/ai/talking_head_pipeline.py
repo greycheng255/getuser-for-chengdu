@@ -16,14 +16,13 @@
 import logging
 import os
 import subprocess
-import tempfile
 import time
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger("talking_head_pipeline")
 
 # 临时文件目录（与 digital_human_service / post_production_service 共用）
-TMP_DIR = os.path.join(tempfile.gettempdir(), "talking_head")
+TMP_DIR = "/tmp/talking_head"
 FFMPEG_BIN = "/usr/bin/ffmpeg"
 
 

@@ -199,11 +199,9 @@ class AccountWeightService:
         """收集账号权重因子（从 publisher_accounts + account_anomaly_alerts + interaction_analytics）"""
         factors = WeightFactors()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return factors
 
@@ -270,11 +268,9 @@ class AccountWeightService:
     async def _calc_interaction_score(self, account_id: int, platform: str) -> float:
         """从互动记录计算效果评分"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return 0.5
             since = datetime.utcnow() - timedelta(days=7)
@@ -327,12 +323,10 @@ class AccountWeightService:
         weight.account_id = account_id
         weight.platform = platform
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
             import json
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return weight
             async with engine.begin() as conn:
@@ -360,11 +354,9 @@ class AccountWeightService:
 
     async def get_weight(self, account_id: int, platform: str) -> Optional[AccountWeight]:
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
             async with engine.connect() as conn:
@@ -397,11 +389,9 @@ class AccountWeightService:
     async def list_by_platform(self, platform: str, limit: int = 100) -> List[AccountWeight]:
         """按权重降序列出某平台账号（用于 BotAccountPool/Publisher 选取）"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             async with engine.connect() as conn:
@@ -441,11 +431,9 @@ class AccountWeightService:
         每个账号 collect_factors 做 3 次 DB 查询，串行遍历会长时间阻塞事件循环。
         """
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return 0
             async with engine.connect() as conn:

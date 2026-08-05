@@ -3,11 +3,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Card, Tag, Button, Space, Modal, Input, Select, Tabs, Tooltip, Avatar, Table, Popconfirm, Progress, DatePicker, InputNumber, Upload } from 'antd';
 import {
   ReloadOutlined, DownloadOutlined, EyeOutlined, DeleteOutlined, EnvironmentOutlined, UserOutlined,
-  UploadOutlined, CopyOutlined, LinkOutlined,
+  UploadOutlined, CopyOutlined, LinkOutlined, PhoneOutlined, ContactsOutlined, MessageOutlined,
 } from '@ant-design/icons';
 import type { Lead, LeadStats } from '../types';
-import { PLATFORM_MAP, INTENT_MAP, STATUS_MAP } from '../types';
-import { getLeads, getLeadStats, updateLeadStatus, deleteLead, batchDeleteLeads, getLeadDetail, exportLeads, getLeadRegions } from '../api/leads';
+import { PLATFORM_MAP, INTENT_MAP, STATUS_MAP, ROLE_MAP, CONTACT_STATUS_MAP } from '../types';
+import { getLeads, getLeadStats, updateLeadStatus, deleteLead, batchDeleteLeads, getLeadDetail, exportLeads, getLeadRegions, collectLeadContact, monitorLeadReplies } from '../api/leads';
 import { getTasks } from '../api/tasks';
 import { authStorage } from '../api/auth';
 import dayjs from 'dayjs';
@@ -284,6 +284,43 @@ const LeadList: React.FC = () => {
     }
   };
 
+  // 采集单条线索的联系方式(手机号/微信号)— 从 getuser-canrun 迁移
+  const [collectingLeadId, setCollectingLeadId] = useState<number | null>(null);
+  const handleCollectContact = async (leadId: number) => {
+    setCollectingLeadId(leadId);
+    try {
+      const result = await collectLeadContact(leadId);
+      if (result.success) {
+        message.success(result.message || '联系方式采集成功');
+        fetchData(pagination.page);  // 刷新列表展示新联系方式
+      } else {
+        message.warning(result.message || '未采集到联系方式');
+      }
+    } catch (error: any) {
+      message.error(error?.response?.data?.detail || '联系方式采集失败');
+    } finally {
+      setCollectingLeadId(null);
+    }
+  };
+
+  // 手动触发评论回复监测 — 从 getuser-canrun 迁移
+  const [monitoringLeadId, setMonitoringLeadId] = useState<number | null>(null);
+  const handleMonitorReplies = async (leadId: number) => {
+    setMonitoringLeadId(leadId);
+    try {
+      const result = await monitorLeadReplies(leadId);
+      if (result.success) {
+        message.success(result.message || `回复监测完成,新增 ${result.new_replies || 0} 条回复`);
+      } else {
+        message.warning(result.message || '回复监测未发现新回复');
+      }
+    } catch (error: any) {
+      message.error(error?.response?.data?.detail || '回复监测失败');
+    } finally {
+      setMonitoringLeadId(null);
+    }
+  };
+
   // 批量导入线索(CSV/Excel)- 上传到 /api/leads/import-file
   const handleImportFile = async (file: File) => {
     if (!filterTaskId) {
@@ -391,6 +428,19 @@ const LeadList: React.FC = () => {
       render: (type: string) => <Tag color="blue">{INTENT_MAP[type] || type}</Tag>,
     },
     {
+      title: '角色',
+      dataIndex: 'role_tag',
+      key: 'role_tag',
+      width: 80,
+      filters: Object.entries(ROLE_MAP).map(([k, v]) => ({ text: v.text, value: k })),
+      onFilter: (value: any, record: Lead) => record.role_tag === value,
+      render: (tag: string) => {
+        if (!tag) return <span style={{ color: '#ccc' }}>-</span>;
+        const info = ROLE_MAP[tag];
+        return info ? <Tag color={info.color}>{info.text}</Tag> : <Tag>{tag}</Tag>;
+      },
+    },
+    {
       title: '内容',
       dataIndex: 'content',
       key: 'content',
@@ -441,6 +491,45 @@ const LeadList: React.FC = () => {
       ) : <span style={{ color: '#ccc' }}>-</span>,
     },
     {
+      title: '联系方式',
+      key: 'contact',
+      width: 160,
+      render: (_: any, record: Lead) => {
+        // 联系方式采集状态徽标
+        const status = record.contact_status || 'none';
+        const statusInfo = CONTACT_STATUS_MAP[status] || CONTACT_STATUS_MAP.none;
+        const hasContact = record.contact_phone || record.contact_wechat;
+        if (!hasContact && status === 'none') {
+          return <Tag color={statusInfo.color}>{statusInfo.text}</Tag>;
+        }
+        return (
+          <Tooltip title={
+            <div>
+              {record.contact_phone && <div>📱 {record.contact_phone}</div>}
+              {record.contact_wechat && <div>💬 {record.contact_wechat}</div>}
+              {!hasContact && <div>{statusInfo.text}</div>}
+            </div>
+          }>
+            <Space size={4} direction="vertical" style={{ lineHeight: 1.4 }}>
+              {record.contact_phone && (
+                <Space size={2}>
+                  <PhoneOutlined style={{ color: '#52c41a', fontSize: 12 }} />
+                  <span style={{ fontSize: 12, color: '#52c41a' }}>{record.contact_phone}</span>
+                </Space>
+              )}
+              {record.contact_wechat && (
+                <Space size={2}>
+                  <ContactsOutlined style={{ color: '#1890ff', fontSize: 12 }} />
+                  <span style={{ fontSize: 12, color: '#1890ff' }}>{record.contact_wechat}</span>
+                </Space>
+              )}
+              {!hasContact && <Tag color={statusInfo.color} style={{ fontSize: 11 }}>{statusInfo.text}</Tag>}
+            </Space>
+          </Tooltip>
+        );
+      },
+    },
+    {
       title: '源视频',
       dataIndex: 'source_video_title',
       key: 'source_video_title',
@@ -477,8 +566,26 @@ const LeadList: React.FC = () => {
       key: 'action',
       width: 150,
       render: (_: any, record: Lead) => (
-        <Space size={4}>
+        <Space size={4} wrap>
           <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => openDetail(record)}>详情</Button>
+          <Tooltip title="采集联系方式(手机号/微信号)">
+            <Button
+              size="small"
+              type="link"
+              icon={<PhoneOutlined />}
+              loading={collectingLeadId === record.id}
+              onClick={() => handleCollectContact(record.id)}
+            />
+          </Tooltip>
+          <Tooltip title="监测评论回复">
+            <Button
+              size="small"
+              type="link"
+              icon={<MessageOutlined />}
+              loading={monitoringLeadId === record.id}
+              onClick={() => handleMonitorReplies(record.id)}
+            />
+          </Tooltip>
           {record.status === 'new' && (
             <Button size="small" type="primary" onClick={() => handleStatusChange(record.id, 'contacted')}>联系</Button>
           )}

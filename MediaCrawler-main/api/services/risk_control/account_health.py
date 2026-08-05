@@ -274,11 +274,9 @@ class AccountHealthService:
         self, account_id: int, platform: str, alert_type: str, level: str, desc: str
     ) -> Optional[int]:
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
             async with engine.begin() as conn:
@@ -310,11 +308,9 @@ class AccountHealthService:
     async def list_alerts(self, only_unresolved: bool = True) -> List[Dict[str, Any]]:
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             sql = (
@@ -345,11 +341,9 @@ class AccountHealthService:
 
     async def resolve_alert(self, alert_id: int) -> bool:
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return False
             async with engine.begin() as conn:

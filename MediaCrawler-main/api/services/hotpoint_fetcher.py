@@ -474,7 +474,7 @@ async def _fetch_x(force_crawl: bool = False) -> List[Dict[str, Any]]:
     """
     try:
         import config
-        from database.db_session import get_async_engine
+        engine = self._get_engine()
         from database.models import XTwitterPost, XTwitterTrendingPost
         from sqlalchemy import select, desc
         from sqlalchemy.ext.asyncio import AsyncSession
@@ -489,7 +489,7 @@ async def _fetch_x(force_crawl: bool = False) -> List[Dict[str, Any]]:
             except Exception as e:
                 print(f"[hotpoint] x crawl_trending failed: {e}")
 
-        engine = get_async_engine(config.SAVE_DATA_OPTION)
+        engine = _get_engine()
         async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
         # 主源: XTwitterPost（权威全集表，与 total_in_db 同源，确保条数一致）

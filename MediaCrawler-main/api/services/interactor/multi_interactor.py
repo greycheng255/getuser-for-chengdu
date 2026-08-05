@@ -25,6 +25,14 @@ from .interactor_factory import InteractorFactory
 
 logger = logging.getLogger(__name__)
 
+
+def _get_engine():
+    """获取异步数据库引擎（公共方法，消除重复导入）"""
+    from database.db_session import get_async_engine
+    import config
+    return get_async_engine(config.SAVE_DATA_OPTION)
+
+
 # 并发互动的平台数上限（避免同时开太多浏览器）
 _DEFAULT_CONCURRENCY = 3
 
@@ -294,11 +302,9 @@ class MultiInteractor:
         容错：写入失败仅记录 warning，不阻断主流程。
         """
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = _get_engine()
             if engine is None:
                 return
 

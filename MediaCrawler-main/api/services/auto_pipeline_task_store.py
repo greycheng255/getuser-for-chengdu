@@ -42,6 +42,8 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import text as sql_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -80,8 +82,6 @@ class AutoPipelineStore:
         if AutoPipelineStore._ensured:
             return
         try:
-            from sqlalchemy import text as sql_text
-
             engine = self._get_engine()
             if engine is None:
                 return
@@ -143,11 +143,7 @@ class AutoPipelineStore:
         task_id = str(uuid.uuid4())
         now = int(time.time())
         try:
-            from database.db_session import get_async_engine
-            import config
-            from sqlalchemy import text as sql_text
-
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 raise RuntimeError("数据库引擎不可用")
 
@@ -195,11 +191,7 @@ class AutoPipelineStore:
         if not kwargs:
             return
         try:
-            from database.db_session import get_async_engine
-            import config
-            from sqlalchemy import text as sql_text
-
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
 
@@ -235,11 +227,9 @@ class AutoPipelineStore:
 
     async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
             async with engine.connect() as conn:
@@ -264,11 +254,9 @@ class AutoPipelineStore:
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
 
@@ -296,11 +284,9 @@ class AutoPipelineStore:
     async def cancel_task(self, task_id: str) -> bool:
         """标记任务为已取消（仅当任务处于 pending/running 时）"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return False
             async with engine.begin() as conn:

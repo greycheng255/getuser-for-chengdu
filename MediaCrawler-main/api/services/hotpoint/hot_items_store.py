@@ -306,11 +306,9 @@ class HotItemsStore:
     async def _update_flag(self, hot_id: int, field: str, value: bool) -> bool:
         # field 由本类内部白名单传入，安全拼接
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return False
             async with engine.begin() as conn:

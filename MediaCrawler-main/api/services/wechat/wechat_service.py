@@ -19,7 +19,6 @@ import asyncio
 import json
 import logging
 import os
-import tempfile
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -27,7 +26,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # 知识库存储目录
-KNOWLEDGE_BASE_DIR = os.path.join(tempfile.gettempdir(), "wechat_knowledge_base")
+KNOWLEDGE_BASE_DIR = "/tmp/wechat_knowledge_base"
 os.makedirs(KNOWLEDGE_BASE_DIR, exist_ok=True)
 
 

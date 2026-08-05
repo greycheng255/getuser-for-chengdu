@@ -93,6 +93,8 @@ async def create_tables(db_type: str = None):
         await _ensure_explainer_video_idempotency(engine, db_type)
         # 补充高频查询字段索引(对存量数据库生效,create_all 不会改已有表结构)
         await _ensure_indexes(engine, db_type)
+        # 获客采集增强: customer_lead 加8字段 + crawler_task 加5字段 + lead_comment_reply 新表
+        await _ensure_lead_capture_columns(engine, db_type)
 
 
 async def _ensure_opennotebook_oauth_columns(engine, db_type: str):
@@ -227,6 +229,232 @@ async def _ensure_indexes(engine, db_type: str):
                     await conn.execute(
                         text(f"CREATE INDEX {idx_name} ON {table} ({column})")
                     )
+                except Exception:
+                    pass
+
+
+# 获客采集增强字段清单 (从 getuser-canrun 迁移)
+# customer_lead 表: 角色标签 + 去重指纹 + 联系方式 + 回复监控
+_LEAD_COLUMNS = [
+    ("content_hash", "VARCHAR(64) DEFAULT ''"),         # md5 指纹,用于精确去重
+    ("dup_count", "INTEGER DEFAULT 1"),                 # 重复命中次数(相似内容累加)
+    ("role_tag", "VARCHAR(20) DEFAULT ''"),             # 角色分类: supplier/consumer/neutral
+    ("contact_phone", "VARCHAR(20) DEFAULT ''"),        # 采集到的联系电话
+    ("contact_wechat", "VARCHAR(64) DEFAULT ''"),       # 采集到的微信号
+    ("bio_text", "TEXT"),                               # 用户主页简介(联系方式提取来源)
+    ("contact_status", "VARCHAR(16) DEFAULT 'none'"),   # 联系方式采集状态: none/pending/found/not_found
+    ("reply_monitor_ts", "BIGINT DEFAULT 0"),           # 上次回复监控扫描时间戳
+]
+# crawler_task 表: 精准获客配置(业务意图+意向词+排除词+角色+地区)
+_TASK_LEAD_COLUMNS = [
+    ("business_intent", "TEXT"),                        # 业务意图描述(如"寻找需要学琵琶的用户")
+    ("intent_keywords", "TEXT"),                        # 意向词 JSON 数组(严格双词匹配用)
+    ("exclude_keywords", "TEXT"),                       # 排除词 JSON 数组(命中即丢弃)
+    ("target_role", "VARCHAR(20) DEFAULT 'c端用户'"),    # 目标角色: c端用户/厂家供应商/不限
+    ("target_regions", "TEXT"),                         # 目标地区 JSON 数组(可选)
+]
+# lead_comment_reply 表: 线索评论回复监控(抖音版)
+_LEAD_REPLY_TABLE_SQL_POSTGRES = """
+CREATE TABLE IF NOT EXISTS lead_comment_reply (
+    id SERIAL PRIMARY KEY,
+    lead_id INTEGER,
+    task_id VARCHAR(255) DEFAULT '',
+    platform VARCHAR(20) DEFAULT 'douyin',
+    aweme_id VARCHAR(255) DEFAULT '',
+    comment_id VARCHAR(255) DEFAULT '',
+    parent_comment_id VARCHAR(255) DEFAULT '',
+    user_id VARCHAR(255) DEFAULT '',
+    sec_uid VARCHAR(255) DEFAULT '',
+    nickname VARCHAR(255) DEFAULT '',
+    avatar TEXT,
+    content TEXT,
+    like_count VARCHAR(255) DEFAULT '0',
+    create_time BIGINT DEFAULT 0,
+    is_from_lead INTEGER DEFAULT 0,
+    is_read INTEGER DEFAULT 0,
+    owner_user_id VARCHAR(64) DEFAULT '',
+    add_ts BIGINT DEFAULT 0
+)
+"""
+_LEAD_REPLY_TABLE_SQL_SQLITE = """
+CREATE TABLE IF NOT EXISTS lead_comment_reply (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id INTEGER,
+    task_id VARCHAR(255) DEFAULT '',
+    platform VARCHAR(20) DEFAULT 'douyin',
+    aweme_id VARCHAR(255) DEFAULT '',
+    comment_id VARCHAR(255) DEFAULT '',
+    parent_comment_id VARCHAR(255) DEFAULT '',
+    user_id VARCHAR(255) DEFAULT '',
+    sec_uid VARCHAR(255) DEFAULT '',
+    nickname VARCHAR(255) DEFAULT '',
+    avatar TEXT,
+    content TEXT,
+    like_count VARCHAR(255) DEFAULT '0',
+    create_time BIGINT DEFAULT 0,
+    is_from_lead INTEGER DEFAULT 0,
+    is_read INTEGER DEFAULT 0,
+    owner_user_id VARCHAR(64) DEFAULT '',
+    add_ts BIGINT DEFAULT 0
+)
+"""
+_LEAD_REPLY_TABLE_SQL_MYSQL = """
+CREATE TABLE IF NOT EXISTS lead_comment_reply (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    lead_id INT,
+    task_id VARCHAR(255) DEFAULT '',
+    platform VARCHAR(20) DEFAULT 'douyin',
+    aweme_id VARCHAR(255) DEFAULT '',
+    comment_id VARCHAR(255) DEFAULT '',
+    parent_comment_id VARCHAR(255) DEFAULT '',
+    user_id VARCHAR(255) DEFAULT '',
+    sec_uid VARCHAR(255) DEFAULT '',
+    nickname VARCHAR(255) DEFAULT '',
+    avatar TEXT,
+    content TEXT,
+    like_count VARCHAR(255) DEFAULT '0',
+    create_time BIGINT DEFAULT 0,
+    is_from_lead TINYINT(1) DEFAULT 0,
+    is_read TINYINT(1) DEFAULT 0,
+    owner_user_id VARCHAR(64) DEFAULT '',
+    add_ts BIGINT DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+# lead_comment_reply 字段补齐清单(对齐 getuser-canrun 源 schema)
+# 用于存量表(旧 schema 缺字段)的 ALTER 补齐
+_LEAD_REPLY_COLUMNS = [
+    ("task_id", "VARCHAR(255) DEFAULT ''"),
+    ("platform", "VARCHAR(20) DEFAULT 'douyin'"),
+    ("aweme_id", "VARCHAR(255) DEFAULT ''"),
+    ("comment_id", "VARCHAR(255) DEFAULT ''"),
+    ("parent_comment_id", "VARCHAR(255) DEFAULT ''"),
+    ("sec_uid", "VARCHAR(255) DEFAULT ''"),
+    ("nickname", "VARCHAR(255) DEFAULT ''"),
+    ("avatar", "TEXT"),
+    ("like_count", "VARCHAR(255) DEFAULT '0'"),
+    ("create_time", "BIGINT DEFAULT 0"),
+    ("owner_user_id", "VARCHAR(64) DEFAULT ''"),
+    ("add_ts", "BIGINT DEFAULT 0"),
+]
+# sys_user_cookie 表 purpose 字段(Cookie 用途分离: crawl/outreach/both)
+_USER_COOKIE_PURPOSE_COLUMN = ("purpose", "VARCHAR(20) DEFAULT 'both'")
+
+
+async def _ensure_lead_capture_columns(engine, db_type: str):
+    """获客采集增强迁移: 补充 customer_lead/crawler_task 字段 + 创建 lead_comment_reply 表。
+
+    覆盖 getuser-canrun 迁移方案 v2.0 的 A 类数据基础:
+    - customer_lead +8 字段: 去重指纹/角色标签/联系方式/回复监控时间
+    - crawler_task +5 字段: 精准获客配置(业务意图/意向词/排除词/目标角色/目标地区)
+    - lead_comment_reply 新表: 线索评论回复监控(抖音版,对齐源 schema)
+    - sys_user_cookie +purpose 字段: Cookie 用途分离(crawl/outreach/both)
+    支持 PostgreSQL / SQLite / MySQL。
+    """
+    # 通用索引清单(三方言共用)
+    _lead_reply_indexes = [
+        "ix_lead_comment_reply_lead_id ON lead_comment_reply (lead_id)",
+        "ix_lead_comment_reply_task_id ON lead_comment_reply (task_id)",
+        "ix_lead_comment_reply_aweme_id ON lead_comment_reply (aweme_id)",
+        "ix_lead_comment_reply_comment_id ON lead_comment_reply (comment_id)",
+        "ix_lead_comment_reply_owner_user_id ON lead_comment_reply (owner_user_id)",
+        "ix_customer_lead_content_hash ON customer_lead (content_hash)",
+        "ix_customer_lead_role_tag ON customer_lead (role_tag)",
+    ]
+
+    if db_type == "postgres":
+        async with engine.begin() as conn:
+            for name, definition in _LEAD_COLUMNS:
+                await conn.execute(
+                    text(f"ALTER TABLE customer_lead ADD COLUMN IF NOT EXISTS {name} {definition}")
+                )
+            for name, definition in _TASK_LEAD_COLUMNS:
+                await conn.execute(
+                    text(f"ALTER TABLE crawler_task ADD COLUMN IF NOT EXISTS {name} {definition}")
+                )
+            # sys_user_cookie.purpose 字段(Cookie 用途分离)
+            await conn.execute(
+                text(f"ALTER TABLE sys_user_cookie ADD COLUMN IF NOT EXISTS "
+                     f"{_USER_COOKIE_PURPOSE_COLUMN[0]} {_USER_COOKIE_PURPOSE_COLUMN[1]}")
+            )
+            # lead_comment_reply: 建表 + 字段补齐(存量旧 schema 表补字段)
+            await conn.execute(text(_LEAD_REPLY_TABLE_SQL_POSTGRES))
+            for name, definition in _LEAD_REPLY_COLUMNS:
+                await conn.execute(
+                    text(f"ALTER TABLE lead_comment_reply ADD COLUMN IF NOT EXISTS {name} {definition}")
+                )
+            for idx_clause in _lead_reply_indexes:
+                await conn.execute(text(f"CREATE INDEX IF NOT EXISTS {idx_clause}"))
+    elif db_type == "sqlite":
+        async with engine.begin() as conn:
+            for name, definition in _LEAD_COLUMNS:
+                try:
+                    await conn.execute(
+                        text(f"ALTER TABLE customer_lead ADD COLUMN {name} {definition}")
+                    )
+                except Exception:
+                    pass  # 字段已存在
+            for name, definition in _TASK_LEAD_COLUMNS:
+                try:
+                    await conn.execute(
+                        text(f"ALTER TABLE crawler_task ADD COLUMN {name} {definition}")
+                    )
+                except Exception:
+                    pass
+            try:
+                await conn.execute(
+                    text(f"ALTER TABLE sys_user_cookie ADD COLUMN "
+                         f"{_USER_COOKIE_PURPOSE_COLUMN[0]} {_USER_COOKIE_PURPOSE_COLUMN[1]}")
+                )
+            except Exception:
+                pass
+            await conn.execute(text(_LEAD_REPLY_TABLE_SQL_SQLITE))
+            for name, definition in _LEAD_REPLY_COLUMNS:
+                try:
+                    await conn.execute(
+                        text(f"ALTER TABLE lead_comment_reply ADD COLUMN {name} {definition}")
+                    )
+                except Exception:
+                    pass
+            for idx_clause in _lead_reply_indexes:
+                try:
+                    await conn.execute(text(f"CREATE INDEX IF NOT EXISTS {idx_clause}"))
+                except Exception:
+                    pass
+    elif db_type in ("mysql", "db"):
+        async with engine.begin() as conn:
+            for name, definition in _LEAD_COLUMNS:
+                try:
+                    await conn.execute(
+                        text(f"ALTER TABLE customer_lead ADD COLUMN {name} {definition}")
+                    )
+                except Exception:
+                    pass
+            for name, definition in _TASK_LEAD_COLUMNS:
+                try:
+                    await conn.execute(
+                        text(f"ALTER TABLE crawler_task ADD COLUMN {name} {definition}")
+                    )
+                except Exception:
+                    pass
+            try:
+                await conn.execute(
+                    text(f"ALTER TABLE sys_user_cookie ADD COLUMN "
+                         f"{_USER_COOKIE_PURPOSE_COLUMN[0]} {_USER_COOKIE_PURPOSE_COLUMN[1]}")
+                )
+            except Exception:
+                pass
+            await conn.execute(text(_LEAD_REPLY_TABLE_SQL_MYSQL))
+            for name, definition in _LEAD_REPLY_COLUMNS:
+                try:
+                    await conn.execute(
+                        text(f"ALTER TABLE lead_comment_reply ADD COLUMN {name} {definition}")
+                    )
+                except Exception:
+                    pass
+            # MySQL 8.0.29 之前不支持 IF NOT EXISTS,用 try 包裹
+            for idx_clause in _lead_reply_indexes:
+                try:
+                    await conn.execute(text(f"CREATE INDEX {idx_clause}"))
                 except Exception:
                     pass
 

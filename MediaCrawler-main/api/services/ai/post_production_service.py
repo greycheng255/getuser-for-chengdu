@@ -16,7 +16,6 @@ import os
 import random
 import re
 import subprocess
-import tempfile
 import time
 from typing import Any, Dict, List, Optional
 
@@ -24,7 +23,7 @@ logger = logging.getLogger("post_production")
 
 FFMPEG_BIN = "/usr/bin/ffmpeg"
 FFPROBE_BIN = "/usr/bin/ffprobe"
-TMP_DIR = os.path.join(tempfile.gettempdir(), "talking_head")
+TMP_DIR = "/tmp/talking_head"
 os.makedirs(TMP_DIR, exist_ok=True)
 
 # BGM 素材库目录（预置一些免版权 BGM）

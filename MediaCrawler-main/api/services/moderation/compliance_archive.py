@@ -163,11 +163,9 @@ class ComplianceArchiveService:
             created_at=now_dt.isoformat(),
         )
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return record.archive_id
             async with engine.begin() as conn:
@@ -209,11 +207,9 @@ class ComplianceArchiveService:
         """查询归档记录"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             async with engine.connect() as conn:
@@ -245,11 +241,9 @@ class ComplianceArchiveService:
         """查询单条归档记录"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
             async with engine.connect() as conn:
@@ -282,11 +276,9 @@ class ComplianceArchiveService:
         """
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return 0
             cutoff = datetime.now() - timedelta(days=self.HOT_RETENTION_DAYS)
@@ -332,11 +324,9 @@ class ComplianceArchiveService:
         """清理超过 1 年的归档记录（含冷存储文件）"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return 0
             cutoff = datetime.now() - timedelta(days=self.COLD_RETENTION_DAYS)

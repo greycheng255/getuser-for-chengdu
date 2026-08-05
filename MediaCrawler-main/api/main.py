@@ -26,7 +26,6 @@ import json
 import os
 import sys
 import subprocess
-import tempfile
 from datetime import datetime, timedelta
 import uvicorn
 from fastapi import FastAPI
@@ -437,6 +436,28 @@ async def startup_event():
         else:
             print("[startup] 突发热点预警扫描已在运行")
     asyncio.create_task(_delayed("hotpoint_alert", _bg_hotpoint_alert()))
+
+    # 获客联系方式采集循环（从 getuser-canrun 迁移）
+    # 每 2 分钟扫描 contact_status=pending 的线索,自动采集手机号/微信号
+    async def _bg_contact_collector():
+        from api.services.contact_collector import start_contact_collector_loop
+        try:
+            await start_contact_collector_loop()
+            print("[startup] 获客联系方式采集循环已自动启动")
+        except Exception as e:
+            print(f"[startup] 获客联系方式采集循环启动失败(non-fatal): {e}")
+    asyncio.create_task(_delayed("contact_collector", _bg_contact_collector()))
+
+    # 抖音线索评论回复监测循环（从 getuser-canrun 迁移）
+    # 每 10 分钟扫描已触达线索,回扫源视频评论区捕获新回复
+    async def _bg_lead_reply_monitor():
+        from api.services.lead_comment_monitor import start_reply_monitor_loop
+        try:
+            await start_reply_monitor_loop()
+            print("[startup] 抖音线索评论回复监测循环已自动启动")
+        except Exception as e:
+            print(f"[startup] 抖音线索评论回复监测循环启动失败(non-fatal): {e}")
+    asyncio.create_task(_delayed("lead_reply_monitor", _bg_lead_reply_monitor()))
 
     # 启动统一调度定时任务（P1-10）- 原本已是 create_task，保持
     try:
@@ -1217,7 +1238,7 @@ if os.path.exists(screenshots_dir):
 
 # Mount talking_head generated files directory (videos/covers/audio)
 # 让前端能通过 /api/talking-head/files/xxx.mp4 直接访问 /tmp/talking_head/xxx.mp4
-talking_head_dir = os.path.join(tempfile.gettempdir(), "talking_head")
+talking_head_dir = "/tmp/talking_head"
 os.makedirs(talking_head_dir, exist_ok=True)
 app.mount("/api/talking-head/files", StaticFiles(directory=talking_head_dir), name="talking-head-files")
 

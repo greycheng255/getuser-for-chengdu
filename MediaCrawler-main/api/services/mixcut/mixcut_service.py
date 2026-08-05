@@ -16,7 +16,6 @@ import os
 import random
 import shutil
 import subprocess
-import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -25,7 +24,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # 默认输出目录
-MIXCUT_OUTPUT_DIR = os.path.join(tempfile.gettempdir(), "mixcut_output")
+MIXCUT_OUTPUT_DIR = "/tmp/mixcut_output"
 os.makedirs(MIXCUT_OUTPUT_DIR, exist_ok=True)
 
 

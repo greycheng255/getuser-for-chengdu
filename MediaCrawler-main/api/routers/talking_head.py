@@ -17,7 +17,6 @@
 import json
 import logging
 import os
-import tempfile
 import time
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File
@@ -212,7 +211,7 @@ async def upload_digital_human(
 
     try:
         # 保存上传的图片
-        tmp_dir = os.path.join(tempfile.gettempdir(), "talking_head")
+        tmp_dir = "/tmp/talking_head"
         os.makedirs(tmp_dir, exist_ok=True)
         ext = os.path.splitext(file.filename or "image.jpg")[1] or ".jpg"
         portrait_path = os.path.join(tmp_dir, f"portrait_{int(time.time())}{ext}")

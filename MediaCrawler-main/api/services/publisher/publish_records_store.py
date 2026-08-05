@@ -133,11 +133,9 @@ class PublishRecordsStore:
     ) -> Optional[int]:
         """保存一条发布记录，返回 record_id（失败返回 None，不抛异常）"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
 
@@ -194,11 +192,9 @@ class PublishRecordsStore:
     ) -> List[Dict[str, Any]]:
         """查询发布记录列表"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
 
@@ -238,11 +234,9 @@ class PublishRecordsStore:
     async def get_record(self, record_id: int) -> Optional[Dict[str, Any]]:
         """获取单条发布记录"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
             async with engine.connect() as conn:

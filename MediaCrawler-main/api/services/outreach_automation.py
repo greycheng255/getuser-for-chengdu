@@ -984,7 +984,7 @@ async def get_outreach_task_from_db(task_id: str) -> Optional[OutreachTask]:
     if task:
         return task
     try:
-        engine = get_async_engine(config.SAVE_DATA_OPTION)
+        engine = _get_engine()
         if not engine:
             return None
         AsyncSessionFactory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -1006,7 +1006,7 @@ async def get_outreach_task_from_db(task_id: str) -> Optional[OutreachTask]:
 async def get_all_outreach_tasks(limit: int = 100, offset: int = 0) -> List[OutreachTask]:
     """从数据库获取所有任务列表"""
     try:
-        engine = get_async_engine(config.SAVE_DATA_OPTION)
+        engine = _get_engine()
         if not engine:
             return list(_outreach_tasks.values())
         AsyncSessionFactory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -1076,7 +1076,7 @@ def _db_row_to_task(row: OutreachTaskModel) -> OutreachTask:
 async def _sync_task_to_db(task: OutreachTask):
     """将任务状态同步到数据库"""
     try:
-        engine = get_async_engine(config.SAVE_DATA_OPTION)
+        engine = _get_engine()
         if not engine:
             return
         AsyncSessionFactory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -1167,7 +1167,7 @@ async def _save_debug_screenshot(page: Page, task_id: str, step_name: str) -> Op
 
 async def _save_outreach_record(task: OutreachTask, status: str, error_message: str = "", screenshot: str = ""):
     try:
-        engine = get_async_engine(config.SAVE_DATA_OPTION)
+        engine = _get_engine()
         if engine:
             AsyncSessionFactory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
             async with AsyncSessionFactory() as session:

@@ -238,11 +238,9 @@ class ModerationService:
     async def _log_moderation(self, result: ModerationResult, full_content: str) -> Optional[int]:
         """记录审核日志到数据库"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
             async with engine.begin() as conn:
@@ -286,11 +284,9 @@ class ModerationService:
     ) -> List[Dict[str, Any]]:
         """查询审核日志"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             async with engine.connect() as conn:

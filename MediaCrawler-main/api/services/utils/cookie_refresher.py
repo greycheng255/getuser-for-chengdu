@@ -115,7 +115,7 @@ class CookieRefresher:
         (GEO-main 原版查询 platform_accounts 表,此处适配为 MediaCrawler 的用户 Cookie 表)
         """
         try:
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = _get_engine()
             if engine is None:
                 # JSON/CSV 模式下没有数据库引擎,退回空列表
                 logger.debug("[CookieRefresher] 当前存储模式无数据库引擎,跳过用户查询")
@@ -136,7 +136,7 @@ class CookieRefresher:
     async def _update_last_check_ts(self, user_id: int, platform: str) -> None:
         """更新指定用户某平台 Cookie 的最后校验时间戳"""
         try:
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = _get_engine()
             if engine is None:
                 return
             now_ms = int(time.time() * 1000)

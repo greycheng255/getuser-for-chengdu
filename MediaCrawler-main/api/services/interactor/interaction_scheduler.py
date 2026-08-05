@@ -645,11 +645,9 @@ class InteractionScheduler:
         容错：写入失败仅 log warning，不阻断主流程。
         """
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
 
@@ -758,11 +756,9 @@ class InteractionScheduler:
         if task_id in self._task_cache:
             return self._task_cache[task_id]
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
             async with engine.connect() as conn:
@@ -791,11 +787,9 @@ class InteractionScheduler:
         """查询任务列表"""
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             async with engine.connect() as conn:
@@ -820,11 +814,9 @@ class InteractionScheduler:
     async def get_pending_count(self) -> int:
         """查询待执行任务数"""
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return 0
             async with engine.connect() as conn:
@@ -842,11 +834,9 @@ class InteractionScheduler:
 
     async def _persist_task(self, task: ScheduleTask) -> None:
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
             async with engine.begin() as conn:

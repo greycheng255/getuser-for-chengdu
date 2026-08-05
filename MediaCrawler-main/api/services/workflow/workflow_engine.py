@@ -182,11 +182,9 @@ class WorkflowState:
         if self._table_ready:
             return
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 self._table_ready = True
                 return
@@ -283,11 +281,9 @@ class WorkflowState:
         """持久化单个工作流到 DB"""
         try:
             await self._ensure_table()
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return
             async with self._lock:
@@ -332,11 +328,9 @@ class WorkflowState:
     async def _load_from_db(self, wf_id: str) -> Optional[Dict]:
         try:
             await self._ensure_table()
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return None
             async with engine.connect() as conn:
@@ -363,11 +357,9 @@ class WorkflowState:
     async def _list_from_db(self, limit: int) -> List[Dict]:
         try:
             await self._ensure_table()
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = self._get_engine()
             if engine is None:
                 return []
             async with engine.connect() as conn:

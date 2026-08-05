@@ -495,6 +495,12 @@ class CrawlerTaskModel(Base):
     promo_config = Column(Text, default='', comment='推广配置JSON: 产品名称、推广链接、产品描述、价格信息、联系方式等')
     publish_time_type = Column(Integer, default=0, comment='发布时间过滤: 0=不限, 1=一天内, 7=一周内, 180=半年内')
     owner_user_id = Column(String(64), index=True, default='', comment='归属用户ID(数据隔离)')
+    # 精准获客配置(从 getuser-canrun 迁移)
+    business_intent = Column(Text, default='', comment='业务意图描述(如"寻找需要学琵琶的用户")')
+    intent_keywords = Column(Text, default='', comment='意向词 JSON 数组(严格双词匹配用)')
+    exclude_keywords = Column(Text, default='', comment='排除词 JSON 数组(命中即丢弃)')
+    target_role = Column(String(20), default='c端用户', comment='目标角色: c端用户/厂家供应商/不限')
+    target_regions = Column(Text, default='', comment='目标地区 JSON 数组(可选)')
 
 
 class TaskLogModel(Base):
@@ -543,6 +549,44 @@ class CustomerLead(Base):
     comment_url = Column(Text, default='', comment='原评论链接')
     profile_url = Column(Text, default='', comment='用户主页链接')
     platform_display_id = Column(String(255), default='', comment='平台内可搜索用户ID(如抖音号/小红书号)')
+    # 获客采集增强字段(从 getuser-canrun 迁移)
+    content_hash = Column(String(64), index=True, default='', comment='内容 md5 指纹,用于精确去重')
+    dup_count = Column(Integer, default=1, comment='重复命中次数(相似内容累加)')
+    role_tag = Column(String(20), default='', comment='角色分类: supplier/consumer/neutral')
+    contact_phone = Column(String(20), default='', comment='采集到的联系电话')
+    contact_wechat = Column(String(64), default='', comment='采集到的微信号')
+    bio_text = Column(Text, default='', comment='用户主页简介(联系方式提取来源)')
+    contact_status = Column(String(16), default='none', comment='联系方式采集状态: none/pending/found/not_found')
+    reply_monitor_ts = Column(BigInteger, default=0, comment='上次回复监控扫描时间戳')
+
+
+class LeadCommentReply(Base):
+    """线索评论回复监测表 - 监测线索用户在我们触达的视频评论区的新回复(抖音版,从 getuser-canrun 迁移)
+
+    用途: 当线索被识别/触达后,定期回扫其源视频评论区,捕获:
+    1. 同一 user_id 的新评论(线索回来再说)
+    2. 回复线索原评论的子评论(parent_comment_id == 线索 comment_id)
+    供线索转化闭环使用。
+    """
+    __tablename__ = 'lead_comment_reply'
+    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键ID')
+    lead_id = Column(Integer, index=True, comment='关联线索ID(CustomerLead.id)')
+    task_id = Column(String(255), index=True, default='', comment='关联任务ID')
+    platform = Column(String(20), default='douyin', comment='平台')
+    aweme_id = Column(String(255), index=True, default='', comment='源视频ID')
+    comment_id = Column(String(255), index=True, default='', comment='被监测到的回复评论ID')
+    parent_comment_id = Column(String(255), default='', comment='父评论ID(回复的是哪条)')
+    user_id = Column(String(255), default='', comment='回复者用户ID')
+    sec_uid = Column(String(255), default='', comment='回复者安全用户ID')
+    nickname = Column(String(255), default='', comment='回复者昵称')
+    avatar = Column(Text, default='', comment='回复者头像')
+    content = Column(Text, default='', comment='回复内容')
+    like_count = Column(String(255), default='0', comment='点赞数')
+    create_time = Column(BigInteger, default=0, comment='回复创建时间戳(秒)')
+    is_from_lead = Column(Integer, default=0, comment='是否来自线索本人: 0=否, 1=是')
+    is_read = Column(Integer, default=0, comment='是否已读: 0=否, 1=是')
+    owner_user_id = Column(String(64), index=True, default='', comment='归属用户ID(数据隔离)')
+    add_ts = Column(BigInteger, default=0, comment='采集时间戳')
 
 
 class OutreachRecord(Base):

@@ -54,11 +54,9 @@ class MaterialLibrary:
         if MaterialLibrary._ensured:
             return
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = _get_engine()
             if engine is None:
                 return
             async with engine.begin() as conn:
@@ -84,11 +82,9 @@ class MaterialLibrary:
     async def add(self, material: MarketingMaterial) -> Optional[int]:
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = _get_engine()
             if engine is None:
                 return None
             async with engine.begin() as conn:
@@ -119,11 +115,9 @@ class MaterialLibrary:
     ) -> List[Dict[str, Any]]:
         await self.ensure_table()
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = _get_engine()
             if engine is None:
                 return []
             conditions = []
@@ -169,11 +163,9 @@ class MaterialLibrary:
 
     async def delete(self, material_id: int) -> bool:
         try:
-            from database.db_session import get_async_engine
-            import config
             from sqlalchemy import text as sql_text
 
-            engine = get_async_engine(config.SAVE_DATA_OPTION)
+            engine = _get_engine()
             if engine is None:
                 return False
             async with engine.begin() as conn:
