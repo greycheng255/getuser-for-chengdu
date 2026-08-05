@@ -1,0 +1,29 @@
+{
+  "verified_at": "2026-08-05T14:00:00+08:00",
+  "portal_reachable": true,
+  "app_id": "getuser-for-chengdu",
+  "environment": "LOCAL",
+  "cluster": "dev",
+  "namespace": "application",
+  "namespace_item_count": 39,
+  "feature_flags": {
+    "UNIFIED_ACCOUNT_READ_ENABLED": "false",
+    "UNIFIED_ACCOUNT_WRITE_ENABLED": "false",
+    "LEGACY_ACCOUNT_API_ENABLED": "true",
+    "UNIFIED_SCRIPT_LIBRARY_ENABLED": "false",
+    "DOUYIN_VIDEO_PUBLISH_ENABLED": "false",
+    "XIAOHONGSHU_VIDEO_PUBLISH_ENABLED": "false"
+  },
+  "release_id": 3,
+  "release_name": "feature-20260804-stage7-safe-defaults-20260805",
+  "release_abandoned": false,
+  "config_service_url_verified": true,
+  "config_service_response_count": 39,
+  "local_runtime_loaded": true,
+  "local_runtime_keys_loaded": 39,
+  "application_server_connectivity_verified": true,
+  "application_server_bootstrap_configured": true,
+  "application_server_loader_deployed": false,
+  "runtime_config_service_verified": true,
+  "contains_secret_values": false
+}

@@ -21,10 +21,10 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from .account_service import PlatformAccountService, get_account_service
-from .base_publisher import BasePublisher
+from .base_publisher import BasePublisher, classify_publish_error
 from .content_adapter import adapt_for_platform
 from .exceptions import LoginExpiredError
-from .publish_task import PublishResult, PublishStatus, PublishTask
+from .publish_task import PublishErrorCode, PublishResult, PublishStatus, PublishTask
 from .publisher_factory import PublisherFactory
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,15 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES_PER_PLATFORM = 2
 # 平台并行并发上限（避免浏览器实例过多导致 OOM）
 MAX_CONCURRENT_PLATFORMS = 3
+
+
+def _parse_result_time(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
 
 
 class MultiPlatformPublisher:
@@ -188,7 +197,7 @@ class MultiPlatformPublisher:
                 platform=platform,
                 error=f"不支持的平台: {platform}",
                 retryable=False,
-            )
+            ).finalize()
 
         task = PublishTask(
             title=title,
@@ -197,6 +206,7 @@ class MultiPlatformPublisher:
             video_path=video_path,
             target_platforms=[platform],
             user_id=user_id,
+            task_id=str(uuid.uuid4()),
         )
         # 标记是否跳过内部 publish_records 写入（流水线场景由 Step 6.1 统一写）
         task.skip_publish_record = skip_publish_record  # type: ignore[attr-defined]
@@ -231,6 +241,11 @@ class MultiPlatformPublisher:
                     platform=platform,
                     error=f"发布异常: {e}",
                 )
+            if not result.success and not result.error_code:
+                result.error_code = classify_publish_error(
+                    result.error_message or result.error
+                ).value
+            result.finalize(task_id=task.task_id)
             task.platform_results[platform] = result
             # ===== 持久化即时发布记录（任务 P2-1，无论成功/失败/跳过） =====
             # 流水线场景由 Step 6.1 统一写记录，跳过避免重复
@@ -269,11 +284,18 @@ class MultiPlatformPublisher:
                 post_url=result.url,
                 platform_id=result.platform_id,
                 status=status,
+                error_code=result.error_code,
                 error_message=result.error,
+                retryable=result.retryable,
+                started_at=_parse_result_time(result.started_at),
+                finished_at=_parse_result_time(result.finished_at),
                 owner_user_id=task.user_id,
                 source_post_id=task.source_post_id or None,
                 metadata={
                     "retryable": result.retryable,
+                    "error_code": result.error_code,
+                    "started_at": result.started_at,
+                    "finished_at": result.finished_at,
                     "message": result.message,
                     "status_detail": result.status,
                     "skipped_reason": (
@@ -449,6 +471,7 @@ class MultiPlatformPublisher:
                     content=content,
                     images=task.images,
                     video_path=video_path,
+                    task_id=task.task_id,
                     **kwargs,
                 )
                 result.account_id = account.id
@@ -475,12 +498,20 @@ class MultiPlatformPublisher:
                     await self.account_service.mark_success(account.id)
                     return result
                 else:
-                    await self.account_service.mark_failure(account.id, result.error or "")
-                    last_error = result.error
-
-                    # 登录失效：标记账号 + 不再重试同账号
-                    if "登录已失效" in (result.error or ""):
+                    if result.error_code == PublishErrorCode.AUTH_EXPIRED.value:
                         await self.account_service.mark_login_expired(account.id)
+                    elif result.error_code in {
+                        PublishErrorCode.RATE_LIMITED.value,
+                        PublishErrorCode.CAPTCHA_REQUIRED.value,
+                    }:
+                        await self.account_service.mark_cooldown(
+                            account.id, result.error_message or result.error or ""
+                        )
+                    else:
+                        await self.account_service.mark_failure(
+                            account.id, result.error_message or result.error or ""
+                        )
+                    last_error = result.error
 
                     # 不可重试错误：立即返回
                     if not result.retryable or not BasePublisher.is_retryable_error(result.error or ""):

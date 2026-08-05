@@ -163,16 +163,22 @@ export const botAccountApi = {
 export const scriptApi = {
   list: (params: {
     platform?: string;
+    script_type?: string;
     scene?: string;
+    tag?: string;
     user_id?: number;
     limit?: number;
     offset?: number;
   } = {}) => request.get<any, any>('/interact/scripts', { params }),
   create: (data: {
     platform?: string;
+    script_type?: string;
     scene?: string;
+    title?: string;
     content: string;
     tags?: string[];
+    media_type?: string;
+    platform_constraints?: string[];
   }) => request.post<any, any>('/interact/scripts', data),
   delete: (script_id: string) => request.delete<any, any>(`/interact/scripts/${script_id}`),
   batchImport: (items: any[]) =>

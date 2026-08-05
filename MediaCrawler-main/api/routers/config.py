@@ -64,6 +64,14 @@ class KeywordCategoryUpdate(BaseModel):
     enabled: Optional[int] = None
 
 
+@router.get("/apollo-status")
+async def apollo_status(current_user: dict = Depends(get_current_user)):
+    """返回脱敏后的 Apollo 启动加载状态，不返回地址或配置值。"""
+    from config.runtime_config import get_apollo_status
+
+    return get_apollo_status()
+
+
 # ==================== 意向规则 CRUD ====================
 @router.get("/intent-rules")
 async def list_intent_rules(

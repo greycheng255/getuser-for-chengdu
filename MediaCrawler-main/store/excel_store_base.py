@@ -61,7 +61,12 @@ class ExcelStoreBase(AbstractStore):
     _lock = threading.Lock()
 
     @classmethod
-    def get_instance(cls, platform: str, crawler_type: str) -> "ExcelStoreBase":
+    def get_instance(
+        cls,
+        platform: str,
+        crawler_type: str,
+        implementation_cls=None,
+    ) -> "ExcelStoreBase":
         """
         Get or create a singleton instance for the given platform and crawler type
 
@@ -73,9 +78,14 @@ class ExcelStoreBase(AbstractStore):
             ExcelStoreBase instance
         """
         key = f"{platform}_{crawler_type}"
+        target_cls = implementation_cls or cls
         with cls._lock:
-            if key not in cls._instances:
-                cls._instances[key] = cls(platform, crawler_type)
+            if key not in cls._instances or not isinstance(cls._instances[key], target_cls):
+                # Allocate directly to avoid recursing through a platform
+                # implementation's __new__, then initialise the shared base.
+                instance = object.__new__(target_cls)
+                ExcelStoreBase.__init__(instance, platform, crawler_type)
+                cls._instances[key] = instance
             return cls._instances[key]
 
     @classmethod

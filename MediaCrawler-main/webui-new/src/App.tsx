@@ -21,7 +21,7 @@ import OpenNotebookCallback from './pages/OpenNotebookCallback';
 // PRD 缺口补全方案 6.3 节：10 个新页面
 import AlertCenter from './pages/AlertCenter';
 import VideoGenConfig from './pages/VideoGenConfig';
-import BotAccounts from './pages/BotAccounts';
+import AccountManagement from './pages/AccountManagement';
 import ReviewQueue from './pages/ReviewQueue';
 import HotpointLibrary from './pages/HotpointLibrary';
 import ScriptLibrary from './pages/ScriptLibrary';
@@ -77,7 +77,10 @@ function AnimatedRoutes() {
       <Route path="/hotpoint" element={<Navigate to="/hotpoint-library" replace />} />
       <Route path="/alert-center" element={<AlertCenter />} />
       <Route path="/video-gen-config" element={<VideoGenConfig />} />
-      <Route path="/bot-accounts" element={<BotAccounts />} />
+      <Route path="/accounts" element={<AccountManagement />} />
+      <Route path="/bot-accounts" element={<Navigate to="/accounts" replace />} />
+      <Route path="/publisher-accounts" element={<Navigate to="/accounts" replace />} />
+      <Route path="/publish/accounts" element={<Navigate to="/accounts" replace />} />
       <Route path="/review-queue" element={<ReviewQueue />} />
       <Route path="/hotpoint-library" element={<HotpointLibrary />} />
       <Route path="/script-library" element={<ScriptLibrary />} />

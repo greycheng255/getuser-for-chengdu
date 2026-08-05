@@ -39,7 +39,7 @@ from .services.cookie_manager import _ensure_env_loaded
 _ensure_env_loaded()
 print("[main] Loaded .env via cookie_manager")
 
-from .routers import crawler_router, data_router, websocket_router, customer_lead_router, tasks_router, cookies_router, auth_router, business_router, agent_router, external_api_router, config_router, notifications_router, plan_router, x_twitter_router, x_twitter_workbench_router, x_workbench_crawl_router, x_workbench_templates_router, x_workbench_analytics_router, x_workbench_export_router, x_workbench_notifications_router, x_workbench_auto_mode_router, x_workbench_advanced_router, x_workbench_ws_router, x_workbench_auto_pipeline_router, hotpoint_router, opennotebook_integration_router, publish_router, interact_router, moderation_router, scheduling_router, marketing_router, analytics_router, risk_control_router, dm_router, content_router, ai_router, workflow_router, monitoring_router, brand_router, competitor_router, keyword_router, audit_log_router, system_config_router, comment_monitor_router, local_life_router, customer_dispatch_router, ai_customer_service_router
+from .routers import crawler_router, data_router, websocket_router, customer_lead_router, tasks_router, cookies_router, auth_router, business_router, agent_router, external_api_router, config_router, notifications_router, plan_router, x_twitter_router, x_twitter_workbench_router, x_workbench_crawl_router, x_workbench_templates_router, x_workbench_analytics_router, x_workbench_export_router, x_workbench_notifications_router, x_workbench_auto_mode_router, x_workbench_advanced_router, x_workbench_ws_router, x_workbench_auto_pipeline_router, hotpoint_router, opennotebook_integration_router, publish_router, accounts_router, interact_router, moderation_router, scheduling_router, marketing_router, analytics_router, risk_control_router, dm_router, content_router, ai_router, workflow_router, monitoring_router, brand_router, competitor_router, keyword_router, audit_log_router, system_config_router, comment_monitor_router, local_life_router, customer_dispatch_router, ai_customer_service_router
 # Phase 1-3 新增路由
 from .routers.ai_pilot import router as ai_pilot_router
 from .routers.task_pool import router as task_pool_router
@@ -806,6 +806,7 @@ app.include_router(hotpoint_alert_router, prefix="/api")
 app.include_router(hotpoint_router, prefix="/api")
 app.include_router(opennotebook_integration_router, prefix="/api")
 app.include_router(publish_router, prefix="/api")
+app.include_router(accounts_router, prefix="/api")
 app.include_router(interact_router, prefix="/api")
 app.include_router(interaction_analytics_router, prefix="/api")
 app.include_router(auto_pipeline_router, prefix="/api")

@@ -26,6 +26,17 @@ from sqlalchemy import and_, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.schemas.accounts import AccountCreateRequest, AccountRole, AccountStatus, AccountUpdateRequest
+from api.services.account_feature_flags import (
+    unified_account_read_enabled,
+    unified_account_write_enabled,
+)
+from api.services.unified_account_service import (
+    AccountNotFoundError,
+    UnifiedAccountService,
+    stable_legacy_account_id,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,6 +50,7 @@ class PublisherAccount:
     """发布账号（内存模型）"""
 
     id: Optional[int] = None
+    account_id: str = ""
     user_id: int = 1
     platform: str = ""
     account_name: str = ""
@@ -66,7 +78,7 @@ class PublisherAccount:
         now = int(time.time())
         if self.cooldown_until > now:
             return False
-        if self.today_count >= self.daily_limit:
+        if self.daily_limit > 0 and self.today_count >= self.daily_limit:
             return False
         return self.is_active and self.status in ("active",)
 
@@ -74,9 +86,10 @@ class PublisherAccount:
         """转字典（可选脱敏 cookie）"""
         cookies_display = self.cookies
         if mask_cookies and cookies_display:
-            cookies_display = cookies_display[:30] + "..." if len(cookies_display) > 30 else cookies_display
+            cookies_display = "***"
         return {
             "id": self.id,
+            "account_id": self.account_id,
             "user_id": self.user_id,
             "platform": self.platform,
             "account_name": self.account_name,
@@ -114,6 +127,42 @@ class PlatformAccountService:
         """
         self._session_factory = session_factory
         self._lock = asyncio.Lock()
+        self._unified_service = UnifiedAccountService(session_factory)
+
+    async def _from_unified(
+        self,
+        item: Dict[str, Any],
+        *,
+        include_auth: bool = False,
+    ) -> PublisherAccount:
+        cookies = "***" if item.get("auth_configured") else ""
+        if include_auth:
+            auth_data = await self._unified_service.get_account_auth_data(
+                item["account_id"], item.get("owner_user_id")
+            )
+            cookies = str(auth_data.get("cookies") or auth_data.get("cookie") or "")
+        return PublisherAccount(
+            id=item.get("id"),
+            account_id=item.get("account_id", ""),
+            user_id=int(item.get("owner_user_id") or 0),
+            platform=item.get("platform", ""),
+            account_name=item.get("account_name", ""),
+            cookies=cookies,
+            status=item.get("status", "active"),
+            is_active=item.get("status") not in {"disabled", "expired", "invalid", "needs_relogin"},
+            daily_limit=item.get("daily_limit", 0),
+            today_count=item.get("today_count", 0),
+            today_date="",
+            failures=item.get("failure_count", 0),
+            successes=item.get("success_count", 0),
+            cooldown_until=item.get("cooldown_until", 0),
+            last_used_ts=item.get("last_used_ts", 0),
+            group=item.get("group_name", ""),
+            region=item.get("region", ""),
+        )
+
+    async def _get_unified_by_internal_id(self, account_id: int) -> Dict[str, Any]:
+        return await self._unified_service.get_account_by_internal_id(account_id)
 
     _ensured = False  # DDL 仅首次执行一次,避免每次请求都跑 CREATE TABLE/INDEX
 
@@ -129,6 +178,8 @@ class PlatformAccountService:
 
         复用 MediaCrawler 的 get_async_engine，避免引入新依赖。
         """
+        if unified_account_write_enabled():
+            return
         if PlatformAccountService._ensured:
             return
         engine = self._get_engine()
@@ -146,6 +197,14 @@ class PlatformAccountService:
 
     async def get_account_by_id(self, account_id: int) -> Optional[PublisherAccount]:
         """根据 ID 获取账号"""
+        if unified_account_read_enabled():
+            try:
+                item = await self._get_unified_by_internal_id(account_id)
+                if item["role"] not in {AccountRole.PUBLISHER.value, AccountRole.BOTH.value}:
+                    return None
+                return await self._from_unified(item, include_auth=True)
+            except AccountNotFoundError:
+                return None
         async with self._session_factory() as session:
             row = await session.execute(
                 _select_account_by_id(account_id)
@@ -159,6 +218,13 @@ class PlatformAccountService:
         user_id: Optional[int] = None,
     ) -> List[PublisherAccount]:
         """列出所有账号（可按平台/用户过滤）"""
+        if unified_account_read_enabled():
+            result = await self._unified_service.list_accounts_for_role(
+                role=AccountRole.PUBLISHER,
+                owner_user_id=str(user_id) if user_id is not None else None,
+                platform=platform,
+            )
+            return [await self._from_unified(item) for item in result["items"]]
         try:
             async with self._session_factory() as session:
                 stmt = select(_publisher_accounts_table())
@@ -190,6 +256,42 @@ class PlatformAccountService:
         daily_limit: int = 5,
     ) -> PublisherAccount:
         """添加或更新账号（UPSERT 模式）"""
+        if unified_account_write_enabled():
+            owner = str(user_id)
+            stable_id = stable_legacy_account_id(owner, platform, account_name or platform)
+            try:
+                existing = await self._unified_service.get_account(stable_id, owner)
+                role = (
+                    AccountRole.BOTH
+                    if existing["role"] == AccountRole.INTERACTOR.value
+                    else AccountRole(existing["role"])
+                )
+                item = await self._unified_service.update_account(
+                    stable_id,
+                    owner,
+                    AccountUpdateRequest(
+                        account_name=account_name or existing["account_name"],
+                        role=role,
+                        status=AccountStatus.ACTIVE,
+                        auth_data={"cookies": cookies},
+                        capabilities=list(dict.fromkeys(existing["capabilities"] + ["image", "video", "article"])),
+                        daily_limit=daily_limit,
+                    ),
+                )
+            except AccountNotFoundError:
+                item = await self._unified_service.create_account(
+                    owner,
+                    AccountCreateRequest(
+                        account_id=stable_id,
+                        platform=platform,
+                        account_name=account_name or f"{platform}_{int(time.time())}",
+                        role=AccountRole.PUBLISHER,
+                        auth_data={"cookies": cookies},
+                        capabilities=["image", "video", "article"],
+                        daily_limit=daily_limit,
+                    ),
+                )
+            return await self._from_unified(item, include_auth=True)
         # 表可能还未创建，先确保表存在
         try:
             await self.ensure_table()
@@ -252,6 +354,13 @@ class PlatformAccountService:
         - 全部不可用时返回 None
         - 更新 last_used_ts + today_count
         """
+        if unified_account_read_enabled():
+            item = await self._unified_service.acquire_account(
+                platform=platform,
+                role=AccountRole.PUBLISHER,
+                owner_user_id=str(user_id),
+            )
+            return await self._from_unified(item, include_auth=True) if item else None
         async with self._lock:
             accounts = await self.list_accounts(platform=platform, user_id=user_id)
             if not accounts:
@@ -332,6 +441,10 @@ class PlatformAccountService:
 
     async def mark_success(self, account_id: int):
         """标记账号使用成功"""
+        if unified_account_write_enabled():
+            item = await self._get_unified_by_internal_id(account_id)
+            await self._unified_service.mark_success(item["account_id"], item["owner_user_id"])
+            return
         async with self._session_factory() as session:
             await session.execute(
                 update(_publisher_accounts_table())
@@ -347,6 +460,10 @@ class PlatformAccountService:
 
     async def mark_failure(self, account_id: int, reason: str = ""):
         """标记账号使用失败（连续 3 次进入冷却）"""
+        if unified_account_write_enabled():
+            item = await self._get_unified_by_internal_id(account_id)
+            await self._unified_service.mark_failure(item["account_id"], item["owner_user_id"])
+            return
         async with self._session_factory() as session:
             # 先读当前 failures
             result = await session.execute(
@@ -376,8 +493,50 @@ class PlatformAccountService:
             )
             await session.commit()
 
+    async def mark_cooldown(
+        self,
+        account_id: int,
+        reason: str = "",
+        cooldown_seconds: int = COOLDOWN_SECONDS,
+    ):
+        """频控或验证码场景立即进入冷却，避免继续选择同一账号。"""
+        cooldown_seconds = max(0, int(cooldown_seconds))
+        if unified_account_write_enabled():
+            item = await self._get_unified_by_internal_id(account_id)
+            await self._unified_service.mark_failure(
+                item["account_id"],
+                item["owner_user_id"],
+                status=AccountStatus.COOLDOWN,
+                cooldown_seconds=cooldown_seconds,
+            )
+            return
+        async with self._session_factory() as session:
+            await session.execute(
+                update(_publisher_accounts_table())
+                .where(_publisher_accounts_table().c.id == account_id)
+                .values(
+                    status="cooldown",
+                    cooldown_until=int(time.time()) + cooldown_seconds,
+                    failures=0,
+                    updated_at=datetime.utcnow(),
+                )
+            )
+            await session.commit()
+        logger.warning(
+            "[AccountService] 账号 %s 进入冷却 %ss（原因: %s）",
+            account_id,
+            cooldown_seconds,
+            reason,
+        )
+
     async def mark_login_expired(self, account_id: int):
         """标记账号登录失效"""
+        if unified_account_write_enabled():
+            item = await self._get_unified_by_internal_id(account_id)
+            await self._unified_service.mark_failure(
+                item["account_id"], item["owner_user_id"], status=AccountStatus.NEEDS_RELOGIN
+            )
+            return
         async with self._session_factory() as session:
             await session.execute(
                 update(_publisher_accounts_table())
@@ -388,6 +547,9 @@ class PlatformAccountService:
 
     async def reset_daily_counts(self):
         """每日 0 点重置所有账号的今日配额（定时任务调用）"""
+        if unified_account_write_enabled():
+            await self._unified_service.reset_daily_counts(AccountRole.PUBLISHER)
+            return
         today = datetime.utcnow().strftime("%Y-%m-%d")
         async with self._session_factory() as session:
             await session.execute(
@@ -403,6 +565,40 @@ class PlatformAccountService:
         accounts = await self.list_accounts(platform=platform)
         return [a.to_dict() for a in accounts]
 
+    async def disable_account(self, account_id: int) -> bool:
+        if unified_account_write_enabled():
+            try:
+                item = await self._get_unified_by_internal_id(account_id)
+                await self._unified_service.disable_account(item["account_id"], item["owner_user_id"])
+                return True
+            except AccountNotFoundError:
+                return False
+        async with self._session_factory() as session:
+            await session.execute(
+                update(_publisher_accounts_table())
+                .where(_publisher_accounts_table().c.id == account_id)
+                .values(is_active=0, status="deleted", updated_at=datetime.utcnow())
+            )
+            await session.commit()
+        return True
+
+    async def reset_cooldown(self, account_id: int) -> bool:
+        if unified_account_write_enabled():
+            try:
+                item = await self._get_unified_by_internal_id(account_id)
+                await self._unified_service.reset_cooldown(item["account_id"], item["owner_user_id"])
+                return True
+            except AccountNotFoundError:
+                return False
+        async with self._session_factory() as session:
+            await session.execute(
+                update(_publisher_accounts_table())
+                .where(_publisher_accounts_table().c.id == account_id)
+                .values(failures=0, cooldown_until=0, status="active", is_active=1, updated_at=datetime.utcnow())
+            )
+            await session.commit()
+        return True
+
     # ==================== 账号分组管理（阶段四任务 4.3） ====================
 
     async def list_by_group(
@@ -412,6 +608,14 @@ class PlatformAccountService:
         user_id: Optional[int] = None,
     ) -> List[PublisherAccount]:
         """按分组列出账号"""
+        if unified_account_read_enabled():
+            result = await self._unified_service.list_accounts_for_role(
+                role=AccountRole.PUBLISHER,
+                owner_user_id=str(user_id) if user_id is not None else None,
+                platform=platform or None,
+                group_name=group or None,
+            )
+            return [await self._from_unified(item) for item in result["items"]]
         try:
             await self.ensure_table()
             async with self._session_factory() as session:
@@ -435,6 +639,17 @@ class PlatformAccountService:
         platform: str = "",
     ) -> List[PublisherAccount]:
         """按地域列出账号"""
+        if unified_account_read_enabled():
+            result = await self._unified_service.list_accounts_for_role(
+                role=AccountRole.PUBLISHER,
+                owner_user_id=None,
+                platform=platform or None,
+            )
+            return [
+                await self._from_unified(item)
+                for item in result["items"]
+                if not region or item.get("region") == region
+            ]
         try:
             await self.ensure_table()
             async with self._session_factory() as session:
@@ -454,6 +669,19 @@ class PlatformAccountService:
         self, account_id: int, group: str, region: str = ""
     ) -> bool:
         """设置账号分组与地域"""
+        if unified_account_write_enabled():
+            try:
+                item = await self._get_unified_by_internal_id(account_id)
+                values: Dict[str, Any] = {"group_name": group}
+                if region:
+                    values["region"] = region
+                await self._unified_service.update_account(
+                    item["account_id"], item["owner_user_id"], AccountUpdateRequest(**values)
+                )
+                return True
+            except Exception as exc:
+                logger.warning(f"[AccountService] 设置统一账号分组失败: {exc}")
+                return False
         try:
             async with self._session_factory() as session:
                 values: Dict[str, Any] = {
@@ -477,6 +705,20 @@ class PlatformAccountService:
 
     async def list_groups(self) -> List[Dict[str, Any]]:
         """列出所有已使用的分组及其账号数"""
+        if unified_account_read_enabled():
+            result = await self._unified_service.list_accounts_for_role(
+                role=AccountRole.PUBLISHER,
+                owner_user_id=None,
+            )
+            counts: Dict[tuple, int] = {}
+            for item in result["items"]:
+                if item.get("group_name"):
+                    key = (item["group_name"], item.get("region", ""))
+                    counts[key] = counts.get(key, 0) + 1
+            return [
+                {"group": key[0], "region": key[1], "count": count}
+                for key, count in sorted(counts.items())
+            ]
         try:
             await self.ensure_table()
             from sqlalchemy import func as sa_func
@@ -511,6 +753,21 @@ class PlatformAccountService:
         user_id: int = 1,
     ) -> Optional[PublisherAccount]:
         """按分组 + 地域获取可用账号（海外平台优先匹配本地 IP）"""
+        if unified_account_read_enabled():
+            item = await self._unified_service.acquire_account(
+                platform=platform,
+                role=AccountRole.PUBLISHER,
+                owner_user_id=str(user_id),
+                group_name=group or None,
+                region=region or None,
+            )
+            if item is None and (group or region):
+                item = await self._unified_service.acquire_account(
+                    platform=platform,
+                    role=AccountRole.PUBLISHER,
+                    owner_user_id=str(user_id),
+                )
+            return await self._from_unified(item, include_auth=True) if item else None
         accounts = await self.list_by_group(group=group, platform=platform, user_id=user_id)
         if not accounts and region:
             accounts = await self.list_by_region(region=region, platform=platform)
@@ -616,6 +873,7 @@ def _row_to_account(row) -> PublisherAccount:
     r = row._mapping if hasattr(row, "_mapping") else dict(row)
     return PublisherAccount(
         id=r.get("id"),
+        account_id=str(r.get("id") or ""),
         user_id=r.get("user_id", 1),
         platform=r.get("platform", ""),
         account_name=r.get("account_name", ""),

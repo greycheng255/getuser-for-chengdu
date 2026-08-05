@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.db_session import get_session
 from database.models import XTwitterPost, XTwitterComment, XTwitterVideoBreakdown, XTwitterSentComment
+from api.services.script_feature_flags import unified_script_library_enabled
 
 router = APIRouter(prefix="/x-twitter", tags=["x-twitter"])
 
@@ -339,7 +340,7 @@ async def get_reply_config():
         "keyword_match_first": getattr(app_config, "X_TWITTER_KEYWORD_MATCH_FIRST", True),
         "reply_daily_limit": getattr(app_config, "X_TWITTER_REPLY_DAILY_LIMIT", 10),
         "system_prompt": getattr(app_config, "X_TWITTER_AI_REPLY_SYSTEM_PROMPT", ""),
-        "comment_templates": app_config.X_TWITTER_COMMENT_TEMPLATES,
+        "comment_templates": [] if unified_script_library_enabled() else app_config.X_TWITTER_COMMENT_TEMPLATES,
         "scheduled_crawl_enabled": getattr(app_config, "X_TWITTER_SCHEDULED_CRAWL_ENABLED", False),
         "crawl_interval_minutes": getattr(app_config, "X_TWITTER_CRAWL_INTERVAL_MINUTES", 60),
         "batch_breakdown_size": getattr(app_config, "X_TWITTER_BATCH_BREAKDOWN_SIZE", 5),
@@ -515,7 +516,7 @@ async def batch_post_comments(req: BatchCommentRequest):
 
     batch_size = getattr(app_config, "X_TWITTER_BATCH_COMMENT_SIZE", 3)
     interval = getattr(app_config, "X_TWITTER_BATCH_INTERVAL_SECONDS", 10)
-    templates = app_config.X_TWITTER_COMMENT_TEMPLATES
+    templates = [] if unified_script_library_enabled() else app_config.X_TWITTER_COMMENT_TEMPLATES
 
     total = len(req.post_ids)
     success_count = 0
@@ -563,8 +564,26 @@ async def batch_post_comments(req: BatchCommentRequest):
                     print(f"[Batch-Comment] AI 生成评论失败 post={post_id}: {e},回退到模板")
 
             if not comment_content:
-                # 3. 兜底:模板
-                comment_content = rnd.choice(templates) if templates else "Interesting post!"
+                # 3. 统一话术库；仅关闭开关时才回退旧配置模板。
+                if unified_script_library_enabled():
+                    from api.services.interactor.script_library import get_script_library
+                    script = await get_script_library().pick_random(
+                        platform="x_twitter",
+                        script_type="comment",
+                        scene="comment_reply",
+                    )
+                    if script:
+                        comment_content = script.content
+                    else:
+                        failed_count += 1
+                        results.append({
+                            "post_id": post_id,
+                            "success": False,
+                            "error": "统一话术库没有匹配的 X/Twitter 评论话术",
+                        })
+                        continue
+                else:
+                    comment_content = rnd.choice(templates) if templates else "Interesting post!"
 
             # ===== 真实发送 =====
             try:

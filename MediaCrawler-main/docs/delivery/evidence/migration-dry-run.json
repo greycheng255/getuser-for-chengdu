@@ -1,0 +1,18 @@
+{
+  "batch_id": "dev-readonly-20260805",
+  "source_counts": {
+    "publisher_accounts": 2,
+    "bot_accounts": 1
+  },
+  "candidate_count": 3,
+  "merged_count": 0,
+  "created_count": 0,
+  "updated_count": 0,
+  "unchanged_count": 0,
+  "failed_count": 0,
+  "conflict_count": 0,
+  "failures": [],
+  "conflicts": [],
+  "mode": "dry-run",
+  "valid": true
+}

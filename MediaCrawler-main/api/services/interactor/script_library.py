@@ -31,14 +31,31 @@ class ScriptScene:
     CONVERSION = "conversion"               # 转化引导
 
 
+class ScriptType:
+    COMMENT = "comment"
+    DIRECT_MESSAGE = "direct_message"
+    PUBLISH = "publish"
+    ALL = {COMMENT, DIRECT_MESSAGE, PUBLISH}
+
+
+def infer_script_type(scene: str) -> str:
+    if scene in {ScriptScene.DIRECT_MESSAGE, ScriptScene.CONVERSION, "dm_reply"}:
+        return ScriptType.DIRECT_MESSAGE
+    return ScriptType.COMMENT
+
+
 @dataclass
 class Script:
     """话术条目"""
     script_id: str = ""
     platform: str = ""               # 平台名（空表示通用）
+    script_type: str = ScriptType.COMMENT
     scene: str = ScriptScene.COMMENT_REPLY
+    title: str = ""
     content: str = ""                # 话术内容
     tags: List[str] = field(default_factory=list)
+    media_type: str = ""
+    platform_constraints: List[str] = field(default_factory=list)
     usage_count: int = 0             # 使用次数
     owner_user_id: Optional[int] = None
     created_at: Optional[str] = None
@@ -69,9 +86,13 @@ class ScriptLibrary:
 
     _ensured = False  # DDL 仅首次执行一次，避免每次请求都跑 CREATE TABLE/INDEX
 
-    @staticmethod
-    def _get_engine():
+    def __init__(self, engine=None):
+        self._engine = engine
+
+    def _get_engine(self):
         """获取异步数据库引擎（公共方法，消除重复导入）"""
+        if self._engine is not None:
+            return self._engine
         from database.db_session import get_async_engine
         import config
         return get_async_engine(config.SAVE_DATA_OPTION)
@@ -91,14 +112,33 @@ class ScriptLibrary:
                         "CREATE TABLE IF NOT EXISTS interaction_scripts ("
                         "  script_id VARCHAR(64) PRIMARY KEY,"
                         "  platform VARCHAR(32),"
+                        "  script_type VARCHAR(32) DEFAULT 'comment',"
                         "  scene VARCHAR(32),"
+                        "  title VARCHAR(256) DEFAULT '',"
                         "  content TEXT,"
                         "  tags TEXT,"
+                        "  media_type VARCHAR(32) DEFAULT '',"
+                        "  platform_constraints TEXT DEFAULT '[]',"
                         "  usage_count INTEGER DEFAULT 0,"
                         "  owner_user_id INTEGER,"
-                        "  created_at TIMESTAMP DEFAULT NOW())"
+                        "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
                     )
                 )
+                existing_columns = await conn.run_sync(
+                    lambda sync_conn: {
+                        column["name"]
+                        for column in __import__("sqlalchemy").inspect(sync_conn).get_columns("interaction_scripts")
+                    }
+                )
+                additions = {
+                    "script_type": "VARCHAR(32) DEFAULT 'comment'",
+                    "title": "VARCHAR(256) DEFAULT ''",
+                    "media_type": "VARCHAR(32) DEFAULT ''",
+                    "platform_constraints": "TEXT DEFAULT '[]'",
+                }
+                for column, ddl in additions.items():
+                    if column not in existing_columns:
+                        await conn.execute(sql_text(f"ALTER TABLE interaction_scripts ADD COLUMN {column} {ddl}"))
                 # 查询索引（list_scripts/pick_random 高频查询路径）
                 # 复合索引覆盖 platform+scene+owner 过滤 + created_at 排序
                 await conn.execute(
@@ -133,8 +173,8 @@ class ScriptLibrary:
                         await conn.execute(
                             sql_text(
                                 "INSERT INTO interaction_scripts "
-                                "(script_id, platform, scene, content, tags, usage_count) "
-                                "VALUES (:sid, :pf, :sc, :ct, '[]', 0)"
+                                "(script_id, platform, script_type, scene, content, tags, usage_count) "
+                                "VALUES (:sid, :pf, 'comment', :sc, :ct, '[]', 0)"
                             ),
                             item,
                         )
@@ -149,15 +189,28 @@ class ScriptLibrary:
         content: str,
         tags: Optional[List[str]] = None,
         owner_user_id: Optional[int] = None,
+        script_type: Optional[str] = None,
+        title: str = "",
+        media_type: str = "",
+        platform_constraints: Optional[List[str]] = None,
     ) -> Script:
         """新增话术"""
         await self.ensure_table()
+        resolved_type = script_type or infer_script_type(scene)
+        if resolved_type not in ScriptType.ALL:
+            raise ValueError(f"不支持的话术类型: {resolved_type}")
+        if not content.strip():
+            raise ValueError("话术内容不能为空")
         script = Script(
             script_id=f"script_{uuid.uuid4().hex[:12]}",
             platform=platform,
+            script_type=resolved_type,
             scene=scene,
+            title=title,
             content=content,
             tags=tags or [],
+            media_type=media_type,
+            platform_constraints=platform_constraints or [],
             owner_user_id=owner_user_id,
             created_at=datetime.now().isoformat(),
         )
@@ -171,15 +224,20 @@ class ScriptLibrary:
                 await conn.execute(
                     sql_text(
                         "INSERT INTO interaction_scripts "
-                        "(script_id, platform, scene, content, tags, usage_count, owner_user_id, created_at) "
-                        "VALUES (:sid, :pf, :sc, :ct, :tg, 0, :ouid, :ca)"
+                        "(script_id, platform, script_type, scene, title, content, tags, media_type, "
+                        "platform_constraints, usage_count, owner_user_id, created_at) "
+                        "VALUES (:sid, :pf, :st, :sc, :ti, :ct, :tg, :mt, :pc, 0, :ouid, :ca)"
                     ),
                     {
                         "sid": script.script_id,
                         "pf": script.platform,
+                        "st": script.script_type,
                         "sc": script.scene,
+                        "ti": script.title,
                         "ct": script.content,
                         "tg": json.dumps(script.tags, ensure_ascii=False),
+                        "mt": script.media_type,
+                        "pc": json.dumps(script.platform_constraints, ensure_ascii=False),
                         "ouid": script.owner_user_id,
                         "ca": datetime.now(),
                     },
@@ -193,6 +251,8 @@ class ScriptLibrary:
         platform: str = "",
         scene: str = ScriptScene.COMMENT_REPLY,
         owner_user_id: Optional[int] = None,
+        script_type: Optional[str] = None,
+        tags: Optional[List[str]] = None,
     ) -> Optional[Script]:
         """随机选取一条话术（优先平台匹配，其次通用）"""
         await self.ensure_table()
@@ -209,9 +269,16 @@ class ScriptLibrary:
                     "WHERE scene = :sc AND (platform = :pf OR platform = '')"
                 )
                 params: Dict[str, Any] = {"sc": scene, "pf": platform}
+                if script_type:
+                    sql += " AND script_type = :st"
+                    params["st"] = script_type
                 if owner_user_id is not None:
                     sql += " AND (owner_user_id IS NULL OR owner_user_id = :ouid)"
                     params["ouid"] = owner_user_id
+                for index, tag in enumerate(tags or []):
+                    key = f"tag_{index}"
+                    sql += f" AND tags LIKE :{key}"
+                    params[key] = f'%"{tag}"%'
                 sql += " ORDER BY usage_count ASC, RANDOM() LIMIT 1"
                 rows = await conn.execute(sql_text(sql), params)
                 row = rows.fetchone()
@@ -235,6 +302,8 @@ class ScriptLibrary:
         self,
         platform: Optional[str] = None,
         scene: Optional[str] = None,
+        script_type: Optional[str] = None,
+        tag: Optional[str] = None,
         owner_user_id: Optional[int] = None,
         limit: int = 100,
         offset: int = 0,
@@ -255,6 +324,12 @@ class ScriptLibrary:
                 if scene:
                     sql += " AND scene = :sc"
                     params["sc"] = scene
+                if script_type:
+                    sql += " AND script_type = :st"
+                    params["st"] = script_type
+                if tag:
+                    sql += " AND tags LIKE :tag"
+                    params["tag"] = f'%"{tag}"%'
                 if owner_user_id is not None:
                     sql += " AND (owner_user_id IS NULL OR owner_user_id = :ouid)"
                     params["ouid"] = owner_user_id
@@ -282,6 +357,43 @@ class ScriptLibrary:
             logger.warning(f"[ScriptLibrary] delete_script failed: {e}")
             return False
 
+    async def migrate_legacy_types(self, *, dry_run: bool = True) -> Dict[str, Any]:
+        """按 scene 幂等补齐一级类型，原 scene 值保持不变。"""
+
+        await self.ensure_table()
+        report: Dict[str, Any] = {"scanned": 0, "updated": 0, "review": []}
+        engine = self._get_engine()
+        if engine is None:
+            return report
+        from sqlalchemy import text as sql_text
+        async with engine.begin() as conn:
+            rows = await conn.execute(sql_text(
+                "SELECT script_id, scene, script_type, tags FROM interaction_scripts"
+            ))
+            for row in rows.mappings().all():
+                report["scanned"] += 1
+                scene = row.get("scene") or ScriptScene.COMMENT_REPLY
+                expected = infer_script_type(scene)
+                if scene == ScriptScene.CONVERSION:
+                    try:
+                        tags = json.loads(row.get("tags") or "[]")
+                    except Exception:
+                        tags = []
+                    if "comment" in tags and "dm" not in tags:
+                        expected = ScriptType.COMMENT
+                    elif not ({"dm", "direct_message"} & set(tags)):
+                        report["review"].append({"script_id": row["script_id"], "scene": scene})
+                if row.get("script_type") != expected:
+                    report["updated"] += 1
+                    if not dry_run:
+                        await conn.execute(
+                            sql_text("UPDATE interaction_scripts SET script_type=:st WHERE script_id=:sid"),
+                            {"st": expected, "sid": row["script_id"]},
+                        )
+        report["dry_run"] = dry_run
+        report["valid"] = not report["review"]
+        return report
+
     async def batch_import(
         self,
         items: List[Dict[str, Any]],
@@ -289,14 +401,38 @@ class ScriptLibrary:
     ) -> int:
         """批量导入话术，返回成功数量"""
         count = 0
+        seen = set()
         for item in items:
             try:
+                key = (
+                    item.get("platform", ""),
+                    item.get("script_type") or infer_script_type(item.get("scene", ScriptScene.COMMENT_REPLY)),
+                    item.get("scene", ScriptScene.COMMENT_REPLY),
+                    item.get("content", "").strip(),
+                    owner_user_id,
+                )
+                if key in seen or not key[3]:
+                    continue
+                seen.add(key)
+                existing = await self.list_scripts(
+                    platform=key[0] or None,
+                    script_type=key[1],
+                    scene=key[2],
+                    owner_user_id=owner_user_id,
+                    limit=500,
+                )
+                if any(script.get("content", "").strip() == key[3] for script in existing):
+                    continue
                 await self.add_script(
                     platform=item.get("platform", ""),
                     scene=item.get("scene", ScriptScene.COMMENT_REPLY),
                     content=item.get("content", ""),
                     tags=item.get("tags", []),
                     owner_user_id=owner_user_id,
+                    script_type=item.get("script_type"),
+                    title=item.get("title", ""),
+                    media_type=item.get("media_type", ""),
+                    platform_constraints=item.get("platform_constraints", []),
                 )
                 count += 1
             except Exception as e:
@@ -304,19 +440,30 @@ class ScriptLibrary:
         return count
 
     def _row_to_script(self, row) -> Script:
+        values = row._mapping if hasattr(row, "_mapping") else row
         try:
-            tags = json.loads(row[4]) if row[4] else []
+            tags_raw = values.get("tags") if hasattr(values, "get") else None
+            tags = json.loads(tags_raw) if tags_raw else []
         except Exception:
             tags = []
+        try:
+            constraints_raw = values.get("platform_constraints") if hasattr(values, "get") else None
+            constraints = json.loads(constraints_raw) if constraints_raw else []
+        except Exception:
+            constraints = []
         return Script(
-            script_id=row[0],
-            platform=row[1] or "",
-            scene=row[2] or ScriptScene.COMMENT_REPLY,
-            content=row[3] or "",
+            script_id=values.get("script_id", ""),
+            platform=values.get("platform", "") or "",
+            script_type=values.get("script_type") or infer_script_type(values.get("scene", "")),
+            scene=values.get("scene") or ScriptScene.COMMENT_REPLY,
+            title=values.get("title", "") or "",
+            content=values.get("content", "") or "",
             tags=tags,
-            usage_count=int(row[5] or 0),
-            owner_user_id=row[6],
-            created_at=str(row[7]) if row[7] else None,
+            media_type=values.get("media_type", "") or "",
+            platform_constraints=constraints,
+            usage_count=int(values.get("usage_count") or 0),
+            owner_user_id=values.get("owner_user_id"),
+            created_at=str(values.get("created_at")) if values.get("created_at") else None,
         )
 
 

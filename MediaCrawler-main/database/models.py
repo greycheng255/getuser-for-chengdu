@@ -22,6 +22,50 @@ from sqlalchemy.orm import sessionmaker
 
 Base = declarative_base()
 
+
+class UnifiedAccount(Base):
+    """发布与互动共用的统一账号。
+
+    ``account_id`` 是 API 对外使用的稳定字符串标识；``id`` 仅供数据库内部
+    关联。认证信息以 JSON 字符串保存，任何 API 响应都不得直接返回该字段。
+    """
+
+    __tablename__ = "unified_accounts"
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_user_id",
+            "platform",
+            "account_id",
+            name="uq_unified_account_owner_platform_account",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="内部主键")
+    account_id = Column(String(64), nullable=False, index=True, comment="稳定业务账号标识")
+    owner_user_id = Column(String(64), nullable=False, default="", index=True, comment="归属系统用户ID")
+    platform = Column(String(32), nullable=False, index=True, comment="规范平台编码")
+    account_name = Column(String(128), nullable=False, default="", comment="账号显示名称")
+    role = Column(String(16), nullable=False, default="publisher", index=True, comment="publisher/interactor/both")
+    status = Column(String(32), nullable=False, default="active", index=True, comment="统一账号状态")
+    auth_data = Column(Text, nullable=False, default="{}", comment="认证信息JSON，不得通过API直接返回")
+    capabilities = Column(Text, nullable=False, default="[]", comment="账号能力JSON数组")
+    group_name = Column(String(64), nullable=False, default="", index=True, comment="账号分组")
+    region = Column(String(16), nullable=False, default="", comment="账号地域")
+    priority = Column(Integer, nullable=False, default=0, comment="调度优先级")
+    weight = Column(Integer, nullable=False, default=100, comment="调度权重")
+    health_score = Column(Integer, nullable=False, default=100, index=True, comment="健康分0-100")
+    daily_limit = Column(Integer, nullable=False, default=0, comment="每日配额，0表示不限制")
+    today_count = Column(Integer, nullable=False, default=0, comment="当日已用次数")
+    today_date = Column(String(10), nullable=False, default="", comment="当日配额日期YYYY-MM-DD")
+    success_count = Column(Integer, nullable=False, default=0, comment="累计成功次数")
+    failure_count = Column(Integer, nullable=False, default=0, comment="累计失败次数")
+    cooldown_until = Column(BigInteger, nullable=False, default=0, index=True, comment="冷却截止Unix时间戳")
+    last_used_ts = Column(BigInteger, nullable=False, default=0, index=True, comment="最近使用Unix时间戳")
+    migration_batch_id = Column(String(64), nullable=False, default="", index=True, comment="旧账号迁移批次")
+    legacy_source = Column(String(32), nullable=False, default="", comment="旧账号来源")
+    created_ts = Column(BigInteger, nullable=False, default=0, comment="创建Unix时间戳")
+    updated_ts = Column(BigInteger, nullable=False, default=0, comment="更新Unix时间戳")
+
 class BilibiliVideo(Base):
     __tablename__ = 'bilibili_video'
     id = Column(Integer, primary_key=True, comment='主键ID')

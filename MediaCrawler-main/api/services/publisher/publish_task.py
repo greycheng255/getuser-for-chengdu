@@ -25,9 +25,23 @@ class PublishStatus(str, Enum):
     SKIPPED = "skipped"  # 风控拦截 / 配额耗尽
 
 
+class PublishErrorCode(str, Enum):
+    """跨平台发布错误码。"""
+
+    AUTH_EXPIRED = "AUTH_EXPIRED"
+    CAPTCHA_REQUIRED = "CAPTCHA_REQUIRED"
+    RATE_LIMITED = "RATE_LIMITED"
+    INVALID_MEDIA = "INVALID_MEDIA"
+    CONTENT_REJECTED = "CONTENT_REJECTED"
+    UPLOAD_FAILED = "UPLOAD_FAILED"
+    SELECTOR_CHANGED = "SELECTOR_CHANGED"
+    TIMEOUT = "TIMEOUT"
+    UNKNOWN = "UNKNOWN"
+
+
 @dataclass
 class PublishResult:
-    """单平台发布结果"""
+    """单平台发布结果，统一字段与历史字段双向兼容。"""
 
     success: bool
     platform: str
@@ -40,18 +54,63 @@ class PublishResult:
     account_id: Optional[int] = None  # 用的哪个账号
     retryable: bool = True  # 是否可重试
 
+    task_id: Optional[str] = None
+    post_id: Optional[str] = None
+    post_url: Optional[str] = None
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.post_url = self.post_url or self.url
+        self.url = self.url or self.post_url
+        self.post_id = self.post_id or self.platform_id
+        self.platform_id = self.platform_id or self.post_id
+        self.error_message = self.error_message or self.error
+        self.error = self.error or self.error_message
+        if isinstance(self.error_code, PublishErrorCode):
+            self.error_code = self.error_code.value
+
+    def finalize(self, *, task_id: Optional[str] = None) -> "PublishResult":
+        """补齐统一协议字段，并返回自身。"""
+        if task_id and not self.task_id:
+            self.task_id = task_id
+        self.__post_init__()
+        if not self.started_at:
+            self.started_at = datetime.utcnow().isoformat(timespec="milliseconds") + "Z"
+        if not self.finished_at:
+            self.finished_at = datetime.utcnow().isoformat(timespec="milliseconds") + "Z"
+        if self.success:
+            self.error_code = None
+            self.error_message = None
+            self.error = None
+            self.retryable = False
+        elif not self.error_code:
+            self.error_code = PublishErrorCode.UNKNOWN.value
+        return self
+
     def to_dict(self) -> Dict[str, Any]:
+        self.__post_init__()
         return {
             "success": self.success,
             "platform": self.platform,
+            "account_id": self.account_id,
+            "task_id": self.task_id,
+            "post_id": self.post_id,
+            "post_url": self.post_url,
+            "error_code": self.error_code,
+            "error_message": self.error_message,
+            "retryable": self.retryable,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            # 兼容旧版字段
             "url": self.url,
             "platform_id": self.platform_id,
             "message": self.message,
             "status": self.status,
             "debug_info": self.debug_info,
             "error": self.error,
-            "account_id": self.account_id,
-            "retryable": self.retryable,
         }
 
 

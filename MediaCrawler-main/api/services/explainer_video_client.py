@@ -176,7 +176,7 @@ def build_explainer_prompt(
         f"- {item}" for item in key_points
     ) or "请提炼一个最重要的信息点。"
 
-    return f"""请生成一段 5 秒、9:16 竖屏、带中文解说的社交媒体短视频。
+    return f"""请生成一段 10 秒、9:16 竖屏、带中文解说的社交媒体短视频。
 
 目标：把下面的视频拆解内容压缩成一个清晰、有吸引力的解说片段。画面主体稳定，镜头运动自然，字幕简洁清楚；生成同步的自然中文旁白和轻量环境音。
 
@@ -198,7 +198,7 @@ def build_explainer_prompt(
 关键要点：
 {key_point_text}
 
-请围绕核心信息设计适合手机观看的竖屏镜头和中文解说，保证 5 秒内内容完整。"""
+请围绕核心信息设计适合手机观看的竖屏镜头和中文解说，保证 10 秒内内容完整。"""
 
 
 def _headers() -> dict[str, str]:
@@ -213,8 +213,8 @@ async def submit_explainer_video(
     prompt: str,
     image_urls: list[str],
     video_urls: list[str],
-    duration: int = 5,
-    resolution: str = "480p",
+    duration: int = 10,
+    resolution: str = "720p",
     aspect_ratio: str = "9:16",
 ) -> dict[str, Any]:
     """Check balance, submit one AI6700 media task, and return its task id.
@@ -252,9 +252,9 @@ async def submit_explainer_video(
     # duration 取整数秒；AI6700 要求字符串
     params: dict[str, Any] = {
         "version": "Mini",
-        "duration": str(int(duration)) if duration else "5",
+        "duration": str(int(duration)) if duration else "10",
         "aspect_ratio": aspect_ratio or "9:16",
-        "resolution": resolution or "480p",
+        "resolution": resolution or "720p",
     }
     reference_images = all_image_urls[:9] if is_reference_model else all_image_urls[:2]
     if reference_images:
@@ -357,8 +357,8 @@ class ExplainerVideoClient:
         prompt: str,
         image_urls: Optional[list[str]] = None,
         video_urls: Optional[list[str]] = None,
-        duration: int = 5,
-        resolution: str = "480p",
+        duration: int = 10,
+        resolution: str = "720p",
         aspect_ratio: str = "9:16",
     ) -> dict[str, Any]:
         """提交视频生成任务，返回包含 task_id 的提交结果"""
@@ -389,8 +389,8 @@ class ExplainerVideoClient:
         self,
         *,
         prompt: str,
-        duration: int = 5,
-        resolution: str = "480p",
+        duration: int = 10,
+        resolution: str = "720p",
         aspect_ratio: str = "9:16",
         voice_timbre: Optional[str] = None,
         visual_style: Optional[str] = None,

@@ -734,7 +734,11 @@ class InteractionScheduler:
         try:
             from .script_library import get_script_library
             library = get_script_library()
-            script = await library.pick_random(platform=platform, scene="comment_reply")
+            script = await library.pick_random(
+                platform=platform,
+                script_type="comment",
+                scene="comment_reply",
+            )
             if script:
                 return script.content
         except Exception:

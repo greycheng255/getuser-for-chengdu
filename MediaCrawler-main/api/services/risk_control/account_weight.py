@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from api.services.account_feature_flags import unified_account_read_enabled
+
 logger = logging.getLogger(__name__)
 
 
@@ -205,14 +207,24 @@ class AccountWeightService:
             if engine is None:
                 return factors
 
-            # 1. publisher_accounts：基础字段
+            # 1. 账号基础字段；统一读取开启后不再依赖 publisher_accounts。
             async with engine.connect() as conn:
-                rows = await conn.execute(
-                    sql_text(
+                if unified_account_read_enabled():
+                    account_sql = (
+                        "SELECT platform, account_name, status, "
+                        "CASE WHEN status IN ('active','cooldown') THEN 1 ELSE 0 END AS is_active, "
+                        "daily_limit, today_count, failure_count AS failures, "
+                        "success_count AS successes, cooldown_until, created_ts AS created_at "
+                        "FROM unified_accounts WHERE id=:i AND role IN ('publisher','both')"
+                    )
+                else:
+                    account_sql = (
                         "SELECT platform, account_name, status, is_active, daily_limit, "
                         "today_count, failures, successes, cooldown_until, created_at "
                         "FROM publisher_accounts WHERE id=:i"
-                    ),
+                    )
+                rows = await conn.execute(
+                    sql_text(account_sql),
                     {"i": account_id},
                 )
                 r = rows.fetchone()
@@ -238,7 +250,13 @@ class AccountWeightService:
                     factors.success_rate = (successes / total) if total else 1.0
                     if r[9] is not None:
                         try:
-                            created = r[9] if isinstance(r[9], datetime) else datetime.fromisoformat(str(r[9]))
+                            created = (
+                                r[9]
+                                if isinstance(r[9], datetime)
+                                else datetime.fromtimestamp(r[9])
+                                if isinstance(r[9], (int, float))
+                                else datetime.fromisoformat(str(r[9]))
+                            )
                             factors.account_age_days = max(0, (datetime.utcnow() - created).days)
                         except Exception:
                             pass
@@ -437,7 +455,20 @@ class AccountWeightService:
             if engine is None:
                 return 0
             async with engine.connect() as conn:
-                if platform:
+                if unified_account_read_enabled() and platform:
+                    rows = await conn.execute(
+                        sql_text(
+                            "SELECT id, platform FROM unified_accounts "
+                            "WHERE platform=:p AND role IN ('publisher','both') AND status='active'"
+                        ),
+                        {"p": platform},
+                    )
+                elif unified_account_read_enabled():
+                    rows = await conn.execute(sql_text(
+                        "SELECT id, platform FROM unified_accounts "
+                        "WHERE role IN ('publisher','both') AND status='active'"
+                    ))
+                elif platform:
                     rows = await conn.execute(
                         sql_text("SELECT id, platform FROM publisher_accounts WHERE platform=:p AND is_active=TRUE"),
                         {"p": platform},

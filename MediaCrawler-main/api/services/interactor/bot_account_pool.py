@@ -29,6 +29,14 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+from api.schemas.accounts import AccountCreateRequest, AccountRole, AccountStatus, AccountUpdateRequest
+from api.services.account_feature_flags import unified_account_read_enabled, unified_account_write_enabled
+from api.services.unified_account_service import (
+    AccountNotFoundError,
+    UnifiedAccountService,
+    stable_legacy_account_id,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -72,8 +80,8 @@ class BotAccount:
         d = asdict(self)
         # 不返回原始 cookie（脱敏）
         if d.get("cookie"):
-            d["cookie_masked"] = d["cookie"][:8] + "..." if len(d["cookie"]) > 8 else "***"
-            d.pop("cookie")
+            d["cookie_masked"] = "***"
+        d.pop("cookie", None)
         return d
 
 
@@ -85,6 +93,40 @@ class BotAccountPool:
     COOLDOWN_SECONDS = 1800
     _ensured = False  # DDL 仅首次执行一次，避免每次请求都跑 CREATE TABLE/INDEX
 
+    def __init__(self, session_factory=None):
+        self._unified_service = UnifiedAccountService(session_factory)
+
+    async def _from_unified(self, item: Dict[str, Any], *, include_auth: bool = False) -> BotAccount:
+        cookie = ""
+        if include_auth:
+            auth_data = await self._unified_service.get_account_auth_data(
+                item["account_id"], item.get("owner_user_id")
+            )
+            cookie = str(auth_data.get("cookies") or auth_data.get("cookie") or "")
+        cooldown_until = item.get("cooldown_until") or 0
+        last_used = item.get("last_used_ts") or 0
+        status = item.get("status", BotAccountStatus.ACTIVE.value)
+        if status == AccountStatus.COOLDOWN.value:
+            status = BotAccountStatus.COOLING.value
+        elif status in {AccountStatus.EXPIRED.value, AccountStatus.NEEDS_RELOGIN.value}:
+            status = BotAccountStatus.LOGIN_EXPIRED.value
+        owner = str(item.get("owner_user_id", ""))
+        return BotAccount(
+            account_id=item.get("account_id", ""),
+            platform=item.get("platform", ""),
+            cookie=cookie,
+            label=item.get("account_name", ""),
+            group=item.get("group_name", ""),
+            region=item.get("region", ""),
+            status=status,
+            health_score=float(item.get("health_score", 100)),
+            success_count=item.get("success_count", 0),
+            failure_count=item.get("failure_count", 0),
+            cooldown_until=datetime.fromtimestamp(cooldown_until).isoformat() if cooldown_until else None,
+            last_used_at=datetime.fromtimestamp(last_used).isoformat() if last_used else None,
+            owner_user_id=int(owner) if owner.isdigit() else None,
+        )
+
     @staticmethod
     def _get_engine():
         """获取异步数据库引擎（公共方法，消除重复导入）"""
@@ -93,6 +135,8 @@ class BotAccountPool:
         return get_async_engine(config.SAVE_DATA_OPTION)
 
     async def ensure_table(self) -> None:
+        if unified_account_write_enabled():
+            return
         if BotAccountPool._ensured:
             return
         try:
@@ -143,6 +187,45 @@ class BotAccountPool:
         extra: Optional[Dict[str, Any]] = None,
     ) -> BotAccount:
         """添加机器人账号"""
+        if unified_account_write_enabled():
+            owner = str(owner_user_id) if owner_user_id is not None else ""
+            account_name = label or f"{platform}_bot_{int(time.time())}"
+            account_id = stable_legacy_account_id(owner, platform, account_name)
+            try:
+                existing = await self._unified_service.get_account(account_id, owner)
+                role = (
+                    AccountRole.BOTH
+                    if existing["role"] == AccountRole.PUBLISHER.value
+                    else AccountRole(existing["role"])
+                )
+                item = await self._unified_service.update_account(
+                    account_id,
+                    owner,
+                    AccountUpdateRequest(
+                        account_name=account_name,
+                        role=role,
+                        status=AccountStatus.ACTIVE,
+                        auth_data={"cookies": cookie},
+                        capabilities=list(dict.fromkeys(existing["capabilities"] + ["comment", "dm"])),
+                        group_name=group,
+                        region=region,
+                    ),
+                )
+            except AccountNotFoundError:
+                item = await self._unified_service.create_account(
+                    owner,
+                    AccountCreateRequest(
+                        account_id=account_id,
+                        platform=platform,
+                        account_name=account_name,
+                        role=AccountRole.INTERACTOR,
+                        auth_data={"cookies": cookie},
+                        capabilities=["comment", "dm"],
+                        group_name=group,
+                        region=region,
+                    ),
+                )
+            return await self._from_unified(item, include_auth=True)
         await self.ensure_table()
         account = BotAccount(
             account_id=f"bot_{uuid.uuid4().hex[:12]}",
@@ -194,6 +277,15 @@ class BotAccountPool:
         owner_user_id: Optional[int] = None,
     ) -> Optional[BotAccount]:
         """获取一个可用机器人账号（轮换策略）"""
+        if unified_account_read_enabled():
+            item = await self._unified_service.acquire_account(
+                platform=platform,
+                role=AccountRole.INTERACTOR,
+                owner_user_id=str(owner_user_id) if owner_user_id is not None else None,
+                group_name=group,
+                region=region,
+            )
+            return await self._from_unified(item, include_auth=True) if item else None
         await self.ensure_table()
         try:
             from sqlalchemy import text as sql_text
@@ -246,6 +338,24 @@ class BotAccountPool:
         limit: int = 100,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
+        if unified_account_read_enabled():
+            mapped_status = status
+            if status == BotAccountStatus.COOLING.value:
+                mapped_status = AccountStatus.COOLDOWN.value
+            elif status == BotAccountStatus.LOGIN_EXPIRED.value:
+                mapped_status = AccountStatus.NEEDS_RELOGIN.value
+            status_enum = AccountStatus(mapped_status) if mapped_status else None
+            result = await self._unified_service.list_accounts_for_role(
+                role=AccountRole.INTERACTOR,
+                owner_user_id=str(owner_user_id) if owner_user_id is not None else None,
+                platform=platform,
+                group_name=group,
+                status=status_enum,
+                page=(offset // limit) + 1,
+                page_size=limit,
+            )
+            items = [item for item in result["items"] if not region or item.get("region") == region]
+            return [(await self._from_unified(item)).to_dict() for item in items]
         await self.ensure_table()
         try:
             from sqlalchemy import text as sql_text
@@ -280,6 +390,13 @@ class BotAccountPool:
 
     async def mark_success(self, account_id: str) -> None:
         """标记成功使用"""
+        if unified_account_write_enabled():
+            try:
+                item = await self._unified_service.get_account(account_id)
+                await self._unified_service.mark_success(account_id, item["owner_user_id"])
+            except AccountNotFoundError:
+                pass
+            return
         try:
             from sqlalchemy import text as sql_text
 
@@ -307,6 +424,24 @@ class BotAccountPool:
         self, account_id: str, failure_type: str = "unknown"
     ) -> Tuple[str, Optional[str]]:
         """标记失败，返回 (新状态, 冷却截止时间)"""
+        if unified_account_write_enabled():
+            try:
+                item = await self._unified_service.get_account(account_id)
+                updated = await self._unified_service.mark_failure(
+                    account_id,
+                    item["owner_user_id"],
+                    cooldown_seconds=self.COOLDOWN_SECONDS,
+                )
+                if updated["status"] == AccountStatus.COOLDOWN.value:
+                    return (
+                        BotAccountStatus.COOLING.value,
+                        datetime.fromtimestamp(updated["cooldown_until"]).isoformat(),
+                    )
+                if updated["status"] == AccountStatus.DISABLED.value:
+                    return (BotAccountStatus.DISABLED.value, None)
+                return (BotAccountStatus.ACTIVE.value, None)
+            except AccountNotFoundError:
+                return (BotAccountStatus.ACTIVE.value, None)
         try:
             from sqlalchemy import text as sql_text
 
@@ -376,6 +511,13 @@ class BotAccountPool:
             return (BotAccountStatus.ACTIVE.value, None)
 
     async def delete_account(self, account_id: str) -> bool:
+        if unified_account_write_enabled():
+            try:
+                item = await self._unified_service.get_account(account_id)
+                await self._unified_service.disable_account(account_id, item["owner_user_id"])
+                return True
+            except AccountNotFoundError:
+                return False
         try:
             from sqlalchemy import text as sql_text
 
@@ -418,6 +560,20 @@ class BotAccountPool:
 
     async def stats(self, platform: Optional[str] = None) -> Dict[str, Any]:
         """账号池统计"""
+        if unified_account_read_enabled():
+            result = await self._unified_service.list_accounts_for_role(
+                role=AccountRole.INTERACTOR,
+                owner_user_id=None,
+                platform=platform,
+            )
+            stats: Dict[str, int] = {}
+            for item in result["items"]:
+                status = item["status"]
+                if status == AccountStatus.COOLDOWN.value:
+                    status = BotAccountStatus.COOLING.value
+                stats[status] = stats.get(status, 0) + 1
+            stats["total"] = result["total"]
+            return stats
         await self.ensure_table()
         try:
             from sqlalchemy import text as sql_text

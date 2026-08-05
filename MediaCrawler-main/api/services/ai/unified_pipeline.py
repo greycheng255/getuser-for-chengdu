@@ -542,6 +542,7 @@ class UnifiedPipeline:
                 # 从话术库选取评论回复话术
                 script = await script_lib.pick_random(
                     platform=platform,
+                    script_type="comment",
                     scene=ScriptScene.COMMENT_REPLY,
                     owner_user_id=owner_user_id,
                 )

@@ -328,16 +328,22 @@ async def start_schedule_task(task_id: str):
 
 
 class ScriptCreateRequest(BaseModel):
+    script_type: str = Field("comment", description="一级类型: comment/direct_message/publish")
     platform: str = Field("", description="平台名（空表示通用）")
     scene: str = Field("comment_reply", description="场景")
+    title: str = Field("", description="发布文案标题")
     content: str = Field(..., description="话术内容")
     tags: List[str] = Field(default_factory=list, description="标签")
+    media_type: str = Field("", description="媒体类型")
+    platform_constraints: List[str] = Field(default_factory=list, description="平台约束")
 
 
 @router.get("/scripts")
 async def list_scripts(
     platform: Optional[str] = None,
+    script_type: Optional[str] = None,
     scene: Optional[str] = None,
+    tag: Optional[str] = None,
     user_id: Optional[int] = None,
     limit: int = 100,
     offset: int = 0,
@@ -346,7 +352,7 @@ async def list_scripts(
     from ..services.interactor.script_library import get_script_library
     library = get_script_library()
     scripts = await library.list_scripts(
-        platform=platform, scene=scene, owner_user_id=user_id,
+        platform=platform, script_type=script_type, scene=scene, tag=tag, owner_user_id=user_id,
         limit=limit, offset=offset,
     )
     return {"code": 0, "data": scripts}
@@ -358,7 +364,9 @@ async def create_script(req: ScriptCreateRequest):
     from ..services.interactor.script_library import get_script_library
     library = get_script_library()
     script = await library.add_script(
-        platform=req.platform, scene=req.scene, content=req.content, tags=req.tags,
+        platform=req.platform, script_type=req.script_type, scene=req.scene,
+        title=req.title, content=req.content, tags=req.tags,
+        media_type=req.media_type, platform_constraints=req.platform_constraints,
     )
     return {"code": 0, "data": script.to_dict()}
 
@@ -383,6 +391,25 @@ async def batch_import_scripts(req: ScriptBatchImportRequest):
     library = get_script_library()
     count = await library.batch_import(req.items)
     return {"code": 0, "data": {"imported": count}}
+
+
+@router.get("/scripts/random")
+async def random_script(
+    script_type: str = "comment",
+    platform: str = "",
+    scene: str = "comment_reply",
+    user_id: Optional[int] = None,
+):
+    from ..services.interactor.script_library import get_script_library
+    script = await get_script_library().pick_random(
+        platform=platform,
+        script_type=script_type,
+        scene=scene,
+        owner_user_id=user_id,
+    )
+    if script is None:
+        raise HTTPException(status_code=404, detail="没有匹配的话术")
+    return {"code": 0, "data": script.to_dict()}
 
 
 class ScriptGenerateRequest(BaseModel):
@@ -417,6 +444,7 @@ async def generate_scripts(req: ScriptGenerateRequest):
                 platform=req.platform,
                 scene=req.script_type,
                 content=v.content,
+                script_type="direct_message" if req.script_type in {"direct_message", "conversion"} else "comment",
             )
             item["script_id"] = saved.script_id
         result.append(item)

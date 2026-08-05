@@ -14,6 +14,8 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from api.services.account_feature_flags import unified_account_read_enabled
+
 logger = logging.getLogger(__name__)
 
 # 简单内存缓存: (key) -> (timestamp, data)
@@ -146,12 +148,18 @@ class AnalyticsService:
 
                 # 账号池状态
                 try:
+                    account_sql = (
+                        "SELECT platform, COUNT(*), "
+                        "SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) "
+                        "FROM unified_accounts WHERE role IN ('publisher','both') GROUP BY platform"
+                        if unified_account_read_enabled()
+                        else
+                        "SELECT platform, COUNT(*), "
+                        "SUM(CASE WHEN status='active' AND is_active=1 THEN 1 ELSE 0 END) "
+                        "FROM publisher_accounts GROUP BY platform"
+                    )
                     rows = await conn.execute(
-                        sql_text(
-                            "SELECT platform, COUNT(*), "
-                            "SUM(CASE WHEN status='active' AND is_active=1 THEN 1 ELSE 0 END) "
-                            "FROM publisher_accounts GROUP BY platform"
-                        )
+                        sql_text(account_sql)
                     )
                     account_stats = [
                         {"platform": r[0], "total": r[1], "active": r[2]}

@@ -72,13 +72,26 @@ class PublishRecordsStore:
                         "  post_url TEXT,"
                         "  platform_id VARCHAR(128),"
                         "  status VARCHAR(32) NOT NULL,"
+                        "  error_code VARCHAR(32),"
                         "  error_message TEXT,"
+                        "  retryable BOOLEAN DEFAULT FALSE,"
+                        "  started_at TIMESTAMPTZ,"
+                        "  finished_at TIMESTAMPTZ,"
                         "  owner_user_id BIGINT,"
                         "  source_post_id VARCHAR(128),"
                         "  published_at TIMESTAMPTZ DEFAULT NOW(),"
                         "  metadata JSONB)"
                     )
                 )
+                for column_ddl in (
+                    "error_code VARCHAR(32)",
+                    "retryable BOOLEAN DEFAULT FALSE",
+                    "started_at TIMESTAMPTZ",
+                    "finished_at TIMESTAMPTZ",
+                ):
+                    await conn.execute(sql_text(
+                        f"ALTER TABLE {self.TABLE_NAME} ADD COLUMN IF NOT EXISTS {column_ddl}"
+                    ))
                 await conn.execute(
                     sql_text(
                         "CREATE INDEX IF NOT EXISTS idx_publish_records_platform "
@@ -125,7 +138,11 @@ class PublishRecordsStore:
         post_url: Optional[str] = None,
         platform_id: Optional[str] = None,
         status: str = "success",  # success / failed / skipped
+        error_code: Optional[str] = None,
         error_message: Optional[str] = None,
+        retryable: bool = False,
+        started_at: Optional[datetime] = None,
+        finished_at: Optional[datetime] = None,
         owner_user_id: Optional[int] = None,
         source_post_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -149,9 +166,10 @@ class PublishRecordsStore:
                         "INSERT INTO publish_records "
                         "(task_id, platform, account_id, title, content, video_path, "
                         " post_url, platform_id, status, error_message, owner_user_id, "
-                        " source_post_id, published_at, metadata) "
+                        " source_post_id, published_at, metadata, error_code, retryable, "
+                        " started_at, finished_at) "
                         "VALUES (:tid, :pf, :aid, :title, :content, :vp, :pu, :pid, "
-                        "        :st, :em, :ouid, :spid, :pa, :md) "
+                        "        :st, :em, :ouid, :spid, :pa, :md, :ec, :retry, :sa, :fa) "
                         "RETURNING record_id"
                     ),
                     {
@@ -165,6 +183,10 @@ class PublishRecordsStore:
                         "pid": platform_id,
                         "st": status,
                         "em": (error_message or "")[:4000] if error_message else None,
+                        "ec": error_code,
+                        "retry": bool(retryable),
+                        "sa": started_at,
+                        "fa": finished_at,
                         "ouid": owner_user_id,
                         "spid": source_post_id,
                         "pa": published_at_val,
@@ -220,7 +242,8 @@ class PublishRecordsStore:
             sql = (
                 "SELECT record_id, task_id, platform, account_id, title, content, "
                 "  video_path, post_url, platform_id, status, error_message, "
-                "  owner_user_id, source_post_id, published_at, metadata "
+                "  owner_user_id, source_post_id, published_at, metadata, error_code, "
+                "  retryable, started_at, finished_at "
                 f"FROM {self.TABLE_NAME} {where_sql} "
                 "ORDER BY published_at DESC LIMIT :limit OFFSET :offset"
             )
@@ -244,7 +267,8 @@ class PublishRecordsStore:
                     sql_text(
                         "SELECT record_id, task_id, platform, account_id, title, content, "
                         "  video_path, post_url, platform_id, status, error_message, "
-                        "  owner_user_id, source_post_id, published_at, metadata "
+                        "  owner_user_id, source_post_id, published_at, metadata, error_code, "
+                        "  retryable, started_at, finished_at "
                         f"FROM {self.TABLE_NAME} WHERE record_id = :rid"
                     ),
                     {"rid": record_id},
@@ -283,6 +307,10 @@ class PublishRecordsStore:
             "platform_id": r.get("platform_id"),
             "status": r.get("status"),
             "error_message": r.get("error_message"),
+            "error_code": r.get("error_code"),
+            "retryable": bool(r.get("retryable")),
+            "started_at": r.get("started_at").isoformat() if hasattr(r.get("started_at"), "isoformat") else r.get("started_at"),
+            "finished_at": r.get("finished_at").isoformat() if hasattr(r.get("finished_at"), "isoformat") else r.get("finished_at"),
             "owner_user_id": r.get("owner_user_id"),
             "source_post_id": r.get("source_post_id"),
             "published_at": published_at,

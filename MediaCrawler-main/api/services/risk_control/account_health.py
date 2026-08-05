@@ -16,6 +16,10 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from api.schemas.accounts import AccountRole
+from api.services.account_feature_flags import unified_account_read_enabled
+from api.services.unified_account_service import AccountNotFoundError, get_unified_account_service
+
 logger = logging.getLogger(__name__)
 
 
@@ -85,6 +89,20 @@ class AccountHealthService:
 
     async def get_health(self, account_id: int) -> Optional[AccountHealth]:
         """获取单个账号健康度"""
+        if unified_account_read_enabled():
+            try:
+                item = await get_unified_account_service().get_account_by_internal_id(account_id)
+            except AccountNotFoundError:
+                return None
+            if item["role"] not in {AccountRole.PUBLISHER.value, AccountRole.BOTH.value}:
+                return None
+            row = (
+                item["id"], item["platform"], item["account_name"], item["status"],
+                item["status"] not in {"disabled", "expired", "invalid", "needs_relogin"},
+                item["daily_limit"], item["today_count"], item["failure_count"],
+                item["success_count"], item["cooldown_until"],
+            )
+            return self._compute_health(row)
         try:
             from sqlalchemy import text as sql_text
 
@@ -110,6 +128,34 @@ class AccountHealthService:
 
     async def list_health_by_platform(self, platform: str = "") -> List[Dict[str, Any]]:
         """列出所有账号健康度"""
+        if unified_account_read_enabled():
+            result = await get_unified_account_service().list_accounts_for_role(
+                role=AccountRole.PUBLISHER,
+                owner_user_id=None,
+                platform=platform or None,
+            )
+            results = []
+            for item in result["items"]:
+                h = self._compute_health((
+                    item["id"], item["platform"], item["account_name"], item["status"],
+                    item["status"] not in {"disabled", "expired", "invalid", "needs_relogin"},
+                    item["daily_limit"], item["today_count"], item["failure_count"],
+                    item["success_count"], item["cooldown_until"],
+                ))
+                results.append({
+                    "account_id": h.account_id,
+                    "platform": h.platform,
+                    "account_name": h.account_name,
+                    "health_score": h.health_score,
+                    "health_level": h.health_level,
+                    "successes": h.successes,
+                    "failures": h.failures,
+                    "in_cooldown": h.in_cooldown,
+                    "today_count": h.today_count,
+                    "daily_limit": h.daily_limit,
+                    "anomalies": h.anomalies,
+                })
+            return results
         try:
             from sqlalchemy import text as sql_text
 

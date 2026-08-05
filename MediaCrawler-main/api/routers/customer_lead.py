@@ -187,7 +187,7 @@ async def list_leads(
     """获取获客线索列表(按用户隔离)
 
     Args:
-        level: 意向等级筛选 high(>=80) / medium(50-79) / low(<50),与 min_score/max_score 互斥补充
+        level: 意向等级筛选 high(>=50) / medium(25-49) / low(<25),与 min_score/max_score 互斥补充
         role_tag: 角色标签筛选 supplier供方/consumer需求方/neutral中性
     """
     import json
@@ -265,11 +265,11 @@ def _apply_lead_filters(query, task_id, platform, intent_type, status, min_score
     if level:
         lvl = level.lower()
         if lvl == "high":
-            query = query.where(CustomerLead.lead_score >= 80)
+            query = query.where(CustomerLead.lead_score >= 50)
         elif lvl == "medium":
-            query = query.where(CustomerLead.lead_score >= 50).where(CustomerLead.lead_score < 80)
+            query = query.where(CustomerLead.lead_score >= 25).where(CustomerLead.lead_score < 50)
         elif lvl == "low":
-            query = query.where(CustomerLead.lead_score < 50)
+            query = query.where(CustomerLead.lead_score < 25)
     if min_score is not None:
         query = query.where(CustomerLead.lead_score >= min_score)
     if max_score is not None:
@@ -415,7 +415,7 @@ async def export_leads(
     role_map = {"supplier": "合作厂家", "consumer": "需求方", "neutral": "中性"}
 
     def _build_row(lead):
-        level_cn = "高" if lead.lead_score >= 80 else ("中" if lead.lead_score >= 50 else "低")
+        level_cn = "高" if lead.lead_score >= 50 else ("中" if lead.lead_score >= 25 else "低")
         platform_cn = platform_map.get(lead.platform or "", lead.platform or "")
         intent_cn = intent_map.get(lead.intent_type or "", lead.intent_type or "")
         status_cn = status_map.get(lead.status or "", lead.status or "")
@@ -588,11 +588,11 @@ async def get_lead_regions(
         if level:
             lvl = level.lower()
             if lvl == "high":
-                query = query.where(CustomerLead.lead_score >= 80)
+                query = query.where(CustomerLead.lead_score >= 50)
             elif lvl == "medium":
-                query = query.where(CustomerLead.lead_score >= 50).where(CustomerLead.lead_score < 80)
+                query = query.where(CustomerLead.lead_score >= 25).where(CustomerLead.lead_score < 50)
             elif lvl == "low":
-                query = query.where(CustomerLead.lead_score < 50)
+                query = query.where(CustomerLead.lead_score < 25)
         query = query.group_by(CustomerLead.ip_location).order_by(desc("cnt")).limit(limit)
         result = await session.execute(query)
         return [{"ip_location": r[0], "count": r[1]} for r in result]
@@ -1040,7 +1040,7 @@ class BatchContactRequest(BaseModel):
     role_tag: Optional[str] = None
     ip_location: Optional[str] = None
     status: Optional[str] = None
-    # 意向等级筛选(high>=80 / medium 50-79 / low<50),与列表查询 level 参数一致
+    # 意向等级筛选(high>=50 / medium 25-49 / low<25),与列表查询 level 参数一致
     level: Optional[str] = None
     # 日期范围筛选(毫秒级,与列表筛选一致,优先用 create_time 评论发布时间)
     start_ts: Optional[int] = None
@@ -1088,11 +1088,11 @@ async def collect_contacts_batch(request: BatchContactRequest, current_user: dic
             if request.level:
                 lvl = request.level.lower()
                 if lvl == "high":
-                    q = q.where(CustomerLead.lead_score >= 80)
+                    q = q.where(CustomerLead.lead_score >= 50)
                 elif lvl == "medium":
-                    q = q.where(CustomerLead.lead_score >= 50).where(CustomerLead.lead_score < 80)
+                    q = q.where(CustomerLead.lead_score >= 25).where(CustomerLead.lead_score < 50)
                 elif lvl == "low":
-                    q = q.where(CustomerLead.lead_score < 50)
+                    q = q.where(CustomerLead.lead_score < 25)
             # 日期范围筛选:与列表一致,优先用 create_time(评论发布时间,秒级),fallback 到 add_ts(毫秒级)
             if request.start_ts is not None:
                 q = q.where(
@@ -1186,11 +1186,11 @@ async def monitor_task_replies_ep(
             # 意向等级筛选:与列表 _apply_lead_filters 的 level 逻辑完全一致
             lvl = (filters.get("level") or "").lower() if filters.get("level") else ""
             if lvl == "high":
-                q = q.where(CustomerLead.lead_score >= 80)
+                q = q.where(CustomerLead.lead_score >= 50)
             elif lvl == "medium":
-                q = q.where(CustomerLead.lead_score >= 50).where(CustomerLead.lead_score < 80)
+                q = q.where(CustomerLead.lead_score >= 25).where(CustomerLead.lead_score < 50)
             elif lvl == "low":
-                q = q.where(CustomerLead.lead_score < 50)
+                q = q.where(CustomerLead.lead_score < 25)
             if filters.get("start_ts") is not None:
                 q = q.where(
                     func.coalesce(CustomerLead.create_time * 1000, CustomerLead.add_ts) >= int(filters["start_ts"])
@@ -1301,4 +1301,3 @@ async def mark_lead_replies_read(lead_id: int, current_user: dict = Depends(get_
         )
         await session.commit()
     return {"success": True, "message": "已标记为已读"}
-

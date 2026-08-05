@@ -1,0 +1,279 @@
+{
+  "generated_at": "2026-08-05T05:50:22.990432+00:00",
+  "tables": {
+    "publisher_accounts": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "user_id",
+          "type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "platform",
+          "type": "VARCHAR(32)",
+          "nullable": false
+        },
+        {
+          "name": "account_name",
+          "type": "VARCHAR(128)",
+          "nullable": false
+        },
+        {
+          "name": "cookies",
+          "type": "VARCHAR(8192)",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR(32)",
+          "nullable": false
+        },
+        {
+          "name": "is_active",
+          "type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "daily_limit",
+          "type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "today_count",
+          "type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "today_date",
+          "type": "VARCHAR(10)",
+          "nullable": false
+        },
+        {
+          "name": "last_login_time",
+          "type": "TIMESTAMP",
+          "nullable": true
+        },
+        {
+          "name": "last_publish_time",
+          "type": "TIMESTAMP",
+          "nullable": true
+        },
+        {
+          "name": "cookie_expires_at",
+          "type": "TIMESTAMP",
+          "nullable": true
+        },
+        {
+          "name": "failures",
+          "type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "successes",
+          "type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "cooldown_until",
+          "type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "last_used_ts",
+          "type": "INTEGER",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMP",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "TIMESTAMP",
+          "nullable": false
+        },
+        {
+          "name": "group",
+          "type": "VARCHAR(64)",
+          "nullable": true
+        },
+        {
+          "name": "region",
+          "type": "VARCHAR(32)",
+          "nullable": true
+        }
+      ],
+      "sensitive_columns_present": [
+        "cookies"
+      ],
+      "row_count": 2,
+      "distributions": {
+        "platform": {
+          "x_twitter": 2
+        },
+        "status": {
+          "active": 2
+        }
+      }
+    },
+    "bot_accounts": {
+      "columns": [
+        {
+          "name": "account_id",
+          "type": "VARCHAR(64)",
+          "nullable": false
+        },
+        {
+          "name": "platform",
+          "type": "VARCHAR(32)",
+          "nullable": false
+        },
+        {
+          "name": "cookie",
+          "type": "TEXT",
+          "nullable": true
+        },
+        {
+          "name": "label",
+          "type": "VARCHAR(128)",
+          "nullable": true
+        },
+        {
+          "name": "account_group",
+          "type": "VARCHAR(32)",
+          "nullable": true
+        },
+        {
+          "name": "region",
+          "type": "VARCHAR(16)",
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR(16)",
+          "nullable": true
+        },
+        {
+          "name": "health_score",
+          "type": "DOUBLE PRECISION",
+          "nullable": true
+        },
+        {
+          "name": "success_count",
+          "type": "INTEGER",
+          "nullable": true
+        },
+        {
+          "name": "failure_count",
+          "type": "INTEGER",
+          "nullable": true
+        },
+        {
+          "name": "cooldown_until",
+          "type": "TIMESTAMP",
+          "nullable": true
+        },
+        {
+          "name": "last_used_at",
+          "type": "TIMESTAMP",
+          "nullable": true
+        },
+        {
+          "name": "owner_user_id",
+          "type": "INTEGER",
+          "nullable": true
+        },
+        {
+          "name": "extra",
+          "type": "TEXT",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMP",
+          "nullable": true
+        }
+      ],
+      "sensitive_columns_present": [
+        "cookie"
+      ],
+      "row_count": 1,
+      "distributions": {
+        "platform": {
+          "x_twitter": 1
+        },
+        "status": {
+          "active": 1
+        }
+      }
+    },
+    "interaction_scripts": {
+      "columns": [
+        {
+          "name": "script_id",
+          "type": "VARCHAR(64)",
+          "nullable": false
+        },
+        {
+          "name": "platform",
+          "type": "VARCHAR(32)",
+          "nullable": true
+        },
+        {
+          "name": "scene",
+          "type": "VARCHAR(32)",
+          "nullable": true
+        },
+        {
+          "name": "content",
+          "type": "TEXT",
+          "nullable": true
+        },
+        {
+          "name": "tags",
+          "type": "TEXT",
+          "nullable": true
+        },
+        {
+          "name": "usage_count",
+          "type": "INTEGER",
+          "nullable": true
+        },
+        {
+          "name": "owner_user_id",
+          "type": "INTEGER",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "TIMESTAMP",
+          "nullable": true
+        }
+      ],
+      "sensitive_columns_present": [],
+      "row_count": 16,
+      "distributions": {
+        "platform": {
+          "<empty>": 2,
+          "bilibili": 2,
+          "douyin": 4,
+          "kuaishou": 1,
+          "weibo": 1,
+          "x": 2,
+          "x_twitter": 1,
+          "xiaohongshu": 2,
+          "zhihu": 1
+        },
+        "scene": {
+          "comment_reply": 16
+        }
+      }
+    }
+  }
+}

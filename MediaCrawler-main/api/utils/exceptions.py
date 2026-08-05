@@ -122,9 +122,14 @@ def _make_error_response(
     data: Any = None,
     request_id: Optional[str] = None,
     http_status: int = 400,
+    detail: Any = None,
 ) -> JSONResponse:
     """构造统一的错误 JSONResponse"""
     body = {"code": code, "message": message, "data": data}
+    if detail is not None:
+        # Keep FastAPI's historical ``detail`` field for existing clients while
+        # retaining the unified error envelope used by newer clients.
+        body["detail"] = detail
     if request_id:
         body["request_id"] = request_id
     return JSONResponse(status_code=http_status, content=body, headers={"X-Request-ID": request_id or ""})
@@ -184,6 +189,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             message=str(exc.detail),
             request_id=rid,
             http_status=exc.status_code,
+            detail=exc.detail,
         )
 
     @app.exception_handler(Exception)

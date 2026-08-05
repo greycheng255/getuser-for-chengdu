@@ -5,10 +5,13 @@ declare module 'axios' {
   export interface AxiosRequestConfig {
     /** 计费/非幂等 POST 可禁止拦截器自动重试。 */
     skipRetry?: boolean;
+    /** 请求体包含认证信息时禁止把 Axios 配置对象输出到控制台。 */
+    sensitive?: boolean;
   }
 
   export interface InternalAxiosRequestConfig {
     skipRetry?: boolean;
+    sensitive?: boolean;
   }
 }
 
@@ -69,7 +72,15 @@ request.interceptors.response.use(
       window.location.href = '/login';
     }
 
-    console.error('API Error:', error);
+    if (config.sensitive) {
+      console.error('敏感 API 请求失败', {
+        url: config.url,
+        method: config.method,
+        status: error.response?.status,
+      });
+    } else {
+      console.error('API Error:', error);
+    }
     return Promise.reject(error);
   }
 );

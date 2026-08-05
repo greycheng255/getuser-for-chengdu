@@ -21,7 +21,7 @@ from typing import Optional, Literal
 from pydantic import BaseModel, Field
 
 
-MAX_API_LIMIT_COUNT = 50000
+MAX_API_LIMIT_COUNT = 10000
 
 
 class PlatformEnum(str, Enum):

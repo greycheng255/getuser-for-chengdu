@@ -469,6 +469,12 @@ async def get_review(review_id: str):
 bot_account_router = APIRouter(prefix="/interact/bot-accounts", tags=["bot-accounts"])
 
 
+def _ensure_legacy_account_api() -> None:
+    from api.services.account_feature_flags import legacy_account_api_enabled
+    if not legacy_account_api_enabled():
+        raise HTTPException(status_code=404, detail="旧机器人账号接口已关闭，请使用 /api/accounts")
+
+
 class AddBotAccountRequest(BaseModel):
     platform: str
     cookie: str
@@ -488,6 +494,7 @@ class BatchAddBotRequest(BaseModel):
 
 @bot_account_router.post("")
 async def add_bot_account(req: AddBotAccountRequest):
+    _ensure_legacy_account_api()
     pool = get_bot_account_pool()
     acc = await pool.add_account(
         platform=req.platform,
@@ -502,6 +509,7 @@ async def add_bot_account(req: AddBotAccountRequest):
 
 @bot_account_router.post("/batch")
 async def batch_add(req: BatchAddBotRequest):
+    _ensure_legacy_account_api()
     pool = get_bot_account_pool()
     accounts = await pool.batch_add_from_cookies(
         platform=req.platform,
@@ -526,6 +534,7 @@ async def list_bot_accounts(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
+    _ensure_legacy_account_api()
     pool = get_bot_account_pool()
     items = await pool.list_accounts(
         platform=platform,
@@ -541,6 +550,7 @@ async def list_bot_accounts(
 
 @bot_account_router.delete("/{account_id}")
 async def delete_bot_account(account_id: str):
+    _ensure_legacy_account_api()
     pool = get_bot_account_pool()
     ok = await pool.delete_account(account_id)
     return {"code": 0 if ok else 5000, "data": {"success": ok}}
@@ -548,12 +558,14 @@ async def delete_bot_account(account_id: str):
 
 @bot_account_router.get("/stats")
 async def bot_stats(platform: Optional[str] = Query(None)):
+    _ensure_legacy_account_api()
     pool = get_bot_account_pool()
     return {"code": 0, "data": await pool.stats(platform)}
 
 
 @bot_account_router.get("/groups")
 async def list_groups():
+    _ensure_legacy_account_api()
     return {
         "code": 0,
         "data": {

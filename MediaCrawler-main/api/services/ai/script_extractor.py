@@ -8,6 +8,7 @@
 对标超级IP智能体的"自动提取对标文案"功能。
 """
 import asyncio
+import json
 import logging
 import os
 import re
@@ -839,8 +840,24 @@ def _get_platform_cookies_file(platform: str, video_url: str = "") -> str | None
                 timeout=10,
             )
             try:
+                from api.schemas.accounts import normalize_platform
+                from api.services.account_feature_flags import unified_account_read_enabled
+                if unified_account_read_enabled():
+                    row = await conn.fetchrow(
+                        "SELECT auth_data FROM unified_accounts "
+                        "WHERE platform=$1 AND role IN ('publisher','both') AND status='active' "
+                        "ORDER BY updated_ts DESC LIMIT 1",
+                        normalize_platform(platform),
+                    )
+                    if not row:
+                        return None
+                    auth_data = row["auth_data"]
+                    if isinstance(auth_data, str):
+                        auth_data = json.loads(auth_data or "{}")
+                    return (auth_data or {}).get("cookies") or (auth_data or {}).get("cookie")
                 row = await conn.fetchrow(
-                    "SELECT cookies FROM publisher_accounts WHERE platform=$1 AND is_active=1 AND status!='banned' ORDER BY updated_at DESC LIMIT 1",
+                    "SELECT cookies FROM publisher_accounts WHERE platform=$1 AND is_active=1 "
+                    "AND status!='banned' ORDER BY updated_at DESC LIMIT 1",
                     platform,
                 )
                 return row["cookies"] if row else None

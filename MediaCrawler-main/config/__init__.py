@@ -18,6 +18,10 @@
 # 使用本代码即表示您同意遵守上述原则和LICENSE中的所有条款。
 
 
+from .runtime_config import load_runtime_environment
+
+load_runtime_environment()
+
 from .base_config import *
 from .db_config import *
 from .onellm_config import *

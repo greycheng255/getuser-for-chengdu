@@ -1,0 +1,26 @@
+{
+  "batch_id": "dev-readonly-20260805",
+  "source_counts": {
+    "publisher_accounts": 2,
+    "bot_accounts": 1
+  },
+  "candidate_count": 3,
+  "merged_count": 0,
+  "created_count": 0,
+  "updated_count": 0,
+  "unchanged_count": 0,
+  "failed_count": 0,
+  "conflict_count": 0,
+  "failures": [],
+  "conflicts": [],
+  "mode": "validate",
+  "target_table_exists": false,
+  "covered_count": 0,
+  "missing_account_ids": [
+    "legacy_45b6db9a03c615a59c3f455f",
+    "legacy_4cb4ce9a2eca2c6e9e7cdc60",
+    "legacy_9558e0435b814693dd2781c2"
+  ],
+  "coverage_rate": 0.0,
+  "valid": false
+}

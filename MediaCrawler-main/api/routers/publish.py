@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from api.services.account_feature_flags import legacy_account_api_enabled
 from pydantic import BaseModel, Field
 
 from ..services.publisher import (
@@ -233,6 +234,8 @@ async def list_accounts(
     user_id: Optional[int] = Query(None),
 ):
     """列出所有账号（可按平台/用户过滤）"""
+    if not legacy_account_api_enabled():
+        raise HTTPException(status_code=404, detail="旧发布账号接口已关闭，请使用 /api/accounts")
     service = get_account_service()
     accounts = await service.list_accounts(platform=platform, user_id=user_id)
     return {
@@ -244,6 +247,8 @@ async def list_accounts(
 @router.post("/accounts")
 async def create_account(req: AccountCreateRequest):
     """添加账号"""
+    if not legacy_account_api_enabled():
+        raise HTTPException(status_code=404, detail="旧发布账号接口已关闭，请使用 /api/accounts")
     if not get_platform_meta(req.platform):
         raise HTTPException(status_code=400, detail=f"未知平台: {req.platform}")
 
@@ -261,41 +266,20 @@ async def create_account(req: AccountCreateRequest):
 @router.delete("/accounts/{account_id}")
 async def delete_account(account_id: int):
     """删除账号（标记 is_active=False）"""
-    # 简化实现：直接软删除
-    from sqlalchemy import update as sa_update
-    from database.db_session import get_session
-    from ..services.publisher.account_service import _publisher_accounts_table
-
-    async with get_session() as session:
-        await session.execute(
-            sa_update(_publisher_accounts_table())
-            .where(_publisher_accounts_table().c.id == account_id)
-            .values(is_active=0, status="deleted", updated_at=datetime.utcnow())
-        )
-        await session.commit()
+    if not legacy_account_api_enabled():
+        raise HTTPException(status_code=404, detail="旧发布账号接口已关闭，请使用 /api/accounts")
+    if not await get_account_service().disable_account(account_id):
+        raise HTTPException(status_code=404, detail="账号不存在")
     return {"success": True, "account_id": account_id}
 
 
 @router.post("/accounts/{account_id}/reset-cooldown")
 async def reset_cooldown(account_id: int):
     """重置账号冷却状态"""
-    from sqlalchemy import update as sa_update
-    from database.db_session import get_session
-    from ..services.publisher.account_service import _publisher_accounts_table
-
-    async with get_session() as session:
-        await session.execute(
-            sa_update(_publisher_accounts_table())
-            .where(_publisher_accounts_table().c.id == account_id)
-            .values(
-                failures=0,
-                cooldown_until=0,
-                status="active",
-                is_active=1,
-                updated_at=datetime.utcnow(),
-            )
-        )
-        await session.commit()
+    if not legacy_account_api_enabled():
+        raise HTTPException(status_code=404, detail="旧发布账号接口已关闭，请使用 /api/accounts")
+    if not await get_account_service().reset_cooldown(account_id):
+        raise HTTPException(status_code=404, detail="账号不存在")
     return {"success": True, "account_id": account_id}
 
 

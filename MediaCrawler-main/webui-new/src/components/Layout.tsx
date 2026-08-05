@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Layout as AntLayout, Menu, Badge, Button, theme, Popover, Dropdown, Avatar } from 'antd';
+import { Layout as AntLayout, Menu, Badge, Button, theme, Popover, Dropdown, Avatar, type MenuProps } from 'antd';
 import {
   DashboardOutlined,
   UserOutlined,
@@ -41,6 +41,12 @@ import HotpointAlertToast from './HotpointAlertToast';
 import { authStorage } from '../api/auth';
 
 const { Header, Sider, Content } = AntLayout;
+
+declare global {
+  interface Window {
+    __restartOnboarding?: () => void;
+  }
+}
 
 const roleLabels: Record<string, string> = {
   admin: '管理员',
@@ -161,7 +167,7 @@ const Layout: React.FC<LayoutProps> = ({ children, isDark, onThemeChange }) => {
       label: '账号与互动',
       children: [
         { key: '/x-workbench', icon: <TwitterOutlined />, label: '互动监控', requiredPermission: 'interactor:view' },
-        { key: '/bot-accounts', icon: <RobotOutlined />, label: '机器人账号', requiredPermission: 'interactor:config' },
+        { key: '/accounts', icon: <TeamOutlined />, label: '账号管理' },
         { key: '/interaction-config', icon: <InteractionOutlined />, label: '互动量配置', requiredPermission: 'interactor:config' },
         { key: '/dm-manager', icon: <MessageOutlined />, label: '私信管理', requiredPermission: 'dm:view' },
         { key: '/talking-head', icon: <VideoCameraOutlined />, label: '数字人口播' },
@@ -197,8 +203,8 @@ const Layout: React.FC<LayoutProps> = ({ children, isDark, onThemeChange }) => {
   ];
 
   // 按权限过滤菜单项(递归过滤子菜单;若父菜单的子项全部被过滤掉,则父菜单也不渲染)
-  const filterMenuItems = (items: MenuItemConfig[]): any[] => {
-    const result: any[] = [];
+  const filterMenuItems = (items: MenuItemConfig[]): NonNullable<MenuProps['items']> => {
+    const result: NonNullable<MenuProps['items']> = [];
     for (const item of items) {
       if (!hasPermission(item.requiredPermission)) continue;
       if (item.children && item.children.length > 0) {
@@ -334,7 +340,7 @@ const Layout: React.FC<LayoutProps> = ({ children, isDark, onThemeChange }) => {
                     icon: <RobotOutlined />,
                     label: '查看新手引导',
                     onClick: () => {
-                      (window as any).__restartOnboarding?.();
+                      window.__restartOnboarding?.();
                     },
                   },
                   { type: 'divider' as const },

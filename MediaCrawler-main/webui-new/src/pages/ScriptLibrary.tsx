@@ -17,10 +17,17 @@ const SCENE_LABEL: Record<string, string> = {
   follow: '关注话术',
 };
 
+const TYPE_LABEL: Record<string, string> = {
+  comment: '评论',
+  direct_message: '私信',
+  publish: '发布文案',
+};
+
 const ScriptLibrary: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<any[]>([]);
-  const [filter, setFilter] = useState<{ platform?: string; scene?: string }>({});
+  const [filter, setFilter] = useState<{ platform?: string; script_type?: string; scene?: string }>({});
+  const [addOpen, setAddOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
   const [genResult, setGenResult] = useState<any[]>([]);
   const [genLoading, setGenLoading] = useState(false);
@@ -48,9 +55,16 @@ const ScriptLibrary: React.FC = () => {
   const handleAdd = async () => {
     try {
       const values = await form.validateFields();
-      await scriptApi.create(values);
+      await scriptApi.create({
+        ...values,
+        tags: values.tags ? values.tags.split(',').map((v: string) => v.trim()).filter(Boolean) : [],
+        platform_constraints: values.platform_constraints
+          ? values.platform_constraints.split(',').map((v: string) => v.trim()).filter(Boolean)
+          : [],
+      });
       message.success('添加成功');
       form.resetFields();
+      setAddOpen(false);
       fetchData();
     } catch (e: any) {
       if (e?.errorFields) return;
@@ -100,6 +114,10 @@ const ScriptLibrary: React.FC = () => {
       render: (v: string) => v ? <Tag>{v}</Tag> : <Tag>通用</Tag>,
     },
     {
+      title: '类型', dataIndex: 'script_type', width: 100,
+      render: (v: string) => <Tag color="purple">{TYPE_LABEL[v] || v}</Tag>,
+    },
+    {
       title: '场景', dataIndex: 'scene', width: 110,
       render: (v: string) => <Tag color="blue">{SCENE_LABEL[v] || v}</Tag>,
     },
@@ -147,6 +165,7 @@ const ScriptLibrary: React.FC = () => {
         </Col>
         <Col>
           <Space>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setAddOpen(true); }}>新增话术</Button>
             <Button icon={<ThunderboltOutlined />} onClick={() => { setGenOpen(true); setGenResult([]); genForm.resetFields(); }}>
               AI 生成话术
             </Button>
@@ -169,6 +188,15 @@ const ScriptLibrary: React.FC = () => {
 
       <Card>
         <Space style={{ marginBottom: 16 }} wrap>
+          <Select
+            allowClear
+            placeholder="一级类型"
+            style={{ width: 130 }}
+            value={filter.script_type}
+            onChange={(v) => setFilter({ ...filter, script_type: v })}
+          >
+            {Object.entries(TYPE_LABEL).map(([k, v]) => <Option key={k} value={k}>{v}</Option>)}
+          </Select>
           <Select
             allowClear
             placeholder="平台"
@@ -201,6 +229,23 @@ const ScriptLibrary: React.FC = () => {
           )}
         </Spin>
       </Card>
+
+      <Modal title="新增统一话术" open={addOpen} onOk={handleAdd} onCancel={() => { form.resetFields(); setAddOpen(false); }}>
+        <Form form={form} layout="vertical" initialValues={{ script_type: 'comment', scene: 'comment_reply' }}>
+          <Row gutter={12}>
+            <Col span={12}><Form.Item name="script_type" label="一级类型" rules={[{ required: true }]}><Select options={Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label }))} /></Form.Item></Col>
+            <Col span={12}><Form.Item name="scene" label="二级场景" rules={[{ required: true }]}><Select options={Object.entries(SCENE_LABEL).map(([value, label]) => ({ value, label }))} /></Form.Item></Col>
+          </Row>
+          <Form.Item name="platform" label="平台（留空为通用）"><Input /></Form.Item>
+          <Form.Item name="title" label="标题（发布文案可用）"><Input /></Form.Item>
+          <Form.Item name="content" label="正文" rules={[{ required: true }]}><TextArea rows={5} /></Form.Item>
+          <Form.Item name="tags" label="标签（逗号分隔）"><Input /></Form.Item>
+          <Row gutter={12}>
+            <Col span={12}><Form.Item name="media_type" label="媒体类型"><Input placeholder="image / video / article" /></Form.Item></Col>
+            <Col span={12}><Form.Item name="platform_constraints" label="平台约束（逗号分隔）"><Input /></Form.Item></Col>
+          </Row>
+        </Form>
+      </Modal>
 
       <Modal
         title="AI 生成话术"

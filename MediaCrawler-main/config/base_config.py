@@ -17,6 +17,8 @@
 # 详细许可条款请参阅项目根目录下的LICENSE文件。
 # 使用本代码即表示您同意遵守上述原则和LICENSE中的所有条款。
 
+import os
+
 # Basic configuration
 PLATFORM = "x_twitter"  # Platform, xhs | dy | ks | bili | wb | tieba | zhihu | x_twitter
 
@@ -26,7 +28,7 @@ XHS_INTERNATIONAL = False
 
 KEYWORDS = "编程副业,编程兼职"  # Keyword search configuration, separated by English commas
 LOGIN_TYPE = "cookie"  # qrcode or phone or cookie
-COOKIES = 'guest_id_marketing=v1%3A178218941443657602; guest_id_ads=v1%3A178218941443657602; personalization_id="v1_X1z06AoB4zlyr2rIhDUMUg=="; guest_id=v1%3A178218941443657602; g_state={"i_l":0,"i_ll":1782189417677,"i_e":{"enable_itp_optimization":24},"i_et":1782189417677}; __cuid=0853c293-ce47-4457-8c99-241da326455e; __cuid=0853c293-ce47-4457-8c99-241da326455e; twid=u%3D1990996378118729728; auth_token=672a8ff613493d6d10efd4ab71443d209192215e; ct0=9e08d8afcfa22c4db8cfceae5c9e23cf53b5f5d72e48ebf494ba9e270a42f5a86f94110450f359bc083eb1972c6ba0b27c96a3d26b2014197acde5a12c25b30c3b361db6fecfedb8a2d764a50e5ca92b; lang=en; __cf_bm=Wg3NldAFkCW09IwwA1fzIe1RUfaAfk.k_P2uDdrIXCw-1784198247.342803-1.0.1.1-qSdI7qkpEG3AZcq173FvnwY7pz6DZBx4sIOIgDDNYR2cwNghTD_9KWPoct.KVDNNjKnqLv2rcrfXy6rkznuRNJcevpyeq0UDG_mT3UoKLKSptveAMeAseVKE7iWPD2RI'
+COOKIES = os.getenv("CRAWLER_COOKIES", "")
 CRAWLER_TYPE = (
     "auto_comment"  # Crawling type, search | detail | creator | send_dm | auto_comment | trending
 )
