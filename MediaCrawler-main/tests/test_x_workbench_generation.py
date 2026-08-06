@@ -5,6 +5,7 @@ import pytest
 
 from api.routers import x_twitter_workbench
 from api.routers.x_twitter_workbench import (
+    BreakdownRequest,
     GenerateCommentsRequest,
     GeneratePostContentRequest,
     _breakdown_prompt_text,
@@ -48,11 +49,85 @@ class _FakeSessionContext:
 
 def _saved_breakdown():
     return SimpleNamespace(
+        id=17,
         script="开场介绍主题",
         storyboards=json.dumps(["近景展示产品", "全景展示现场"], ensure_ascii=False),
         key_points=json.dumps(["8月10日开启申购"], ensure_ascii=False),
         suggested_comments=json.dumps(["你会买吗？"], ensure_ascii=False),
     )
+
+
+@pytest.mark.asyncio
+async def test_force_breakdown_updates_detached_cached_row(monkeypatch):
+    existing = _saved_breakdown()
+
+    class ReadSession:
+        async def execute(self, _statement):
+            return _FakeResult(existing)
+
+    class WriteSession:
+        def __init__(self):
+            self.statement = None
+            self.committed = False
+
+        async def execute(self, statement):
+            self.statement = statement
+
+        async def commit(self):
+            self.committed = True
+
+    class SessionContext:
+        def __init__(self, session):
+            self.session = session
+
+        async def __aenter__(self):
+            return self.session
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+    write_session = WriteSession()
+    contexts = iter([SessionContext(ReadSession()), SessionContext(write_session)])
+    monkeypatch.setattr(x_twitter_workbench, "get_session", lambda: next(contexts))
+
+    async def fake_generate_video_breakdown(_post):
+        return """【脚本分析】
+新脚本
+【分镜拆解】
+1. 新分镜
+【关键要点】
+1. 新要点
+【推荐评论】
+- 新评论
+"""
+
+    monkeypatch.setattr(
+        ai_agent_client,
+        "generate_video_breakdown",
+        fake_generate_video_breakdown,
+    )
+
+    result = await x_twitter_workbench.generate_breakdown(
+        BreakdownRequest(
+            post_id="douyin-1",
+            platform="douyin",
+            content="热点内容",
+            post_url="https://example.com/post",
+            force_refresh=True,
+        )
+    )
+
+    assert result["script"] == "新脚本"
+    assert write_session.committed is True
+    assert write_session.statement is not None
+    values = {
+        column.key: bind.value
+        for column, bind in write_session.statement._values.items()
+    }
+    assert values["script"] == "新脚本"
+    assert json.loads(values["storyboards"]) == ["新分镜"]
+    assert json.loads(values["key_points"]) == ["新要点"]
+    assert json.loads(values["suggested_comments"]) == ["新评论"]
 
 
 def test_breakdown_prompt_text_formats_saved_json_lists():

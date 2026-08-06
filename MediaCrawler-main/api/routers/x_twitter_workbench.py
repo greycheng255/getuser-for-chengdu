@@ -670,13 +670,23 @@ async def generate_breakdown(req: BreakdownRequest):
         raise HTTPException(500, f"AI 拆解失败: {e}")
 
     # 保存到数据库
-    import json
     async with get_session() as session:
         if existing:
-            existing.script = parsed["script"]
-            existing.storyboards = json.dumps(parsed["storyboard_items"], ensure_ascii=False)
-            existing.key_points = json.dumps(parsed["key_points"], ensure_ascii=False)
-            existing.suggested_comments = json.dumps(parsed["suggested_comments"], ensure_ascii=False)
+            # existing 来自上方已经关闭的读取会话，是 detached 实例；直接给它
+            # 赋值不会被当前会话追踪。显式 UPDATE，确保强制重新拆解结果真正持久化。
+            await session.execute(
+                update(XTwitterVideoBreakdown)
+                .where(XTwitterVideoBreakdown.id == existing.id)
+                .values(
+                    post_url=post_dict["post_url"],
+                    script=parsed["script"],
+                    storyboards=json.dumps(parsed["storyboard_items"], ensure_ascii=False),
+                    key_points=json.dumps(parsed["key_points"], ensure_ascii=False),
+                    suggested_comments=json.dumps(
+                        parsed["suggested_comments"], ensure_ascii=False
+                    ),
+                )
+            )
         else:
             new_bd = XTwitterVideoBreakdown(
                 post_id=req.post_id,
