@@ -71,8 +71,23 @@ class ExplainerVideoRequest(BaseModel):
 
 
 class GenerateCommentsRequest(BaseModel):
-    post_id: str = Field(..., description="推文ID")
+    post_id: str = Field(..., description="帖子ID")
     count: int = Field(3, ge=1, le=10, description="生成评论数")
+    platform: str = Field("x", description="平台: x/douyin/xiaohongshu/bilibili/weibo等")
+    post_url: str = Field("", description="帖子URL（非X平台可选）")
+    content: str = Field("", description="帖子内容（非X平台必填）")
+    username: str = Field("", description="帖子作者")
+    video_url: str = Field("", description="视频URL")
+
+
+class GeneratePostContentRequest(BaseModel):
+    post_id: str = Field(..., description="帖子ID")
+    count: int = Field(3, ge=1, le=10, description="生成文案数量")
+    platform: str = Field("x", description="目标平台: x/douyin/xiaohongshu/bilibili/weibo等")
+    post_url: str = Field("", description="帖子URL（非X平台可选）")
+    content: str = Field("", description="帖子内容（非X平台必填）")
+    username: str = Field("", description="帖子作者")
+    video_url: str = Field("", description="视频URL")
 
 
 class SendCommentRequest(BaseModel):
@@ -1023,6 +1038,39 @@ async def explainer_video_status(
 
 # ==================== 评论生成 ====================
 
+def _breakdown_prompt_text(breakdown: XTwitterVideoBreakdown) -> str:
+    """把数据库中的拆解 JSON 转成适合模型阅读的完整上下文。"""
+    def _format_items(value: str) -> str:
+        if not value:
+            return ""
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError):
+            return str(value)
+        if isinstance(parsed, list):
+            return "\n".join(f"{index}. {item}" for index, item in enumerate(parsed, 1))
+        return str(parsed)
+
+    return (
+        f"【脚本分析】\n{breakdown.script or ''}\n\n"
+        f"【分镜拆解】\n{_format_items(breakdown.storyboards)}\n\n"
+        f"【关键要点】\n{_format_items(breakdown.key_points)}\n\n"
+        f"【原推荐评论】\n{_format_items(breakdown.suggested_comments)}"
+    )
+
+
+def _post_context(req: Any, db_post: Any = None) -> Dict[str, str]:
+    """X 使用数据库原帖，其他平台使用前端携带的热点内容。"""
+    return {
+        "post_id": req.post_id,
+        "post_url": (getattr(db_post, "post_url", "") or req.post_url),
+        "content": (getattr(db_post, "content", "") or req.content),
+        "username": (getattr(db_post, "username", "") or req.username),
+        "video_url": (getattr(db_post, "video_url", "") or req.video_url),
+        "platform": req.platform,
+    }
+
+
 @router.post("/generate-comments", dependencies=[Depends(ai_rate_limit())])
 async def generate_comments(req: GenerateCommentsRequest):
     """根据拆解结果生成多条评论"""
@@ -1034,25 +1082,24 @@ async def generate_comments(req: GenerateCommentsRequest):
         bd_result = await session.execute(stmt)
         bd = bd_result.scalar_one_or_none()
 
-    if not post:
-        raise HTTPException(404, "推文不存在")
+    if not post and not req.content.strip():
+        raise HTTPException(404, "帖子不存在，且请求中未提供帖子内容")
+    if not bd:
+        raise HTTPException(400, "请先完成视频拆解，再生成候选评论")
 
-    breakdown_text = ""
-    if bd:
-        breakdown_text = f"脚本: {bd.script or ''}\n分镜: {bd.storyboards or ''}\n要点: {bd.key_points or ''}"
-    else:
-        breakdown_text = post.content or ""
+    breakdown_text = _breakdown_prompt_text(bd)
+    post_dict = _post_context(req, post)
 
     try:
         comments = await ai_agent_client.generate_comments(
-            {"content": post.content or ""},
+            post_dict,
             breakdown_text,
             count=req.count,
         )
     except Exception as e:
         raise HTTPException(500, f"AI 评论生成失败: {e}")
 
-    return {"post_id": req.post_id, "comments": comments}
+    return {"post_id": req.post_id, "comments": comments, "platform": req.platform}
 
 
 # ==================== 评论发送 ====================
@@ -1938,17 +1985,13 @@ async def cookie_pool_test():
         return {"success": False, "message": f"测试失败: {e}"}
 
 
-# ==================== X 发布文案生成 ====================
+# ==================== 多平台发布文案生成 ====================
 
-class GenerateXPostContentRequest(BaseModel):
-    post_id: str = Field(..., description="推文ID")
-    count: int = Field(3, ge=1, le=10, description="生成文案数量")
-
-
-@router.post("/x-post-content")
-async def generate_x_post_content(req: GenerateXPostContentRequest):
-    """根据视频拆解生成适合发布到 X 的文案"""
+@router.post("/x-post-content", dependencies=[Depends(ai_rate_limit())])
+async def generate_x_post_content(req: GeneratePostContentRequest):
+    """根据视频拆解生成适合当前平台发布的文案。"""
     from api.services import ai_agent_client
+    from api.services.hotpoint_fetcher import normalize_platform_id
 
     async with get_session() as session:
         post = await _get_post_by_id(session, req.post_id)
@@ -1957,23 +2000,26 @@ async def generate_x_post_content(req: GenerateXPostContentRequest):
         )
         breakdown = breakdown_result.scalar_one_or_none()
 
-    if not post:
-        raise HTTPException(404, f"推文 {req.post_id} 不存在")
+    if not post and not req.content.strip():
+        raise HTTPException(404, f"帖子 {req.post_id} 不存在，且请求中未提供帖子内容")
     if not breakdown:
-        raise HTTPException(400, "请先完成视频拆解")
+        raise HTTPException(400, "请先完成视频拆解，再生成发布文案")
 
-    breakdown_text = f"""【脚本分析】\n{breakdown.script}\n\n【分镜拆解】\n{breakdown.storyboards}\n\n【关键要点】\n{breakdown.key_points}"""
+    platform = normalize_platform_id(req.platform)
+    breakdown_text = _breakdown_prompt_text(breakdown)
+    post_dict = _post_context(req, post)
 
-    post_dict = {
-        "post_id": post.post_id,
-        "content": post.content,
-        "username": post.username,
-        "video_url": post.video_url,
-    }
+    try:
+        contents = await ai_agent_client.generate_platform_post_content(
+            post_dict,
+            breakdown_text,
+            platform,
+            req.count,
+        )
+    except Exception as e:
+        raise HTTPException(500, f"AI 发布文案生成失败: {e}") from e
 
-    contents = await ai_agent_client.generate_x_post_content(post_dict, breakdown_text, req.count)
-
-    return {"post_id": req.post_id, "contents": contents}
+    return {"post_id": req.post_id, "contents": contents, "platform": platform}
 
 
 # ==================== 发布视频到 X ====================

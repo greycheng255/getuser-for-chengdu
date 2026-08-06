@@ -61,6 +61,7 @@ export interface BreakdownResp {
 export interface GenerateCommentsResp {
   post_id: string;
   comments: string[];
+  platform?: string;
 }
 
 export interface ExplainerVideoCreateResp {
@@ -378,6 +379,17 @@ export interface BatchBreakdownResp {
 export interface XPostContentResp {
   post_id: string;
   contents: string[];
+  platform?: string;
+}
+
+export interface GenerateSocialContentParams {
+  post_id: string;
+  platform: string;
+  post_url?: string;
+  content: string;
+  username?: string;
+  video_url?: string;
+  count?: number;
 }
 
 export interface PublishToXResp {
@@ -513,8 +525,8 @@ export const xWorkbenchApi = {
     ),
 
   // 生成评论
-  generateComments: (post_id: string, count = 3) =>
-    request.post<any, GenerateCommentsResp>('/x-workbench/generate-comments', { post_id, count }),
+  generateComments: (params: GenerateSocialContentParams) =>
+    request.post<any, GenerateCommentsResp>('/x-workbench/generate-comments', params),
 
   // 发送评论
   sendComment: (data: { post_id: string; post_url: string; content: string; real_send?: boolean; platform?: string }) =>
@@ -729,8 +741,8 @@ export const xWorkbenchApi = {
     request.post<any, BatchBreakdownResp>('/x-workbench/batch/breakdown', { post_ids }),
 
   // 生成 X 发布文案
-  generateXPostContent: (post_id: string, count = 3) =>
-    request.post<any, XPostContentResp>('/x-workbench/x-post-content', { post_id, count }),
+  generateXPostContent: (params: GenerateSocialContentParams) =>
+    request.post<any, XPostContentResp>('/x-workbench/x-post-content', params),
 
   // 发布视频/文案到 X
   publishToX: (data: { post_id: string; content: string; video_url?: string; auto_monitor?: boolean }) =>

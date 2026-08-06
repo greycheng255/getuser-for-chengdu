@@ -52,3 +52,39 @@ async def test_chat_configures_all_httpx_timeouts(monkeypatch):
     assert captured["timeout"].read == 14.0
     assert captured["timeout"].write == 30.0
     assert captured["timeout"].pool == 5.0
+
+
+@pytest.mark.asyncio
+async def test_generate_comments_cleans_numbering_and_respects_count(monkeypatch):
+    async def fake_chat(*args, **kwargs):
+        return "1. 第一条评论\n- 第二条评论\n3、第三条评论\n4) 多余评论"
+
+    monkeypatch.setattr(ai_agent_client, "_chat", fake_chat)
+
+    result = await ai_agent_client.generate_comments(
+        {"content": "热点内容"},
+        "【脚本分析】拆解内容",
+        count=3,
+    )
+
+    assert result == ["第一条评论", "第二条评论", "第三条评论"]
+
+
+@pytest.mark.asyncio
+async def test_x_post_prompt_uses_requested_count(monkeypatch):
+    captured = {}
+
+    async def fake_chat(messages, **kwargs):
+        captured["prompt"] = messages[-1]["content"]
+        return "文案一\n文案二"
+
+    monkeypatch.setattr(ai_agent_client, "_chat", fake_chat)
+
+    result = await ai_agent_client.generate_x_post_content(
+        {"content": "热点内容"},
+        "拆解内容",
+        count=2,
+    )
+
+    assert "生成 2 条" in captured["prompt"]
+    assert result == ["文案一", "文案二"]

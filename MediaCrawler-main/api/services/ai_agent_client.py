@@ -453,7 +453,7 @@ X_POST_GEN_SYSTEM = (
     "文案要简短有力，使用热门标签，引发互动和转发。"
 )
 
-X_POST_GEN_PROMPT = """根据以下视频拆解，生成 3 条适合在 X（Twitter）上发布的文案。
+X_POST_GEN_PROMPT = """根据以下视频拆解，生成 {count} 条适合在 X（Twitter）上发布的文案。
 
 视频内容: {content}
 
@@ -643,6 +643,7 @@ COMMENT_GEN_SYSTEM = (
 
 COMMENT_GEN_PROMPT = """根据以下视频拆解，生成 {count} 条不同的评论。
 
+当前平台: {platform}
 视频内容: {content}
 
 视频拆解:
@@ -661,6 +662,7 @@ async def generate_comments(post: Dict[str, Any], breakdown: str, count: int = 3
     """根据视频拆解生成多条评论"""
     prompt = COMMENT_GEN_PROMPT.format(
         count=count,
+        platform=post.get("platform", "社交媒体"),
         content=post.get("content", ""),
         breakdown=breakdown[:800],
     )
@@ -672,7 +674,14 @@ async def generate_comments(post: Dict[str, Any], breakdown: str, count: int = 3
         temperature=0.8,
         max_tokens=400,
     )
-    return [line.strip() for line in text.split("\n") if line.strip() and not line.strip().startswith("#")]
+    results: List[str] = []
+    for line in text.split("\n"):
+        line = line.strip().lstrip("-").lstrip("*").strip()
+        import re
+        line = re.sub(r"^\d+[\.、\)]\s*", "", line)
+        if line and not line.startswith("#"):
+            results.append(line[:280])
+    return results[:count]
 
 
 # ==================== 自动回复 ====================

@@ -50,6 +50,17 @@ export interface CommentComposeModalProps {
 const CommentComposeModal: React.FC<CommentComposeModalProps> = ({ post, open, onClose }) => {
   const { platform } = usePlatform();
   const navigate = useNavigate();
+  const normalizedPlatform = PLATFORM_TO_PIPELINE[platform] || platform;
+
+  const generationParams = () => ({
+    post_id: post.post_id,
+    platform: normalizedPlatform,
+    post_url: post.post_url,
+    content: post.content,
+    username: post.username,
+    video_url: post.video_url || '',
+    count: 3,
+  });
 
   // ===== Section 1: 发送评论 =====
   const [suggestedComments, setSuggestedComments] = useState<string[]>([]);
@@ -65,7 +76,7 @@ const CommentComposeModal: React.FC<CommentComposeModalProps> = ({ post, open, o
   const doGenComments = async () => {
     setGenerating(true);
     try {
-      const r = await xWorkbenchApi.generateComments(post.post_id, 3);
+      const r = await xWorkbenchApi.generateComments(generationParams());
       if (r.comments && r.comments.length > 0) {
         setSuggestedComments(r.comments);
         setEditComment(r.comments[0]);
@@ -110,7 +121,7 @@ const CommentComposeModal: React.FC<CommentComposeModalProps> = ({ post, open, o
   const doGenPostContent = async () => {
     setGeneratingContent(true);
     try {
-      const r = await xWorkbenchApi.generateXPostContent(post.post_id, 3);
+      const r = await xWorkbenchApi.generateXPostContent(generationParams());
       if (r.contents && r.contents.length > 0) {
         setPostContents(r.contents);
         setSelectedPostContent(r.contents[0]);
@@ -171,7 +182,7 @@ const CommentComposeModal: React.FC<CommentComposeModalProps> = ({ post, open, o
       footer={
         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            当前平台：{PLATFORM_TO_PIPELINE[platform] || platform}
+            当前平台：{normalizedPlatform}
           </Text>
           <Button onClick={onClose}>关闭</Button>
         </Space>
