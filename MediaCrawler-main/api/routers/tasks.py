@@ -2814,12 +2814,30 @@ async def get_task_leads_summary(task_id: str, current_user: dict = Depends(get_
         )
         low_count = low_result.scalar() or 0
 
+        # 角色分类统计(A1): supplier供方/consumer需求方/neutral中性
+        role_result = await session.execute(
+            select(CustomerLead.role_tag, func.count())
+            .where(CustomerLead.task_id == task_id)
+            .where(CustomerLead.owner_user_id == str(current_user["id"]))
+            .group_by(CustomerLead.role_tag)
+        )
+        role_counts = {"supplier": 0, "consumer": 0, "neutral": 0}
+        for row in role_result.all():
+            tag = row[0] or "neutral"
+            if tag in role_counts:
+                role_counts[tag] = row[1]
+            else:
+                role_counts["neutral"] += row[1]
+
         return {
             "task_id": task_id,
             "total": total,
             "high_count": high_count,
             "medium_count": medium_count,
             "low_count": low_count,
+            "supplier_count": role_counts["supplier"],
+            "consumer_count": role_counts["consumer"],
+            "neutral_count": role_counts["neutral"],
             "scanned": total > 0,
         }
     except HTTPException:

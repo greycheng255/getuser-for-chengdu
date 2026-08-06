@@ -374,7 +374,8 @@ class BasePublisher(ABC):
         支持：
         1. JSON 字符串（[{"name": ..., "value": ..., "domain": ...}, ...]）
         2. Python list 对象
-        3. 单个 cookie 值（子类可覆盖 _build_cookies_from_simple 处理）
+        3. HTTP cookie header 格式（"name1=value1; name2=value2; ..."）
+        4. 单个 cookie 值（子类可覆盖 _build_cookies_from_simple 处理）
         """
         if not self.cookies_raw:
             return []
@@ -384,10 +385,50 @@ class BasePublisher(ABC):
             cl = json.loads(self.cookies_raw)
             if isinstance(cl, list):
                 return cl
+            # 支持 {"cookies": "name=value; ..."} dict 格式
+            if isinstance(cl, dict):
+                inner = cl.get("cookies") or cl.get("cookie") or ""
+                if inner:
+                    return self._parse_cookie_header(inner)
         except Exception:
             pass
+        # HTTP cookie header 格式：name=value; name2=value2
+        if '=' in self.cookies_raw and ';' in self.cookies_raw:
+            return self._parse_cookie_header(self.cookies_raw)
         # 单值模式：交给子类处理
         return self._build_cookies_from_simple(self.cookies_raw)
+
+    def _get_cookie_domain(self) -> str:
+        """获取本平台 cookie 域名（子类可覆盖）
+
+        默认通过 _build_cookies_from_simple 探测子类定义的域名。
+        """
+        try:
+            sample = self._build_cookies_from_simple("__probe__")
+            if sample:
+                return sample[0].get("domain", "")
+        except Exception:
+            pass
+        return ""
+
+    def _parse_cookie_header(self, header: str) -> list:
+        """解析 HTTP cookie header 格式 'name=value; name2=value2' 为 Playwright cookie 列表"""
+        domain = self._get_cookie_domain()
+        cookies = []
+        for part in header.split(';'):
+            part = part.strip()
+            if not part or '=' not in part:
+                continue
+            name, _, value = part.partition('=')
+            name = name.strip()
+            value = value.strip()
+            if not name:
+                continue
+            cookie = {"name": name, "value": value, "path": "/"}
+            if domain:
+                cookie["domain"] = domain
+            cookies.append(cookie)
+        return cookies
 
     def _build_cookies_from_simple(self, cookie_value: str) -> list:
         """单值 cookie 转 Playwright cookie 列表

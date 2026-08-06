@@ -1,5 +1,5 @@
 import request from './request';
-import type { LeadListResponse, LeadStats, Lead } from '../types';
+import type { LeadListResponse, LeadStats, Lead, LeadReply } from '../types';
 
 export const getLeads = (params: {
   page?: number;
@@ -15,6 +15,7 @@ export const getLeads = (params: {
   task_id?: string;
   start_ts?: number;
   end_ts?: number;
+  role_tag?: string;
 }): Promise<LeadListResponse> => {
   return request.get('/leads/list', { params });
 };
@@ -94,25 +95,103 @@ export const deleteLeadsByTask = (taskId: string): Promise<{ success: boolean; d
   return request.delete(`/leads/task/${taskId}`);
 };
 
-// 采集单条线索的用户主页联系方式(手机号/微信号/简介)
-// 后端端点: POST /leads/{lead_id}/collect-contact (从 getuser-canrun 迁移)
-export const collectLeadContact = (leadId: number): Promise<{
-  success: boolean;
-  message: string;
-  contact_phone?: string;
-  contact_wechat?: string;
-  bio_text?: string;
-  contact_status?: string;
-}> => {
+/** A6 过滤无关线索: 将命中规则的线索标记为 ignored */
+export const filterIrrelevantLeads = (data: {
+  task_id: string;
+  lead_ids?: number[];
+  rules?: string[];  // 默认 ["low_score", "neutral_role"]
+}): Promise<{ success: boolean; filtered_count: number; message: string }> => {
+  return request.post('/leads/filter-irrelevant', data);
+};
+
+/** A6 一键去重: 按 content_hash 合并同任务下重复线索 */
+export const dedupeLeads = (data: {
+  task_id: string;
+  dry_run?: boolean;
+}): Promise<{ success: boolean; deduped_count: number; kept_count: number; message: string }> => {
+  return request.post('/leads/dedupe', data);
+};
+
+// ==================== 联系方式采集 + 评论回复监测 ====================
+
+/** 采集单条线索的用户主页联系方式(手机号/微信号/简介) */
+export const collectLeadContact = (
+  leadId: number
+): Promise<{ success: boolean; data?: { phone: string; wechat: string; bio: string; status: string }; message?: string }> => {
   return request.post(`/leads/${leadId}/collect-contact`);
 };
 
-// 手动触发单条线索的评论回复监测
-// 后端端点: POST /leads/{lead_id}/monitor-replies (从 getuser-canrun 迁移)
-export const monitorLeadReplies = (leadId: number): Promise<{
-  success: boolean;
-  message: string;
-  new_replies?: number;
-}> => {
+/** 批量采集联系方式(支持 lead_ids 直选 或 按 task_id+筛选条件) */
+export const collectContactsBatch = (data: {
+  lead_ids?: number[];
+  task_id?: string;
+  platform?: string;
+  role_tag?: string;
+  ip_location?: string;
+  status?: string;
+  level?: 'high' | 'medium' | 'low';
+  start_ts?: number;
+  end_ts?: number;
+  limit?: number;
+}): Promise<{ success: boolean; message: string; job_id?: string; total?: number }> => {
+  return request.post('/leads/collect-contacts-batch', data);
+};
+
+/** 手动触发单条线索的评论回复监测 */
+export const monitorLeadReplies = (
+  leadId: number
+): Promise<{ success: boolean; message: string; added?: number }> => {
   return request.post(`/leads/${leadId}/monitor-replies`);
+};
+
+/** 手动触发整个任务的评论回复监测(支持与列表一致的筛选条件) */
+export const monitorTaskReplies = (
+  taskId: string,
+  filters?: {
+    platform?: string;
+    role_tag?: string;
+    ip_location?: string;
+    status?: string;
+    level?: 'high' | 'medium' | 'low';
+    start_ts?: number;
+    end_ts?: number;
+    limit?: number;
+  }
+): Promise<{ success: boolean; message: string; job_id?: string; total?: number }> => {
+  return request.post(`/leads/task/${taskId}/monitor-replies`, filters || {});
+};
+
+/** 批量任务状态(供前端轮询进度) */
+export interface BatchJobStatus {
+  job_id: string;
+  task_id: string;
+  kind: 'contact_collect' | 'reply_monitor';
+  status: 'running' | 'completed' | 'failed';
+  total: number;
+  completed: number;
+  success: number;
+  failed: number;
+  message: string;
+  created_at: number;
+  updated_at: number;
+}
+
+/** 查询批量任务状态(轮询进度) */
+export const getBatchJobStatus = (jobId: string): Promise<BatchJobStatus> => {
+  return request.get(`/leads/batch-jobs/${jobId}`);
+};
+
+/** 查看某条线索监测到的评论回复列表 */
+export const getLeadReplies = (
+  leadId: number,
+  params: { limit?: number; offset?: number } = {}
+): Promise<{ items: LeadReply[]; total: number }> => {
+  return request.get(`/leads/${leadId}/replies`, { params });
+};
+
+/** 将某条线索的评论回复标记为已读 */
+export const markLeadRepliesRead = (
+  leadId: number
+): Promise<{ success: boolean; message: string }> => {
+  return request.post(`/leads/${leadId}/replies/mark-read`);
 };

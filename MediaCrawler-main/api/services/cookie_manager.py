@@ -651,8 +651,6 @@ async def add_user_cookie_to_pool(user_id: int, platform: str, cookie_str: str, 
                 platform=platform,
                 cookie_str=cookie_str,
                 alias=alias or f"{platform}_cookie_{int(time.time())}",
-                phone=phone,
-                email=email,
                 status="active",
                 created_ts=int(time.time() * 1000),
             )

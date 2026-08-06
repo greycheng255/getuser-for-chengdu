@@ -198,7 +198,8 @@ class DouYinLogin(AbstractLogin):
 
     async def check_page_display_slider(self, move_step: int = 10, slider_level: str = "easy"):
         """
-        Check if slider verification appears on the page (including iframes)
+        Check if slider verification appears on the page (including iframes).
+        - If not a slider (secondary sms/email/verifycenter URL block): diagnose and raise instead of silent return.
         :return:
         """
         # 首先检查主页面是否有滑块
@@ -223,8 +224,73 @@ class DouYinLogin(AbstractLogin):
                 return
             except PlaywrightTimeoutError:
                 continue
-        
-        utils.logger.info("[DouYinLogin.check_page_display_slider] No slider found on page or iframes")
+
+        # =========== getuser-canrun 经验 2/5: 不是滑块的验证码要区分根因,不要静默返回
+        # 如果到这还没找到滑块,说明不是"滑块验证码",诊断具体是哪类问题
+        utils.logger.warning("[DouYinLogin.check_page_display_slider] No slider found on page or iframes — running root-cause diagnosis...")
+        try:
+            page_url = self.context_page.url
+            page_title = ""
+            body_text = ""
+            try:
+                page_title = await self.context_page.title()
+            except:
+                pass
+            try:
+                body = await self.context_page.query_selector("body")
+                if body:
+                    body_text = (await body.inner_text(timeout=3000)) or ""
+            except:
+                pass
+            body_len = len(body_text)
+
+            utils.logger.warning(
+                f"[DouYinLogin.check_page_display_slider] Diagnosis — url={page_url[:120]}, "
+                f"title={page_title[:60]}, body_len={body_len}, iframes={len(self.context_page.frames)}"
+            )
+
+            # 根因 1: 二次验证（短信/邮箱）— 必须人工处理
+            keywords_in_text = ("短信" in body_text) or ("邮箱" in body_text) or ("手机" in body_text) or ("二次验证" in body_text)
+            keywords_in_title = ("验证" in page_title and not "抖音" in page_title) or ("登录" in page_title)
+            verifycenter = "verifycenter" in page_url.lower() or "captcha" in page_url.lower()
+            if (verifycenter and (keywords_in_text or body_len < 2000)) or (keywords_in_text and keywords_in_title):
+                utils.logger.error(
+                    "[DouYinLogin.check_page_display_slider] ROOT CAUSE = SECONDARY VERIFICATION (短信/邮箱验证/URL被拦). "
+                    "此验证码无法自动通过,请在有GUI环境中手动登录 https://www.douyin.com 完成验证后更新 Cookie"
+                )
+                raise Exception(
+                    "二次验证 Required: 账号触发短信/邮箱二次验证或被 verifycenter 拦截,请人工到 douyin.com 完成验证后更新 Cookie"
+                )
+
+            # 根因 2: sessionid/Cookie 已过期（页面提示登录但未渲染验证码组件
+            if ("登录" in page_title or body_len < 3000) and not ("验证码" in body_text or "captcha_container" in (await self.context_page.content()[:5000])):
+                utils.logger.error(
+                    "[DouYinLogin.check_page_display_slider] ROOT CAUSE = Cookie expired (sessionid 过期). "
+                    "过期的 sessionid 即使 msToken 有效也会被拦截,请重新获取最新 Cookie 并在 Cookie管理 中更新"
+                )
+                raise Exception(
+                    "Cookie Expired: sessionid 已过期,请重新登录抖音获取最新 Cookie 并更新到系统"
+                )
+
+            # 根因 3: IP 被风控（所有账号都命中,body 几乎为空且在 verifycenter）
+            if verifycenter and body_len < 1000:
+                utils.logger.error(
+                    "[DouYinLogin.check_page_display_slider] ROOT CAUSE = IP blocked / heavy risk control. "
+                    "请启用代理池、更换出口 IP、或暂停 20-30 分钟后再试"
+                )
+                raise Exception(
+                    "IP Risk Control: 该出口 IP 被抖音风控,请更换 IP / 启用代理池 / 冷却后重试"
+                )
+
+            # 其他: 诊断信息留档,仅当调用方没有预检查时可能走到这里
+            utils.logger.warning(
+                "[DouYinLogin.check_page_display_slider] Slider not found but doesn't match common captcha patterns. "
+                "Likely transient / anti-bot fingerprint check. Proceeding with best-effort (may still fail)."
+            )
+        except Exception as diag_err:
+            if "二次验证 Required" in str(diag_err) or "Cookie Expired" in str(diag_err) or "IP Risk Control" in str(diag_err):
+                raise  # 已知的3类根因直接抛出,让上层切换账号
+            utils.logger.warning(f"[DouYinLogin.check_page_display_slider] Diagnosis error ignored: {diag_err}")
 
     async def _solve_slider_on_page(self, page_or_frame, back_selector: str, gap_selector: str, move_step: int, slider_level: str, is_iframe: bool = False):
         """在指定页面或 iframe 中解决滑块验证码"""

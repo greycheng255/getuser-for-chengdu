@@ -24,6 +24,7 @@ from .tasks import router as tasks_router
 from .cookies import router as cookies_router
 from .auth import router as auth_router
 from .business import router as business_router
+from .business_profiles import router as business_profiles_router
 from .external_api import router as external_api_router
 from .config import router as config_router
 from .notifications import router as notifications_router

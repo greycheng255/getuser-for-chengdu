@@ -327,7 +327,7 @@ const cookieStatusMap: Record<string, { color: string; text: string; icon: React
   unknown:  { color: 'default', text: '未知',         icon: <WarningOutlined /> },
 };
 
-function AccountPoolTab({ refreshTrigger, onAddAccount }: { refreshTrigger: number; onAddAccount: () => void }) {
+export function AccountPoolTab({ refreshTrigger, onAddAccount }: { refreshTrigger: number; onAddAccount: () => void }) {
   const [accountData, setAccountData] = useState<AccountPoolStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [platform, setPlatform] = useState('dy');

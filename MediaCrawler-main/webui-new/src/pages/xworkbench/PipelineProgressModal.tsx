@@ -209,6 +209,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onCancel }) => {
     ? 100
     : Math.round((task.current_step / totalSteps) * 100);
 
+  // 陈旧检测：任务 running 但 update_ts 超过 5 分钟未更新，判定为疑似卡住
+  const nowSec = Math.floor(Date.now() / 1000);
+  const staleSecs = isRunning && task.update_ts ? nowSec - task.update_ts : 0;
+  const isStale = staleSecs > 300; // 5 分钟未更新
+
   return (
     <Card
       size="small"
@@ -277,6 +282,17 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onCancel }) => {
         </Text>
       )}
 
+      {/* 陈旧检测警告：任务疑似卡住 */}
+      {isStale && (
+        <Alert
+          type="warning"
+          showIcon
+          message={`任务已 ${Math.floor(staleSecs / 60)} 分钟未更新，疑似卡住`}
+          description="后端 AI 调用可能超时或无响应。可点击「取消」终止任务后重试，或等待后端超时自动降级。"
+          style={{ marginBottom: 8 }}
+        />
+      )}
+
       {/* AI 选中的发布文案 */}
       {task.selected_content && (
         <Card size="small" type="inner" title="AI 选中的发布文案" style={{ marginBottom: 8 }}>
@@ -318,13 +334,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onCancel }) => {
         </div>
       )}
 
-      {/* DRY-RUN 提示（无 published_post_id 但状态 completed） */}
+      {/* DRY-RUN 提示（状态 completed 但无 published_post_url，说明发布结果未记录） */}
       {isCompleted && !task.published_post_url && (
         <Alert
           type="info"
           showIcon
-          message="模拟发布完成（DRY-RUN）"
-          description="该平台暂无真实发布实现，已生成完整文案但未实际发布到平台。"
+          message="发布结果未记录"
+          description="任务已完成，但发布链接未写入任务记录。请到发布中心查看实际发布结果。"
         />
       )}
     </Card>

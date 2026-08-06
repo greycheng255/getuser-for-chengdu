@@ -449,7 +449,37 @@ class DouYinCrawler(AbstractCrawler):
             page_html = await self.context_page.content()
             has_captcha = "验证码" in page_title or "验证" in page_title or "captcha" in page_html.lower() or "verifycenter" in page_html.lower()
             if has_captcha:
-                utils.logger.warning("[DouYinCrawler.search_by_browser] Captcha detected on search page, trying bypass first...")
+                # ============== getuser-canrun 经验 1: Cookie 有效时页面验证码 ≠ 采集失败
+                # 先尝试 HTTP API 直连搜索（Cookie 直连,不依赖浏览器页面状态)
+                utils.logger.warning("[DouYinCrawler.search_by_browser] Captcha detected on search page, testing HTTP API via cookies FIRST (Cookie 有效时页面验证码≠采集失败)...")
+                http_api_success = False
+                try:
+                    http_res = await self.dy_client.search_info_by_keyword(
+                        keyword=keyword,
+                        offset=0,
+                        sort_type=SearchSortType.GENERAL,
+                        publish_time=PublishTimeType(config.PUBLISH_TIME_TYPE),
+                        search_id="",
+                    )
+                    http_status = http_res.get("status_code") if isinstance(http_res, dict) else None
+                    http_data = http_res.get("data") if isinstance(http_res, dict) else None
+                    nil_info = http_res.get("search_nil_info") if isinstance(http_res, dict) else {}
+                    http_nil = (nil_info or {}).get("search_nil_type") if isinstance(nil_info, dict) else ""
+                    if http_status == 0 and http_nil != "verify_check":
+                        http_list = http_data if isinstance(http_data, list) else (http_data or {}).get("aweme_list") or []
+                        if isinstance(http_list, list) and len(http_list) > 0:
+                            utils.logger.info(f"[DouYinCrawler.search_by_browser] HTTP API SUCCESS via cookie-直连 while browser captcha, returning {len(http_list)} results, captcha bypassed!")
+                            for aweme in http_list[:max_videos]:
+                                if isinstance(aweme, dict) and aweme.get("aweme_id"):
+                                    search_aweme_list.append(aweme)
+                            http_api_success = True
+                except Exception as http_err:
+                    utils.logger.warning(f"[DouYinCrawler.search_by_browser] HTTP API captcha-bypass failed: {http_err}")
+                if http_api_success:
+                    return search_aweme_list[:max_videos]
+
+                utils.logger.warning("[DouYinCrawler.search_by_browser] HTTP API couldn't skip this captcha, falling back to page-level bypass...")
+                # ============== 回到原来的 bypass 策略（兜底
                 
                 # 策略1: 重新导航搜索页（验证码常是临时触发）
                 captcha_bypassed = False
@@ -492,10 +522,89 @@ class DouYinCrawler(AbstractCrawler):
                                     break
                         except Exception as e:
                             utils.logger.warning(f"[DouYinCrawler.search_by_browser] Entry bypass failed: {e}")
-                
-                # 策略3: 实在绕不过，才解滑块
+
+                # 策略3(getuser-canrun 新增): 回到首页等 8s 自然冷却再进搜索（有时验证码是瞬时风控，等待即解）
                 if not captcha_bypassed:
-                    utils.logger.warning("[DouYinCrawler.search_by_browser] All bypass failed, falling back to slider...")
+                    utils.logger.info("[DouYinCrawler.search_by_browser] Bypass strategy 3: home + wait 8s natural cooldown...")
+                    try:
+                        await self.context_page.goto("https://www.douyin.com", wait_until="domcontentloaded", timeout=30000)
+                        await asyncio.sleep(random.uniform(8, 12))  # 自然等待冷却
+                        # 模拟真实用户: 滚动一下
+                        try:
+                            await self.context_page.evaluate("window.scrollTo(0, document.body.scrollHeight * 0.3)")
+                            await asyncio.sleep(1)
+                        except:
+                            pass
+                        await self.context_page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+                        await asyncio.sleep(4)
+                        new_title = await self.context_page.title()
+                        new_html = await self.context_page.content()
+                        if "验证码" not in new_title and "验证" not in new_title and "verifycenter" not in new_html.lower():
+                            captcha_bypassed = True
+                            utils.logger.info("[DouYinCrawler.search_by_browser] Bypassed via home+wait natural cooldown!")
+                    except Exception as e:
+                        utils.logger.warning(f"[DouYinCrawler.search_by_browser] Strategy 3 (cooldown) failed: {e}")
+
+                # 策略4(getuser-canrun 新增): 触发 msToken 刷新（localStorage 注入空 msToken 再刷新）
+                if not captcha_bypassed:
+                    utils.logger.info("[DouYinCrawler.search_by_browser] Bypass strategy 4: reset msToken + refresh...")
+                    try:
+                        # 清 msToken 让其重新生成（假 msToken 比没有更糟）
+                        await self.context_page.evaluate("""() => {
+                          try {
+                            localStorage.removeItem('msToken');
+                            sessionStorage.removeItem('msToken');
+                            Object.keys(localStorage).filter(k=>k.toLowerCase().includes('token')).forEach(k=>localStorage.removeItem(k));
+                          } catch(e){}
+                        }""")
+                        await asyncio.sleep(1)
+                        await self.context_page.reload(wait_until="domcontentloaded", timeout=30000)
+                        await asyncio.sleep(4)
+                        new_title = await self.context_page.title()
+                        new_html = await self.context_page.content()
+                        if "验证码" not in new_title and "验证" not in new_title and "verifycenter" not in new_html.lower():
+                            captcha_bypassed = True
+                            utils.logger.info("[DouYinCrawler.search_by_browser] Bypassed via msToken reset!")
+                    except Exception as e:
+                        utils.logger.warning(f"[DouYinCrawler.search_by_browser] Strategy 4 (msToken reset) failed: {e}")
+
+                # 策略5: 所有 bypass 都失败才解滑块（CV2 模板匹配是兜底）
+                if not captcha_bypassed:
+                    utils.logger.warning("[DouYinCrawler.search_by_browser] All 5 bypass strategies failed, falling back to slider solving (last resort)...")
+                    # 在进滑块兜底前,先检查是否是"二次验证(短信/邮箱)"而不是滑块 — 直接报警退出,避免滑块循环
+                    try:
+                        current_url = self.context_page.url
+                        page_text = ""
+                        try:
+                            body_elem = await self.context_page.query_selector("body")
+                            if body_elem:
+                                page_text = (await body_elem.inner_text(timeout=3000)) or ""
+                        except:
+                            pass
+                        is_secondary_verification = (
+                            ("verifycenter" in current_url or "sms" in current_url.lower() or "login" in current_url.lower())
+                            and (("短信" in page_text) or ("邮箱" in page_text) or ("二次验证" in page_text) or ("手机号" in page_text and len(page_text) < 5000))
+                        )
+                        if is_secondary_verification or (len(page_text) < 1500 and "verifycenter" in current_url):
+                            # 不是滑块,是二次验证 — 标记风控 + 让上层切账号,不要进滑块死循环
+                            utils.logger.error("[DouYinCrawler.search_by_browser] NOT A SLIDER! This is SECONDARY VERIFICATION (短信/邮箱/URL拦截). Switching account...")
+                            utils.logger.error("[DouYinCrawler.search_by_browser] 人工处理提示: 请到有GUI的环境打开 https://www.douyin.com 完成验证后更新Cookie,否则所有账号会依次触发风控")
+                            # 上报账号池: captcha 类型扣分 + 立即切
+                            if self._account_pool and self._account_pool.current_account:
+                                try:
+                                    await self._account_pool.report_failure(
+                                        account_id=getattr(self._account_pool.current_account, "account_id", None)
+                                        or getattr(self._account_pool.current_account, "id", None),
+                                        fail_type="captcha",
+                                        reason="secondary_verification_or_verifycenter_url_blocked_no_slider",
+                                    )
+                                except:
+                                    pass
+                            # 直接返回空,让上层走下一个账号/任务,避免滑块循环耗死
+                            return []
+                    except Exception as pre_check_err:
+                        utils.logger.warning(f"[DouYinCrawler.search_by_browser] slider pre-check failed, will try slider anyway: {pre_check_err}")
+
                     try:
                         login_obj = DouYinLogin(
                             login_type="cookie",

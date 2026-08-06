@@ -129,7 +129,11 @@ async def _update_task(task_id: str, **kwargs) -> None:
 
 
 async def _get_post(post_id: str) -> Optional[Dict[str, Any]]:
-    """获取原推文信息"""
+    """获取原推文信息
+
+    X 平台从数据库查；非 X 平台 post_id 是合成 ID（如 douyin_1），
+    从 hotpoint_fetcher 缓存中按 platform + rank 查找。
+    """
     from api.routers.x_twitter_workbench import _get_post_by_id
     async with get_session() as session:
         post = await _get_post_by_id(session, post_id)
@@ -141,6 +145,38 @@ async def _get_post(post_id: str) -> Optional[Dict[str, Any]]:
                 "video_url": post.video_url,
                 "username": post.username,
             }
+
+    # 非 X 平台 fallback：从 hotpoint_fetcher 缓存查找
+    # post_id 格式: {platform}_{rank}，如 douyin_1、bili_3
+    # _trending_from_hotpoint 中 enumerate 从 1 开始，rank 取 it.get('rank', idx)
+    parts = post_id.rsplit("_", 1)
+    if len(parts) == 2:
+        platform, rank_str = parts
+        try:
+            rank = int(rank_str)
+        except ValueError:
+            return None
+        try:
+            from api.services.hotpoint_fetcher import _get_stale_cache
+            items = _get_stale_cache(platform)
+            if items:
+                for idx, it in enumerate(items, 1):
+                    if it.get("rank", idx) == rank:
+                        url = it.get("url", "")
+                        extra = it.get("extra", {}) or {}
+                        video_url = extra.get("video_url", "")
+                        if not video_url and url:
+                            video_url = f"{url}/video/1"
+                        return {
+                            "post_id": post_id,
+                            "post_url": url,
+                            "content": it.get("title", "") or it.get("content", ""),
+                            "video_url": video_url,
+                            "username": it.get("author", "") or platform,
+                        }
+        except Exception as e:
+            logger.warning(f"[pipeline] _get_post fallback hotpoint cache failed: {e}")
+
     return None
 
 

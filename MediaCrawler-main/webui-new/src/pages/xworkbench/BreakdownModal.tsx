@@ -229,10 +229,40 @@ const BreakdownModal: React.FC<BreakdownModalProps> = ({ post, open, onClose }) 
     }
   }, [open, doBreakdown]);
 
+  // 打开/切换内容时,先查询该 post 的历史视频任务,恢复展示或继续轮询,避免重复生成
   useEffect(() => {
+    let active = true;
     setVideoTaskId('');
     setVideoModelName('');
     setVideoState(null);
+    if (!post.post_id) return;
+
+    (async () => {
+      try {
+        const history = await xWorkbenchApi.getExplainerVideoByPost(post.post_id);
+        if (!active) return;
+        setVideoModelName(history.model_name || '');
+        setVideoState({
+          task_id: history.task_id,
+          status: history.status,
+          is_final: history.is_final,
+          progress: history.progress,
+          current_step: history.current_step,
+          result_url: history.result_url,
+          result_reference: history.result_reference,
+          error: history.error,
+          cost: history.cost,
+        });
+        // 非终态任务恢复轮询(触发下方 videoTaskId 的 useEffect)
+        if (!history.is_final && history.task_id) {
+          setVideoTaskId(history.task_id);
+        }
+      } catch {
+        // 404 = 无历史任务,保持空白等用户点击生成
+      }
+    })();
+
+    return () => { active = false; };
   }, [post.post_id]);
 
   // 加载多平台能力列表 + 默认选中当前平台

@@ -16,6 +16,7 @@ import {
   Select,
   Space,
   Table,
+  Tabs,
   Tag,
   Tooltip,
   Typography,
@@ -45,6 +46,7 @@ import {
   type AccountStatus,
   type UnifiedAccount,
 } from '../api/accounts';
+import { AccountPoolTab } from './CookieManager';
 
 const { Title, Text } = Typography;
 
@@ -103,6 +105,8 @@ export default function AccountManagement() {
   const [editing, setEditing] = useState<UnifiedAccount | null>(null);
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchText, setBatchText] = useState('');
+  const [activeTab, setActiveTab] = useState('list');
+  const [monitorRefresh, setMonitorRefresh] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -265,34 +269,56 @@ export default function AccountManagement() {
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <div>
         <Title level={3} style={{ marginBottom: 4 }}>统一账号管理</Title>
-        <Text type="secondary">统一管理发布账号、互动账号和共用账号；认证值只允许录入或替换，不会回显。</Text>
+        <Text type="secondary">统一管理各平台发布/互动账号的凭证、状态与运行时监控；认证值只允许录入或替换，不会回显。</Text>
       </div>
 
-      <Card>
-        <Row gutter={[12, 12]} align="middle">
-          <Col xs={24} sm={12} md={5}><Select allowClear placeholder="全部平台" options={platformOptions} style={{ width: '100%' }} value={filters.platform} onChange={platform => setFilters(current => ({ ...current, platform, page: 1 }))} /></Col>
-          <Col xs={24} sm={12} md={4}><Select allowClear placeholder="全部角色" style={{ width: '100%' }} value={filters.role} options={Object.entries(roleLabels).map(([value, label]) => ({ value, label }))} onChange={role => setFilters(current => ({ ...current, role, page: 1 }))} /></Col>
-          <Col xs={24} sm={12} md={4}><Select allowClear placeholder="全部状态" style={{ width: '100%' }} value={filters.status} options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))} onChange={status => setFilters(current => ({ ...current, status, page: 1 }))} /></Col>
-          <Col xs={24} sm={12} md={5}><Input allowClear placeholder="分组名称" value={filters.group_name} onChange={event => setFilters(current => ({ ...current, group_name: event.target.value || undefined, page: 1 }))} /></Col>
-          <Col flex="auto"><Space wrap><Button icon={<ReloadOutlined />} onClick={() => void load()}>刷新</Button><Button icon={<CloudUploadOutlined />} onClick={() => setBatchOpen(true)}>批量导入</Button><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增账号</Button></Space></Col>
-        </Row>
-      </Card>
-
-      <Table<UnifiedAccount>
-        rowKey="account_id"
-        loading={loading}
-        columns={columns}
-        dataSource={items}
-        scroll={{ x: 1450 }}
-        locale={{ emptyText: <Empty description="暂无账号，可点击“新增账号”开始配置" /> }}
-        pagination={{
-          current: filters.page,
-          pageSize: filters.page_size,
-          total,
-          showSizeChanger: true,
-          showTotal: value => `共 ${value} 个账号`,
-          onChange: (page, pageSize) => setFilters(current => ({ ...current, page, page_size: pageSize })),
+      <Tabs
+        activeKey={activeTab}
+        onChange={(key) => {
+          setActiveTab(key);
+          if (key === 'monitor') setMonitorRefresh(r => r + 1);
         }}
+        items={[
+          {
+            key: 'list',
+            label: '账号列表',
+            children: (
+              <>
+                <Card style={{ marginBottom: 16 }}>
+                  <Row gutter={[12, 12]} align="middle">
+                    <Col xs={24} sm={12} md={5}><Select allowClear placeholder="全部平台" options={platformOptions} style={{ width: '100%' }} value={filters.platform} onChange={platform => setFilters(current => ({ ...current, platform, page: 1 }))} /></Col>
+                    <Col xs={24} sm={12} md={4}><Select allowClear placeholder="全部角色" style={{ width: '100%' }} value={filters.role} options={Object.entries(roleLabels).map(([value, label]) => ({ value, label }))} onChange={role => setFilters(current => ({ ...current, role, page: 1 }))} /></Col>
+                    <Col xs={24} sm={12} md={4}><Select allowClear placeholder="全部状态" style={{ width: '100%' }} value={filters.status} options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))} onChange={status => setFilters(current => ({ ...current, status, page: 1 }))} /></Col>
+                    <Col xs={24} sm={12} md={5}><Input allowClear placeholder="分组名称" value={filters.group_name} onChange={event => setFilters(current => ({ ...current, group_name: event.target.value || undefined, page: 1 }))} /></Col>
+                    <Col flex="auto"><Space wrap><Button icon={<ReloadOutlined />} onClick={() => void load()}>刷新</Button><Button icon={<CloudUploadOutlined />} onClick={() => setBatchOpen(true)}>批量导入</Button><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增账号</Button></Space></Col>
+                  </Row>
+                </Card>
+
+                <Table<UnifiedAccount>
+                  rowKey="account_id"
+                  loading={loading}
+                  columns={columns}
+                  dataSource={items}
+                  scroll={{ x: 1450 }}
+                  locale={{ emptyText: <Empty description="暂无账号，可点击&ldquo;新增账号&rdquo;开始配置" /> }}
+                  pagination={{
+                    current: filters.page,
+                    pageSize: filters.page_size,
+                    total,
+                    showSizeChanger: true,
+                    showTotal: value => `共 ${value} 个账号`,
+                    onChange: (page, pageSize) => setFilters(current => ({ ...current, page, page_size: pageSize })),
+                  }}
+                />
+              </>
+            ),
+          },
+          {
+            key: 'monitor',
+            label: '运行时监控',
+            children: <AccountPoolTab refreshTrigger={monitorRefresh} onAddAccount={openCreate} />,
+          },
+        ]}
       />
 
       <Modal title={editing ? '编辑统一账号' : '新增统一账号'} open={editorOpen} onCancel={closeEditor} onOk={() => void save()} confirmLoading={saving} width={760} destroyOnHidden>

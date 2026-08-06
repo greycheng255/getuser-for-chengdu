@@ -4,6 +4,8 @@ import { Card, Tabs, Form, Input, Button, Tag, Switch, Slider, List, Space, Moda
 import { PlusOutlined, SaveOutlined, ReloadOutlined, DownloadOutlined, EditOutlined } from '@ant-design/icons';
 import { authStorage } from '../api/auth';
 import { systemConfigApi } from '../api/prdGap';
+import SystemLogs from './SystemLogs';
+import BusinessProfiles from './BusinessProfiles';
 
 const { TabPane } = Tabs;
 const { Option } = Select;
@@ -608,6 +610,10 @@ const Settings: React.FC = () => {
           <IntentRulesTab />
         </TabPane>
 
+        <TabPane tab="业务画像" key="business-profiles">
+          <BusinessProfiles />
+        </TabPane>
+
         <TabPane tab="评分规则" key="scoring">
           <Card title="评分权重配置">
             <Form
@@ -722,6 +728,10 @@ const Settings: React.FC = () => {
               </Form.Item>
             </Form>
           </Card>
+        </TabPane>
+
+        <TabPane tab="运行日志" key="logs">
+          <SystemLogs />
         </TabPane>
 
         <TabPane tab="系统信息" key="system">

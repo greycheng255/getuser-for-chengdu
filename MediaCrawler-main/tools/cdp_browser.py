@@ -377,6 +377,11 @@ class CDPBrowserManager:
         """确保 Xvfb 虚拟显示器运行，为 Chrome 提供显示环境（自动清理无效实例）"""
         import subprocess
         import sys
+        import platform
+
+        # Windows 不需要 Xvfb（虚拟显示器仅 Linux 需要）
+        if platform.system() == "Windows":
+            return
 
         # 先清理无效的 Xvfb 进程
         self._cleanup_stale_xvfb()

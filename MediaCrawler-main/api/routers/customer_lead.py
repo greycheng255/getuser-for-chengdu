@@ -598,6 +598,163 @@ async def get_lead_regions(
         return [{"ip_location": r[0], "count": r[1]} for r in result]
 
 
+@router.post("/filter-irrelevant")
+async def filter_irrelevant_leads(
+    data: dict,
+    current_user: dict = Depends(get_current_user),
+):
+    """过滤无关线索(A6): 将指定线索标记为 ignored 状态
+
+    请求体:
+        task_id: str (必填) - 任务ID
+        lead_ids: list[int] (可选) - 指定线索ID列表,为空则按规则批量过滤
+        rules: list[str] (可选) - 过滤规则,默认 ["low_score", "neutral_role"]
+            - "low_score": 过滤 lead_score < 25 的低意向线索
+            - "neutral_role": 过滤 role_tag == 'neutral' 的中性线索
+            - "ad_template": 过滤重复广告模板(dup_count > 3)
+            - "no_contact": 过滤无联系方式(contact_status in ['none','not_found'])的线索
+
+    返回: {success, filtered_count, message}
+    """
+    from sqlalchemy import update as sql_update
+    task_id = data.get("task_id")
+    if not task_id:
+        raise HTTPException(status_code=400, detail="task_id is required")
+    rules = data.get("rules") or ["low_score", "neutral_role"]
+    lead_ids = data.get("lead_ids") or []
+
+    async with async_db_session() as session:
+        # 构建过滤条件(命中规则的线索标记为 ignored)
+        base_cond = [
+            CustomerLead.task_id == task_id,
+            CustomerLead.owner_user_id == str(current_user["id"]),
+            CustomerLead.status != "ignored",  # 已忽略的不重复处理
+        ]
+        if lead_ids:
+            base_cond.append(CustomerLead.id.in_(lead_ids))
+
+        rule_conds = []
+        if "low_score" in rules:
+            rule_conds.append(CustomerLead.lead_score < 25)
+        if "neutral_role" in rules:
+            rule_conds.append(CustomerLead.role_tag == "neutral")
+        if "ad_template" in rules:
+            rule_conds.append(CustomerLead.dup_count > 3)
+        if "no_contact" in rules:
+            rule_conds.append(CustomerLead.contact_status.in_(["none", "not_found"]))
+
+        if not rule_conds:
+            return {"success": True, "filtered_count": 0, "message": "无过滤规则"}
+
+        from sqlalchemy import or_ as sql_or
+        stmt = (
+            sql_update(CustomerLead)
+            .where(*base_cond)
+            .where(sql_or(*rule_conds))
+            .values(status="ignored", last_modify_ts=int(time.time() * 1000))
+            .execution_options(synchronize_session=False)
+        )
+        result = await session.execute(stmt)
+        filtered = result.rowcount or 0
+        await session.commit()
+
+        return {
+            "success": True,
+            "filtered_count": filtered,
+            "message": f"已过滤 {filtered} 条无关线索(规则: {', '.join(rules)})",
+        }
+
+
+@router.post("/dedupe")
+async def dedupe_leads(
+    data: dict,
+    current_user: dict = Depends(get_current_user),
+):
+    """一键去重(A6): 按 content_hash 合并同任务下重复线索
+
+    规则:
+        - 按 content_hash 分组(非空 hash),同组保留 lead_score 最高的一条
+        - 其余删除,但保留组的 dup_count 累加到保留记录上
+        - 无 content_hash 的记录跳过(不参与去重)
+        - 仅处理本任务当前用户的线索
+
+    请求体:
+        task_id: str (必填)
+        dry_run: bool (可选,默认 False) - True 只返回统计不实际删除
+
+    返回: {success, deduped_count, kept_count, message}
+    """
+    task_id = data.get("task_id")
+    if not task_id:
+        raise HTTPException(status_code=400, detail="task_id is required")
+    dry_run = bool(data.get("dry_run", False))
+
+    async with async_db_session() as session:
+        # 查询所有有 content_hash 的线索,按 hash 分组
+        query = (
+            select(CustomerLead)
+            .where(CustomerLead.task_id == task_id)
+            .where(CustomerLead.owner_user_id == str(current_user["id"]))
+            .where(CustomerLead.content_hash != None)
+            .where(CustomerLead.content_hash != "")
+            .order_by(desc(CustomerLead.lead_score))
+        )
+        result = await session.execute(query)
+        all_leads = result.scalars().all()
+
+        # 按 content_hash 分组,每组保留第一条(lead_score 最高)
+        groups: Dict[str, List[CustomerLead]] = {}
+        for lead in all_leads:
+            h = lead.content_hash or ""
+            if h:
+                groups.setdefault(h, []).append(lead)
+
+        to_delete_ids: List[int] = []
+        for h, leads_in_group in groups.items():
+            if len(leads_in_group) <= 1:
+                continue
+            # 保留第一条,其余删除
+            keeper = leads_in_group[0]
+            dup_sum = sum((l.dup_count or 1) for l in leads_in_group)
+            # 累加 dup_count 到保留记录
+            keeper.dup_count = dup_sum
+            for l in leads_in_group[1:]:
+                to_delete_ids.append(l.id)
+
+        if not to_delete_ids:
+            return {
+                "success": True,
+                "deduped_count": 0,
+                "kept_count": len(all_leads),
+                "message": "未发现重复线索",
+            }
+
+        if dry_run:
+            return {
+                "success": True,
+                "deduped_count": len(to_delete_ids),
+                "kept_count": len(all_leads) - len(to_delete_ids),
+                "message": f"[预览] 将删除 {len(to_delete_ids)} 条重复线索,保留 {len(all_leads) - len(to_delete_ids)} 条",
+            }
+
+        # 实际删除重复线索
+        from sqlalchemy import delete as sql_delete
+        del_stmt = (
+            sql_delete(CustomerLead)
+            .where(CustomerLead.id.in_(to_delete_ids))
+            .execution_options(synchronize_session=False)
+        )
+        await session.execute(del_stmt)
+        await session.commit()
+
+        return {
+            "success": True,
+            "deduped_count": len(to_delete_ids),
+            "kept_count": len(all_leads) - len(to_delete_ids),
+            "message": f"已去重 {len(to_delete_ids)} 条重复线索,保留 {len(all_leads) - len(to_delete_ids)} 条",
+        }
+
+
 @router.get("/stats", response_model=LeadStatsResponse)
 async def get_lead_stats(
     task_id: Optional[str] = None,

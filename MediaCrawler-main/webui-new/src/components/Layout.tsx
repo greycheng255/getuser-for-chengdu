@@ -33,7 +33,6 @@ import {
   CommentOutlined,
   CustomerServiceOutlined,
   AppstoreOutlined,
-  KeyOutlined,
 } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useNotices, NoticeList } from './GlobalNotice';
@@ -144,8 +143,6 @@ const Layout: React.FC<LayoutProps> = ({ children, isDark, onThemeChange }) => {
     { key: '/tasks', icon: <RobotOutlined />, label: '获客中心' },
     { key: '/leads', icon: <UserOutlined />, label: '客户线索' },
     { key: '/mine', icon: <CrownOutlined />, label: '我的' },
-    // Cookie 与账号池管理（原设计归属于"我的"下的 Cookie管理）
-    { key: '/cookies', icon: <KeyOutlined />, label: 'Cookie管理' },
     // PRD 缺口补全：内容运营矩阵
     {
       key: 'grp_content',
