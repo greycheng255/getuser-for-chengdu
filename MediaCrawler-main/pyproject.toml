@@ -43,8 +43,12 @@ dependencies = [
     "websockets>=15.0.1",
     "asyncpg>=0.31.0",
     "xhshow>=0.1.9",
-    "faster-whisper>=1.2.1",
     "edge-tts>=7.2.8",
+]
+
+[project.optional-dependencies]
+transcription = [
+    "faster-whisper>=1.2.1",
 ]
 
 [tool.pytest.ini_options]
@@ -56,3 +60,8 @@ pythonpath = ["."]
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
+
+[tool.uv]
+required-environments = [
+    "sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]

@@ -1,22 +1,23 @@
 import { message } from '../utils/antdMessage';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Card, Button, Tag, Space, Modal, Form, Input, Select, notification, Radio, Row, Col, Statistic, Empty, Progress, Spin, Alert, Steps, Tooltip, Tabs, Descriptions, Badge, List, Popover, Popconfirm, Collapse } from 'antd';
+import { Card, Button, Tag, Space, Modal, Form, Input, Select, notification, Radio, Row, Col, Statistic, Empty, Progress, Spin, Alert, Steps, Tooltip, Tabs, Descriptions, Badge, List, Popover, Popconfirm, Collapse, Drawer, DatePicker } from 'antd';
 import {
   PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined,
   PlusOutlined, RobotOutlined, ReloadOutlined,
   CheckCircleOutlined, EyeOutlined, RedoOutlined,
   FileTextOutlined, CodeOutlined, StopOutlined, ThunderboltOutlined,
-  DownloadOutlined,
+  DownloadOutlined, MessageOutlined, PhoneOutlined,
 } from '@ant-design/icons';
 import type { CrawlerTask } from '../types';
 import { PLATFORM_MAP } from '../types';
+import dayjs from 'dayjs';
 import {
   getTasks, createTask, startTask, pauseTask, deleteTask, deleteTaskComments, retryTask, getTaskDetail, getTaskLogs, updateTaskPromo,
   analyzeUserNeeds, generateAdContent, createOutreachTask, executeOutreachTask, getOutreachStatus,
   startAutoOutreach, getAutoOutreachStatus, listAutoOutreachJobs, getAutoOutreachStats, cancelAutoOutreachJob, retryAutoOutreachJob, getOutreachTaskLogs,
   scanTaskLeads, getTaskLeadsSummary,
 } from '../api/tasks';
-import { getLeads, exportLeads } from '../api/leads';
+import { getLeads, exportLeads, collectContactsBatch, monitorTaskReplies, collectLeadContact, monitorLeadReplies, getLeadReplies, markLeadRepliesRead, getBatchJobStatus, getLeadRegions, filterIrrelevantLeads, dedupeLeads, type BatchJobStatus } from '../api/leads';
 
 const { Option } = Select;
 
@@ -417,12 +418,18 @@ const TaskManager: React.FC = () => {
   const [detailComments, setDetailComments] = useState<any[]>([]);
   const [detailCommentCount, setDetailCommentCount] = useState(0);
   const [commentFilter, setCommentFilter] = useState<string>('all');
+  // 身份筛选(A2): supplier供方/consumer需求方/neutral中性/all全部
+  const [roleTagFilter, setRoleTagFilter] = useState<string>('all');
+  // 日期范围筛选(A4): [start_ts, end_ts] 毫秒, undefined 表示未选
+  const [leadDateRange, setLeadDateRange] = useState<[number, number] | undefined>(undefined);
+  // 地域候选下拉(A3): 来自 /leads/regions,格式 [{ip_location, count}]
+  const [leadRegions, setLeadRegions] = useState<Array<{ ip_location: string; count: number }>>([]);
   const [commentPageSize, setCommentPageSize] = useState(50);
   const [commentOffset, setCommentOffset] = useState(0);
   const [commentLoadingMore, setCommentLoadingMore] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('info');
-  // 任务详情页的线索列表(从 CustomerLead 表分页拉取,支持按意向等级筛选全量数据)
+  // 任务详情页的线索列表(从 CustomerLead 表分页拉取,支持按意向等级/身份/日期筛选全量数据)
   const [taskLeadsList, setTaskLeadsList] = useState<any[]>([]);
   const [taskLeadsTotal, setTaskLeadsTotal] = useState(0);
   const [taskLeadsPage, setTaskLeadsPage] = useState(1);
@@ -437,9 +444,32 @@ const TaskManager: React.FC = () => {
   const wsRef = useRef<WebSocket | null>(null);
   const logsContainerRef = useRef<HTMLDivElement | null>(null);
   const logsAutoScrollRef = useRef<boolean>(true);
-  // 任务线索扫描状态(全量评论意向统计,从 CustomerLead 表查)
-  const [leadsSummary, setLeadsSummary] = useState<{ total: number; high_count: number; medium_count: number; low_count: number; scanned: boolean } | null>(null);
+  // 任务线索扫描状态(全量评论意向 + 角色分类统计,从 CustomerLead 表查)
+  const [leadsSummary, setLeadsSummary] = useState<{
+    total: number;
+    high_count: number;
+    medium_count: number;
+    low_count: number;
+    supplier_count: number;  // 合作厂家(供方)
+    consumer_count: number;  // 需求方
+    neutral_count: number;   // 中性
+    scanned: boolean;
+  } | null>(null);
   const [scanningLeads, setScanningLeads] = useState(false);
+  // A6 过滤无关 + 一键去重 loading
+  const [filteringIrrelevant, setFilteringIrrelevant] = useState(false);
+  const [dedupingLeads, setDedupingLeads] = useState(false);
+
+  // 批量联系方式采集 + 评论回复监测
+  const [batchJob, setBatchJob] = useState<BatchJobStatus | null>(null);
+  const batchJobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [collectContactLoading, setCollectContactLoading] = useState(false);
+  const [monitorReplyLoading, setMonitorReplyLoading] = useState(false);
+  // 单条线索的回复抽屉
+  const [repliesDrawerOpen, setRepliesDrawerOpen] = useState(false);
+  const [repliesLead, setRepliesLead] = useState<any>(null);
+  const [repliesList, setRepliesList] = useState<any[]>([]);
+  const [repliesLoading, setRepliesLoading] = useState(false);
 
   // 自动化获客弹窗状态
   const [analyzeModalVisible, setAnalyzeModalVisible] = useState(false);
@@ -691,6 +721,10 @@ const TaskManager: React.FC = () => {
     setTaskLeadsPage(1);
     setIpLocationFilter('');
     setLeadsSummary(null);
+    // 重置筛选状态(A2/A4): 身份/日期/地域候选
+    setRoleTagFilter('all');
+    setLeadDateRange(undefined);
+    setLeadRegions([]);
     setActiveTab('info');
     if (logsIntervalRef.current) {
       clearInterval(logsIntervalRef.current);
@@ -1035,15 +1069,21 @@ const TaskManager: React.FC = () => {
           high_count: summary.high_count,
           medium_count: summary.medium_count,
           low_count: summary.low_count,
+          supplier_count: summary.supplier_count ?? 0,
+          consumer_count: summary.consumer_count ?? 0,
+          neutral_count: summary.neutral_count ?? 0,
           scanned: true,
         });
       } catch (e) {
-        // 统计接口失败时回退到扫描结果
+        // 统计接口失败时回退到扫描结果(role 分布未知,置 0)
         setLeadsSummary({
           total: res.saved,
           high_count: res.high_count,
           medium_count: res.medium_count,
           low_count: res.low_count,
+          supplier_count: 0,
+          consumer_count: 0,
+          neutral_count: 0,
           scanned: true,
         });
       }
@@ -1057,8 +1097,17 @@ const TaskManager: React.FC = () => {
     }
   };
 
-  // 从 CustomerLead 表分页拉取线索(支持按意向等级筛选全量数据,不受评论100条分页限制)
-  const fetchTaskLeads = async (taskId: string, filter: string, page: number, reset: boolean = false, ipLocation?: string) => {
+  // 从 CustomerLead 表分页拉取线索(支持按意向等级/身份/日期筛选全量数据,不受评论100条分页限制)
+  // 可选参数 roleTag/dateRange 用于在切换筛选器时显式传入新值(避免闭包读到旧 state)
+  const fetchTaskLeads = async (
+    taskId: string,
+    filter: string,
+    page: number,
+    reset: boolean = false,
+    ipLocation?: string,
+    roleTag?: string,
+    dateRange?: [number, number] | undefined,
+  ) => {
     setTaskLeadsLoading(true);
     try {
       const params: any = {
@@ -1071,6 +1120,15 @@ const TaskManager: React.FC = () => {
       else if (filter === 'low') params.level = 'low';
       const ipLoc = (ipLocation !== undefined ? ipLocation : ipLocationFilter).trim();
       if (ipLoc) params.ip_location = ipLoc;
+      // A2 身份筛选: role_tag(supplier/consumer/neutral)
+      const effectiveRoleTag = roleTag !== undefined ? roleTag : roleTagFilter;
+      if (effectiveRoleTag && effectiveRoleTag !== 'all') params.role_tag = effectiveRoleTag;
+      // A4 日期范围筛选: start_ts/end_ts(毫秒)
+      const effectiveDateRange = dateRange !== undefined ? dateRange : leadDateRange;
+      if (effectiveDateRange && effectiveDateRange.length === 2) {
+        params.start_ts = effectiveDateRange[0];
+        params.end_ts = effectiveDateRange[1];
+      }
       const res = await getLeads(params);
       if (reset || page === 1) {
         setTaskLeadsList(res.items || []);
@@ -1099,6 +1157,111 @@ const TaskManager: React.FC = () => {
     if (detailTask) {
       fetchTaskLeads(detailTask.id, v, 1, true);
     }
+  };
+
+  // A2 身份筛选切换(supplier/consumer/neutral/all)
+  const handleRoleTagFilterChange = (v: string) => {
+    setRoleTagFilter(v);
+    if (detailTask) {
+      fetchTaskLeads(detailTask.id, commentFilter, 1, true, undefined, v);
+    }
+  };
+
+  // A4 日期范围切换(dates 为 [dayjs.Dayjs, dayjs.Dayjs] 或 null)
+  const handleLeadDateRangeChange = (dates: any) => {
+    if (dates && dates.length === 2) {
+      const range: [number, number] = [
+        dates[0].startOf('day').valueOf(),
+        dates[1].endOf('day').valueOf(),
+      ];
+      setLeadDateRange(range);
+      if (detailTask) {
+        fetchTaskLeads(detailTask.id, commentFilter, 1, true, undefined, undefined, range);
+      }
+    } else {
+      setLeadDateRange(undefined);
+      if (detailTask) {
+        fetchTaskLeads(detailTask.id, commentFilter, 1, true, undefined, undefined, undefined);
+      }
+    }
+  };
+
+  // A4 重置所有筛选(意向/身份/地域/日期)
+  const handleResetLeadFilters = () => {
+    setCommentFilter('all');
+    setRoleTagFilter('all');
+    setIpLocationFilter('');
+    setLeadDateRange(undefined);
+    if (detailTask) {
+      fetchTaskLeads(detailTask.id, 'all', 1, true, '', 'all', undefined);
+    }
+  };
+
+  // A3 加载地域分布下拉候选(从 /leads/regions 拉取,带条数)
+  const loadLeadRegions = async (taskId: string) => {
+    try {
+      const regions = await getLeadRegions({ task_id: taskId, limit: 50 });
+      setLeadRegions(regions || []);
+    } catch (error) {
+      console.error('Failed to load lead regions:', error);
+      setLeadRegions([]);
+    }
+  };
+
+  // A6 过滤无关线索: 将低意向+中性等标记为 ignored
+  const handleFilterIrrelevant = () => {
+    if (!detailTask) return;
+    Modal.confirm({
+      title: '过滤无关线索',
+      content: '将低意向(score<25)和中性身份的线索标记为已忽略,不影响数据完整性,可在列表筛选 ignored 状态查看。是否继续?',
+      okText: '过滤',
+      cancelText: '取消',
+      onOk: async () => {
+        setFilteringIrrelevant(true);
+        try {
+          const res = await filterIrrelevantLeads({
+            task_id: detailTask.id,
+            rules: ['low_score', 'neutral_role'],
+          });
+          message.success(res.message || `已过滤 ${res.filtered_count} 条无关线索`);
+          // 刷新统计和列表
+          const summary = await getTaskLeadsSummary(detailTask.id);
+          setLeadsSummary(summary);
+          fetchTaskLeads(detailTask.id, commentFilter, 1, true);
+        } catch (e: any) {
+          message.error(e?.response?.data?.detail || '过滤失败');
+        } finally {
+          setFilteringIrrelevant(false);
+        }
+      },
+    });
+  };
+
+  // A6 一键去重: 按 content_hash 合并重复线索
+  const handleDedupeLeads = () => {
+    if (!detailTask) return;
+    Modal.confirm({
+      title: '一键去重',
+      content: '将按内容指纹(content_hash)合并同任务下的重复线索,每组保留 lead_score 最高的一条,其余删除。重复次数会累加到保留记录。是否继续?',
+      okText: '去重',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        setDedupingLeads(true);
+        try {
+          const res = await dedupeLeads({ task_id: detailTask.id });
+          message.success(res.message || `已去重 ${res.deduped_count} 条`);
+          // 刷新统计和列表
+          const summary = await getTaskLeadsSummary(detailTask.id);
+          setLeadsSummary(summary);
+          fetchTaskLeads(detailTask.id, commentFilter, 1, true);
+        } catch (e: any) {
+          message.error(e?.response?.data?.detail || '去重失败');
+        } finally {
+          setDedupingLeads(false);
+        }
+      },
+    });
   };
 
   // 地域筛选输入框回车触发
@@ -1142,9 +1305,140 @@ const TaskManager: React.FC = () => {
     }
   };
 
+  // ==================== 联系方式采集 + 评论回复监测 ====================
+  const startBatchJobPolling = (jobId: string, kind: 'contact_collect' | 'reply_monitor') => {
+    if (batchJobPollRef.current) { clearInterval(batchJobPollRef.current); batchJobPollRef.current = null; }
+    const poll = async () => {
+      try {
+        const status = await getBatchJobStatus(jobId);
+        setBatchJob(status);
+        if (status.status === 'completed' || status.status === 'failed') {
+          if (batchJobPollRef.current) { clearInterval(batchJobPollRef.current); batchJobPollRef.current = null; }
+          if (status.status === 'completed') {
+            message.success(`✅ ${kind === 'contact_collect' ? '采集' : '监测'}完成 — ${status.message || `成功 ${status.success}, 失败 ${status.failed}`}`);
+          } else {
+            message.error(`❌ ${kind === 'contact_collect' ? '采集' : '监测'}失败 — ${status.message}`);
+          }
+          if (detailTask?.id) { fetchTaskLeads(detailTask.id, commentFilter, 1, true); }
+          setTimeout(() => setBatchJob(null), 5000);
+        }
+      } catch (e) {
+        if (batchJobPollRef.current) { clearInterval(batchJobPollRef.current); batchJobPollRef.current = null; }
+        setBatchJob(null);
+      }
+    };
+    poll();
+    batchJobPollRef.current = setInterval(poll, 3000);
+  };
+
+  // 组件卸载时清理轮询
+  useEffect(() => {
+    return () => {
+      if (batchJobPollRef.current) { clearInterval(batchJobPollRef.current); batchJobPollRef.current = null; }
+    };
+  }, []);
+
+  const handleCollectContactsBatch = async () => {
+    if (!detailTask?.id) return;
+    Modal.confirm({
+      title: '批量采集联系方式',
+      content: '将访问当前筛选条件下线索的用户主页,提取手机号/微信号/简介。后台执行,带频率限制。完成后刷新列表查看。',
+      okText: '开始采集', cancelText: '取消',
+      onOk: async () => {
+        setCollectContactLoading(true);
+        try {
+          const res = await collectContactsBatch({
+            task_id: detailTask.id,
+            level: (commentFilter === 'high' || commentFilter === 'medium' || commentFilter === 'low') ? commentFilter : undefined,
+            start_ts: leadDateRange?.[0]?.startOf('day').valueOf() || undefined,
+            end_ts: leadDateRange?.[1]?.endOf('day').valueOf() || undefined,
+            limit: 100,
+          });
+          if (res.job_id) {
+            setBatchJob({ job_id: res.job_id, task_id: detailTask.id, kind: 'contact_collect', status: 'running', total: res.total || 0, completed: 0, success: 0, failed: 0, message: '任务已提交,正在启动...', created_at: Date.now(), updated_at: Date.now() });
+            startBatchJobPolling(res.job_id, 'contact_collect');
+            message.info(`已开始后台采集 ${res.total || ''} 条线索`);
+          } else {
+            message.success(res.message || '已开始后台采集');
+            setTimeout(() => fetchTaskLeads(detailTask.id, commentFilter, 1, true), 30000);
+          }
+        } catch (e: any) { message.error(e?.response?.data?.detail || '采集失败'); }
+        finally { setCollectContactLoading(false); }
+      },
+    });
+  };
+
+  const handleMonitorRepliesBatch = async () => {
+    if (!detailTask?.id) return;
+    setMonitorReplyLoading(true);
+    try {
+      const res = await monitorTaskReplies(detailTask.id, {
+        level: (commentFilter === 'high' || commentFilter === 'medium' || commentFilter === 'low') ? commentFilter : undefined,
+        start_ts: leadDateRange?.[0]?.startOf('day').valueOf() || undefined,
+        end_ts: leadDateRange?.[1]?.endOf('day').valueOf() || undefined,
+        limit: 100,
+      });
+      if (res.job_id) {
+        setBatchJob({ job_id: res.job_id, task_id: detailTask.id, kind: 'reply_monitor', status: 'running', total: res.total || 0, completed: 0, success: 0, failed: 0, message: '任务已提交,正在启动...', created_at: Date.now(), updated_at: Date.now() });
+        startBatchJobPolling(res.job_id, 'reply_monitor');
+        message.info(`已开始后台监测 ${res.total || ''} 条线索`);
+      } else {
+        message.success(res.message || '已开始后台监测');
+        setTimeout(() => fetchTaskLeads(detailTask.id, commentFilter, 1, true), 30000);
+      }
+    } catch (e: any) { message.error(e?.response?.data?.detail || '监测失败'); }
+    finally { setMonitorReplyLoading(false); }
+  };
+
+  // 单条线索:采集联系方式
+  const handleCollectOneContact = async (leadId: number) => {
+    const hide = message.loading('正在访问用户主页采集联系方式...', 0);
+    try {
+      const res = await collectLeadContact(leadId);
+      const d = res.data || (res as any);
+      if (d?.phone || d?.wechat) {
+        message.success(`采集完成 — ${[d.phone && `手机:${d.phone}`, d.wechat && `微信:${d.wechat}`].filter(Boolean).join(' / ')}`);
+      } else { message.warning(res.message || '未提取到联系方式'); }
+      await fetchTaskLeads(detailTask!.id, commentFilter, 1, true);
+    } catch (e: any) { message.error(e?.response?.data?.detail || '采集失败'); }
+    finally { hide(); }
+  };
+
+  // 单条线索:监测回复
+  const handleMonitorOneReplies = async (leadId: number) => {
+    const hide = message.loading('正在回扫评论区监测回复...', 0);
+    try {
+      const res = await monitorLeadReplies(leadId);
+      message.success(res.message || '监测完成');
+      await fetchTaskLeads(detailTask!.id, commentFilter, 1, true);
+    } catch (e: any) { message.error(e?.response?.data?.detail || '监测失败'); }
+    finally { hide(); }
+  };
+
+  // 打开回复抽屉
+  const openRepliesDrawer = async (lead: any) => {
+    setRepliesLead(lead); setRepliesDrawerOpen(true); setRepliesLoading(true);
+    try { const res = await getLeadReplies(lead.id, { limit: 100 }); setRepliesList(res.items || []); }
+    catch { setRepliesList([]); }
+    finally { setRepliesLoading(false); }
+  };
+
+  const handleMarkRepliesRead = async (leadId: number) => {
+    try {
+      await markLeadRepliesRead(leadId);
+      setRepliesList((prev) => prev.map((r) => ({ ...r, is_read: 1 })));
+      message.success('已标记为已读');
+    } catch (e: any) { message.error(e?.response?.data?.detail || '标记失败'); }
+  };
+
   // Tab 切换时处理日志轮询和WebSocket
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
+    // 切到"评论获客"Tab 时自动触发扫描 + 加载地域分布下拉
+    if (tab === 'comments' && detailTask && !scanningLeads) {
+      handleScanLeads();
+      loadLeadRegions(detailTask.id);
+    }
     if (tab === 'logs' && detailTask) {
       // 重置自动滚动标志
       logsAutoScrollRef.current = true;
@@ -1784,88 +2078,157 @@ const TaskManager: React.FC = () => {
                 >
                   <Button danger icon={<DeleteOutlined />} size="small">清空数据</Button>
                 </Popconfirm>
+                <Tooltip title="批量访问线索用户主页,提取手机号/微信号/简介"><Button size="small" icon={<PhoneOutlined />} loading={collectContactLoading} onClick={handleCollectContactsBatch}>批量采集联系方式</Button></Tooltip>
+                <Tooltip title="回扫评论区,监测线索是否收到新回复"><Button size="small" icon={<MessageOutlined />} loading={monitorReplyLoading} onClick={handleMonitorRepliesBatch}>批量监测回复</Button></Tooltip>
               </div>
-              {detailComments.length === 0 ? (
+              {/* 批量任务进度条 */}
+              {batchJob && (
+                <div style={{ marginBottom: 12, padding: '12px 16px', background: batchJob.status === 'failed' ? '#fff2f0' : (batchJob.status === 'completed' ? '#f6ffed' : '#e6f4ff'), border: `1px solid ${batchJob.status === 'failed' ? '#ffccc7' : (batchJob.status === 'completed' ? '#b7eb8f' : '#91caff')}`, borderRadius: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <strong>{batchJob.kind === 'contact_collect' ? '📞 批量采集联系方式' : '💬 批量监测回复'}</strong>
+                    <Tag color={batchJob.status === 'running' ? 'processing' : (batchJob.status === 'completed' ? 'success' : 'error')}>{batchJob.status === 'running' ? '执行中...' : (batchJob.status === 'completed' ? '已完成' : '已失败')}</Tag>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>{batchJob.completed} / {batchJob.total} (成功 {batchJob.success}, 失败 {batchJob.failed})</div>
+                  <Progress percent={batchJob.total > 0 ? Math.round((batchJob.completed / batchJob.total) * 100) : 0} status={batchJob.status === 'failed' ? 'exception' : (batchJob.status === 'completed' ? 'success' : 'active')} size="small" />
+                  {batchJob.message && <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>{batchJob.message}</div>}
+                </div>
+              )}
+              {detailComments.length === 0 && taskLeadsList.length === 0 ? (
                 <Empty description="暂无评论数据" style={{ padding: 40 }} />
               ) : (
                 <>
-                  {/* 统计栏 - 意向统计来自 CustomerLead 表(全量扫描结果),不受评论分页100条限制 */}
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 16, padding: '12px 16px', background: '#f6ffed', borderRadius: 8, border: '1px solid #b7eb8f', flexWrap: 'wrap', alignItems: 'center' }}>
+                  {/* 统计栏 - 意向统计 + 角色分类统计 + 重新扫描按钮(A1/B2) */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12, padding: '12px 16px', background: '#f6ffed', borderRadius: 8, border: '1px solid #b7eb8f', flexWrap: 'wrap', alignItems: 'center' }}>
                     <Tag color="red" style={{ minWidth: 80 }}>高意向: {leadsSummary?.high_count ?? 0}</Tag>
                     <Tag color="orange" style={{ minWidth: 80 }}>中意向: {leadsSummary?.medium_count ?? 0}</Tag>
                     <Tag color="default" style={{ minWidth: 90 }}>低意向: {leadsSummary?.low_count ?? 0}</Tag>
                     <Tag color="blue" style={{ minWidth: 80 }}>总线索: {leadsSummary?.total ?? 0}</Tag>
-                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ width: 1, height: 18, background: '#d9d9d9', margin: '0 4px' }} />
+                    <Tag color="purple" style={{ minWidth: 100 }}>🏭 合作厂家: {leadsSummary?.supplier_count ?? 0}</Tag>
+                    <Tag color="green" style={{ minWidth: 90 }}>🛒 需求方: {leadsSummary?.consumer_count ?? 0}</Tag>
+                    <Tag color="default" style={{ minWidth: 80 }}>中性: {leadsSummary?.neutral_count ?? 0}</Tag>
+                    <div style={{ marginLeft: 'auto' }}>
                       <Tooltip title="扫描该任务全部评论(不限100条),按任务关键词/名称评分生成线索。重复扫描会覆盖旧数据。">
                         <Button
                           size="small"
                           type="primary"
-                          icon={<ThunderboltOutlined />}
+                          icon={<ReloadOutlined />}
                           loading={scanningLeads}
                           onClick={() => handleScanLeads()}
                         >
-                          {leadsSummary?.scanned ? '重新扫描全部评论' : '扫描全部评论'}
+                          {leadsSummary?.scanned ? '🔄 重新扫描' : '扫描全部评论'}
                         </Button>
                       </Tooltip>
-                      <Select size="small" value={commentFilter} onChange={(v) => handleCommentFilterChange(v)} style={{ width: 120 }}>
-                        <Option value="all">全部显示</Option>
-                        <Option value="high">仅高意向</Option>
-                        <Option value="medium">仅中意向</Option>
-                        <Option value="low">仅低意向</Option>
-                      </Select>
-                      <Input.Search
-                        size="small"
-                        placeholder="地域筛选(如四川/巴中)"
-                        value={ipLocationFilter}
-                        onChange={(e) => setIpLocationFilter(e.target.value)}
-                        onSearch={(v) => handleIpLocationSearch(v)}
-                        style={{ width: 160 }}
-                        allowClear
-                        enterButton="筛选"
-                      />
-                      <Tooltip title="导出当前筛选条件下的全量线索为 Excel(含用户信息/评论/源视频/意向评分/IP属地),用于销售跟进变现">
-                        <Button
-                          size="small"
-                          type="primary"
-                          ghost
-                          icon={<DownloadOutlined />}
-                          loading={exportingLeads}
-                          onClick={() => handleExportLeads()}
-                        >
-                          导出Excel
-                        </Button>
-                      </Tooltip>
-                      <Button size="small" icon={<RobotOutlined />} onClick={() => handleBatchAnalyze()}>
-                        批量分析
-                      </Button>
-                      <Button size="small" icon={<FileTextOutlined />} onClick={() => handleBatchGenerateCopy()}>
-                        批量文案
-                      </Button>
-                      <Select size="small" value={outreachMethod} onChange={setOutreachMethod} style={{ width: 110 }}>
-                        <Select.Option value="direct_message">📨 私信</Select.Option>
-                        <Select.Option value="comment_reply">💬 评论回复</Select.Option>
-                      </Select>
-                      <Button size="small" type="primary" danger icon={<RobotOutlined />} loading={autoOutreachLoading} onClick={() => handleAutoOutreach()}>
-                        一键获客
-                      </Button>
-                      <Button size="small" type="primary" onClick={() => {
-                        const filtered = commentFilter === 'all' ? detailComments :
-                          commentFilter === 'high' ? detailComments.filter((c: any) => c.value_level === '高') :
-                          commentFilter === 'medium' ? detailComments.filter((c: any) => c.value_level === '中') :
-                          detailComments.filter((c: any) => c.value_level === '低');
-                        const dataStr = filtered.map((c: any) => `${c.author}\t${c.user_id}\t${c.sec_uid}\t${c.content?.substring(0, 50)}\t${c.intent}\t${c.value_score}\t${c.value_level}`).join('\n');
-                        const header = '昵称\t用户ID\tSEC_UID\t评论内容\t意向\t评分\t等级\n';
-                        const BOM = '\uFEFF';
-                        const blob = new Blob([BOM + header + dataStr], { type: 'text/csv;charset=utf-8;' });
-                        const link = document.createElement('a');
-                        link.href = URL.createObjectURL(blob);
-                        link.download = `评论用户_${detailTask?.id || ''}_${commentFilter}.csv`;
-                        link.click();
-                        message.success(`已导出 ${filtered.length} 条用户数据`);
-                      }}>
-                        导出CSV
-                      </Button>
                     </div>
+                  </div>
+                  {/* 第一行: 筛选栏(A2/A3/A4 + 重置) */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: '#666' }}>筛选:</span>
+                    <Select size="small" value={commentFilter} onChange={(v) => handleCommentFilterChange(v)} style={{ width: 120 }}>
+                      <Option value="all">全部意向</Option>
+                      <Option value="high">仅高意向</Option>
+                      <Option value="medium">仅中意向</Option>
+                      <Option value="low">仅低意向</Option>
+                    </Select>
+                    <Select size="small" value={roleTagFilter} onChange={(v) => handleRoleTagFilterChange(v)} style={{ width: 120 }}>
+                      <Option value="all">全部身份</Option>
+                      <Option value="consumer">仅需求方</Option>
+                      <Option value="supplier">仅合作厂家</Option>
+                      <Option value="neutral">仅中性</Option>
+                    </Select>
+                    <Select
+                      size="small"
+                      placeholder="地域筛选"
+                      value={ipLocationFilter || undefined}
+                      onChange={(v) => {
+                        const val = v || '';
+                        setIpLocationFilter(val);
+                        if (detailTask) {
+                          fetchTaskLeads(detailTask.id, commentFilter, 1, true, val);
+                        }
+                      }}
+                      style={{ width: 180 }}
+                      allowClear
+                      showSearch
+                      filterOption={(input, option) =>
+                        (option?.children as unknown as string)?.toLowerCase().includes(input.toLowerCase())
+                      }
+                    >
+                      {leadRegions.map((r) => (
+                        <Option key={r.ip_location} value={r.ip_location}>
+                          {r.ip_location} ({r.count})
+                        </Option>
+                      ))}
+                    </Select>
+                    <DatePicker.RangePicker
+                      size="small"
+                      value={leadDateRange ? [dayjs(leadDateRange[0]), dayjs(leadDateRange[1])] : undefined}
+                      onChange={handleLeadDateRangeChange}
+                      style={{ width: 240 }}
+                      placeholder={['开始日期', '结束日期']}
+                    />
+                    <Button size="small" onClick={handleResetLeadFilters}>重置</Button>
+                  </div>
+                  {/* 第二行: 操作栏(过滤/去重/导出/批量/获客) */}
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <Tooltip title="将低意向和中性身份的线索标记为已忽略">
+                      <Button
+                        size="small"
+                        icon={<StopOutlined />}
+                        loading={filteringIrrelevant}
+                        onClick={handleFilterIrrelevant}
+                      >
+                        过滤无关
+                      </Button>
+                    </Tooltip>
+                    <Tooltip title="按内容指纹合并重复线索,保留评分最高的那条">
+                      <Button
+                        size="small"
+                        icon={<RedoOutlined />}
+                        loading={dedupingLeads}
+                        onClick={handleDedupeLeads}
+                      >
+                        一键去重
+                      </Button>
+                    </Tooltip>
+                    <Tooltip title="导出当前筛选条件下的全量线索为 Excel(含用户信息/评论/源视频/意向评分/IP属地),用于销售跟进变现">
+                      <Button
+                        size="small"
+                        type="primary"
+                        ghost
+                        icon={<DownloadOutlined />}
+                        loading={exportingLeads}
+                        onClick={() => handleExportLeads()}
+                      >
+                        导出Excel
+                      </Button>
+                    </Tooltip>
+                    <Button size="small" type="primary" onClick={() => {
+                      const dataStr = taskLeadsList.map((c: any) => `${c.nickname || c.author || ''}\t${c.user_id || ''}\t${c.sec_uid || ''}\t${(c.content || '').substring(0, 50)}\t${c.intent_type || c.intent || ''}\t${c.lead_score ?? c.value_score ?? 0}\t${(c.lead_score ?? 0) >= 50 ? '高' : (c.lead_score ?? 0) >= 25 ? '中' : '低'}`).join('\n');
+                      const header = '昵称\t用户ID\tSEC_UID\t评论内容\t意向\t评分\t等级\n';
+                      const BOM = '\uFEFF';
+                      const blob = new Blob([BOM + header + dataStr], { type: 'text/csv;charset=utf-8;' });
+                      const link = document.createElement('a');
+                      link.href = URL.createObjectURL(blob);
+                      link.download = `评论用户_${detailTask?.id || ''}_${commentFilter}_${roleTagFilter}.csv`;
+                      link.click();
+                      message.success(`已导出 ${taskLeadsList.length} 条用户数据`);
+                    }}>
+                      导出CSV
+                    </Button>
+                    <Button size="small" icon={<RobotOutlined />} onClick={() => handleBatchAnalyze()}>
+                      批量分析
+                    </Button>
+                    <Button size="small" icon={<FileTextOutlined />} onClick={() => handleBatchGenerateCopy()}>
+                      批量文案
+                    </Button>
+                    <Select size="small" value={outreachMethod} onChange={setOutreachMethod} style={{ width: 110 }}>
+                      <Select.Option value="direct_message">📨 私信</Select.Option>
+                      <Select.Option value="comment_reply">💬 评论回复</Select.Option>
+                    </Select>
+                    <Button size="small" type="primary" danger icon={<RobotOutlined />} loading={autoOutreachLoading} onClick={() => handleAutoOutreach()}>
+                      一键获客
+                    </Button>
                   </div>
                   {(() => {
                     // 数据源切换:从 CustomerLead 表分页拉取(支持全量筛选),不再用 detailComments.filter(只覆盖前100条)
@@ -1934,6 +2297,10 @@ const TaskManager: React.FC = () => {
                                         {item.author || '未知用户'}
                                         {item.ip_location && <Tag color="default" style={{ marginLeft: 8, fontSize: 11 }}>{item.ip_location}</Tag>}
                                         <Tag color={levelColor} style={{ marginLeft: 8, fontSize: 11 }}>{item.intent || '一般关注'}</Tag>
+                                        {/* A5 角色身份标签: supplier=🏭合作厂家(紫) / consumer=🛒需求方(绿) / neutral=中性(灰) */}
+                                        {item.role_tag === 'supplier' && <Tag color="purple" style={{ marginLeft: 8, fontSize: 11 }}>🏭 合作厂家</Tag>}
+                                        {item.role_tag === 'consumer' && <Tag color="green" style={{ marginLeft: 8, fontSize: 11 }}>🛒 需求方</Tag>}
+                                        {(!item.role_tag || item.role_tag === 'neutral') && <Tag color="default" style={{ marginLeft: 8, fontSize: 11 }}>中性</Tag>}
                                       </span>
                                       <Space>
                                         <Popover
@@ -2182,6 +2549,19 @@ const TaskManager: React.FC = () => {
                                             }
                                           }}>
                                             💬 回复评论
+                                          </Button>
+                                          <Tooltip title="访问用户主页采集手机号/微信号">
+                                            <Button size="small" icon={<PhoneOutlined />} onClick={async () => { await handleCollectOneContact(item.id); }}>
+                                              采集
+                                            </Button>
+                                          </Tooltip>
+                                          <Tooltip title="回扫该线索的源视频评论区,监测是否有新回复">
+                                            <Button size="small" icon={<MessageOutlined />} onClick={async () => { await handleMonitorOneReplies(item.id); }}>
+                                              监测
+                                            </Button>
+                                          </Tooltip>
+                                          <Button size="small" onClick={() => openRepliesDrawer(item)} title="查看该线索的评论回复">
+                                            回复列表
                                           </Button>
                                         </div>
                                       </div>
@@ -2880,6 +3260,71 @@ const TaskManager: React.FC = () => {
           </div>
         </Form>
       </Modal>
+
+      {/* 回复查看抽屉 */}
+      <Drawer
+        title={
+          <span>
+            {repliesLead?.nickname || '用户'} 的评论回复
+            {repliesList.some((r: any) => !r.is_read) && (
+              <Tag color="red" style={{ marginLeft: 8 }}>{repliesList.filter((r: any) => !r.is_read).length} 条未读</Tag>
+            )}
+          </span>
+        }
+        open={repliesDrawerOpen}
+        onClose={() => setRepliesDrawerOpen(false)}
+        width={500}
+        extra={
+          repliesList.some((r: any) => !r.is_read) ? (
+            <Button size="small" type="primary" onClick={() => repliesLead && handleMarkRepliesRead(repliesLead.id)}>
+              全部标记已读
+            </Button>
+          ) : undefined
+        }
+      >
+        <Spin spinning={repliesLoading}>
+          {repliesList.length === 0 ? (
+            <Empty description="暂无回复" />
+          ) : (
+            <List
+              dataSource={repliesList}
+              renderItem={(r: any) => {
+                const isFromLead = r.is_from_lead === 1;
+                return (
+                  <List.Item style={{ padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
+                    <List.Item.Meta
+                      avatar={
+                        r.avatar ? <img src={r.avatar} alt="" style={{ width: 36, height: 36, borderRadius: '50%' }} />
+                          : <div style={{ width: 36, height: 36, borderRadius: '50%', background: isFromLead ? '#e6f7ff' : '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>💬</div>
+                      }
+                      title={
+                        <Space>
+                          <span style={{ fontWeight: 500 }}>{r.nickname}</span>
+                          {isFromLead && <Tag color="blue" style={{ fontSize: 10 }}>线索本人</Tag>}
+                          {!r.is_read && <Badge status="processing" text="未读" />}
+                        </Space>
+                      }
+                      description={
+                        <div>
+                          <div style={{ marginBottom: 4 }}>{r.content}</div>
+                          <div style={{ fontSize: 12, color: '#999' }}>
+                            <span>👍 {r.like_count || 0}</span>
+                            <span style={{ marginLeft: 12 }}>🕐 {r.create_time ? new Date(r.create_time * 1000).toLocaleString() : ''}</span>
+                          </div>
+                        </div>
+                      }
+                    />
+                  </List.Item>
+                );
+              }}
+            />
+          )}
+          <div style={{ marginTop: 16, color: '#999', fontSize: 12, textAlign: 'right' }}>
+            共 {repliesList.length} 条回复
+            ({repliesList.filter((r: any) => r.is_from_lead === 1).length} 条来自线索本人)
+          </div>
+        </Spin>
+      </Drawer>
     </div>
   );
 };

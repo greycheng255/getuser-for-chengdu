@@ -418,6 +418,7 @@ class MultiPlatformPublisher:
                     success=False,
                     platform=platform,
                     error="无可用账号（全部冷却或配额耗尽）",
+                    error_code=PublishErrorCode.NO_AVAILABLE_ACCOUNT.value,
                     retryable=False,
                 )
 
@@ -441,6 +442,7 @@ class MultiPlatformPublisher:
                         success=False,
                         platform=platform,
                         error=f"quota_exceeded: {quota_result.reason}",
+                        error_code=PublishErrorCode.QUOTA_EXCEEDED.value,
                         retryable=False,
                         account_id=account.id,
                     )

@@ -531,66 +531,127 @@ async def _fetch_replies_from_db(post_url: str) -> List[Dict[str, Any]]:
         return []
 
 
+def _extract_reply_from_tweet(tweet: dict, focal_tweet_id: str) -> Optional[Dict[str, Any]]:
+    """从单个 tweet result 节点提取回复信息，返回 None 表示跳过"""
+    try:
+        # 处理 TweetWithVisibilityResults 类型
+        if tweet.get("__typename") == "TweetWithVisibilityResults":
+            tweet = tweet.get("tweet", {})
+            if not tweet:
+                return None
+
+        rest_id = tweet.get("rest_id", "")
+        if not rest_id or rest_id == focal_tweet_id:
+            return None
+
+        legacy = tweet.get("legacy", {})
+        full_text = legacy.get("full_text", "")
+        if not full_text.strip():
+            return None
+
+        # 提取用户信息
+        user_result = tweet.get("core", {}).get("user_results", {}).get("result", {})
+        # 新版结构: core.screen_name / core.name；旧版: legacy.screen_name / legacy.name
+        user_core = user_result.get("core", {}) or {}
+        user_legacy = user_result.get("legacy", {}) or {}
+        username = user_core.get("screen_name", "") or user_legacy.get("screen_name", "")
+        nickname = user_core.get("name", "") or user_legacy.get("name", "")
+        avatar = user_legacy.get("profile_image_url_https", "") or (user_result.get("avatar", {}) or {}).get("image_url", "")
+
+        # 评论创建时间: legacy.created_at 格式 "Thu Jul 16 17:11:10 +0000 2026"
+        created_at_str = legacy.get("created_at", "")
+        created_at = 0
+        if created_at_str:
+            try:
+                from datetime import datetime
+                dt = datetime.strptime(created_at_str, "%a %b %d %H:%M:%S %z %Y")
+                created_at = int(dt.timestamp())
+            except Exception:
+                pass
+
+        return {
+            "reply_id": rest_id,
+            "reply_url": f"https://x.com/{username}/status/{rest_id}" if username else "",
+            "username": username,
+            "nickname": nickname,
+            "avatar": avatar,
+            "content": full_text,
+            "user_id": user_result.get("rest_id", ""),
+            "likes_count": str(legacy.get("favorite_count", 0)),
+            "created_at": created_at,
+        }
+    except Exception:
+        return None
+
+
 def _parse_tweet_detail_response(data: dict, focal_tweet_id: str) -> List[Dict[str, Any]]:
     """解析 TweetDetail GraphQL API 响应，提取回复列表
 
     TweetDetail 响应包含焦点推文及其对话树中的所有回复。
-    结构: data.tweetResult.result.timeline.instructions[].entries[].content.itemContent.tweet_results.result
+    兼容两种响应结构：
+    1. 旧版: data.tweetResult.result.timeline.instructions[].entries[].content.itemContent.tweet_results.result
+    2. 新版: data.threaded_conversation_with_injections_v2.instructions[].entries[].content.itemContent.tweet_results.result
+    3. 新版对话线程: entries[].content.items[].itemContent.tweet_results.result (TimelineTimelineModule)
     """
     replies = []
     try:
-        result = data.get("data", {}).get("tweetResult", {}).get("result", {})
-        if not result:
-            return []
+        data_node = data.get("data", {}) or {}
 
-        instructions = result.get("timeline", {}).get("instructions", [])
+        # 优先新版结构 (threaded_conversation_with_injections_v2)
+        tc = data_node.get("threaded_conversation_with_injections_v2")
+        if tc and isinstance(tc, dict):
+            instructions = tc.get("instructions", [])
+        else:
+            # 回退到旧版结构 (tweetResult.result.timeline)
+            result = data_node.get("tweetResult", {}).get("result", {})
+            if not result:
+                return []
+            instructions = result.get("timeline", {}).get("instructions", [])
+
         for instruction in instructions:
             entries = instruction.get("entries", [])
             for entry in entries:
                 try:
                     content = entry.get("content", {})
-                    item_content = content.get("itemContent", {})
-                    if not item_content:
-                        continue
+                    entry_type = content.get("entryType", "") or content.get("__typename", "")
 
-                    tweet_results = item_content.get("tweet_results", {})
-                    tweet = tweet_results.get("result", {})
-                    if not tweet:
-                        continue
-
-                    # 处理 TweetWithVisibilityResults 类型
-                    if tweet.get("__typename") == "TweetWithVisibilityResults":
-                        tweet = tweet.get("tweet", {})
+                    # 情况1: TimelineTimelineItem - 直接取 content.itemContent
+                    if entry_type == "TimelineTimelineItem":
+                        item_content = content.get("itemContent", {})
+                        if not item_content:
+                            continue
+                        tweet = item_content.get("tweet_results", {}).get("result", {})
                         if not tweet:
                             continue
+                        reply = _extract_reply_from_tweet(tweet, focal_tweet_id)
+                        if reply:
+                            replies.append(reply)
 
-                    rest_id = tweet.get("rest_id", "")
-                    if not rest_id or rest_id == focal_tweet_id:
-                        continue
+                    # 情况2: TimelineTimelineModule - 遍历 content.items[].itemContent
+                    elif entry_type == "TimelineTimelineModule":
+                        items = content.get("items", [])
+                        for item in items:
+                            item_content = (item.get("item", {}) or {}).get("itemContent", {}) or item.get("itemContent", {})
+                            if not item_content:
+                                continue
+                            tweet = item_content.get("tweet_results", {}).get("result", {})
+                            if not tweet:
+                                continue
+                            reply = _extract_reply_from_tweet(tweet, focal_tweet_id)
+                            if reply:
+                                replies.append(reply)
 
-                    legacy = tweet.get("legacy", {})
-                    full_text = legacy.get("full_text", "")
-                    if not full_text.strip():
-                        continue
-
-                    # 提取用户信息
-                    user_result = tweet.get("core", {}).get("user_results", {}).get("result", {})
-                    user_legacy = user_result.get("legacy", {})
-                    username = user_legacy.get("screen_name", "")
-                    nickname = user_legacy.get("name", "")
-                    avatar = user_legacy.get("profile_image_url_https", "")
-
-                    replies.append({
-                        "reply_id": rest_id,
-                        "reply_url": f"https://x.com/{username}/status/{rest_id}" if username else "",
-                        "username": username,
-                        "nickname": nickname,
-                        "avatar": avatar,
-                        "content": full_text,
-                        "user_id": user_result.get("rest_id", ""),
-                        "likes_count": str(legacy.get("favorite_count", 0)),
-                        "created_at": 0,
-                    })
+                    # 兼容旧逻辑: 无 entryType 但有 itemContent
+                    else:
+                        item_content = content.get("itemContent", {})
+                        if not item_content:
+                            continue
+                        tweet = item_content.get("tweet_results", {}).get("result", {})
+                        if not tweet:
+                            continue
+                        reply = _extract_reply_from_tweet(tweet, focal_tweet_id)
+                        if reply:
+                            replies.append(reply)
                 except Exception:
                     continue
     except Exception as e:
@@ -746,6 +807,38 @@ async def _fetch_replies_via_browser(post_url: str) -> List[Dict[str, Any]]:
         # 已收到响应后再等 2s,收集可能的分页响应
         if tweet_detail_responses:
             await asyncio.sleep(2)
+
+        # X 平台会将部分评论标记为 "probable spam"，需要点击 "Show probable spam" 展开后才能加载
+        # 检测到该按钮时自动点击，并等待新的 TweetDetail 响应（包含被折叠的评论）
+        try:
+            spam_selectors = [
+                'text="Show probable spam"',
+                'text="Show more replies"',
+                'button:has-text("probable spam")',
+                'span:has-text("probable spam")',
+            ]
+            spam_clicked = False
+            for sel in spam_selectors:
+                try:
+                    el = await page.query_selector(sel)
+                    if el:
+                        await el.click()
+                        spam_clicked = True
+                        logger.info(f"[Monitor] 检测到 'Show probable spam' 按钮，已点击展开: {post_url}")
+                        break
+                except Exception:
+                    pass
+            if spam_clicked:
+                # 等待新的 TweetDetail 响应（包含被折叠的评论线程）
+                prev_count = len(tweet_detail_responses)
+                wait_deadline = time.time() + 10
+                while time.time() < wait_deadline and len(tweet_detail_responses) <= prev_count:
+                    await asyncio.sleep(0.5)
+                if len(tweet_detail_responses) > prev_count:
+                    await asyncio.sleep(2)  # 收集可能的分页响应
+                    logger.info(f"[Monitor] 'Show probable spam' 展开后新增 {len(tweet_detail_responses) - prev_count} 个响应: {post_url}")
+        except Exception as e:
+            logger.debug(f"[Monitor] 点击 'Show probable spam' 失败(忽略): {e}")
 
         # 解析所有捕获到的 TweetDetail 响应,合并去重
         if tweet_detail_responses:

@@ -60,7 +60,8 @@ PLATFORM_CAPABILITIES: Dict[str, Dict[str, Any]] = {
         "publisher": "multi_publisher",   # 走 MultiPlatformPublisher
         "interactor": "douyin",
         "cookie_source": "account_service",
-        "monitor": None,
+        "monitor": "domestic",            # 走 CommentMonitorService（comment_monitor_task 表）
+        "monitor_platform": "douyin",     # CommentFetcherFactory 使用的平台名
         "max_content": 2000,
         "real_publish": True,             # 国内平台已有 Playwright 真实发布实现（需配置账号 cookie）
     },
@@ -70,9 +71,10 @@ PLATFORM_CAPABILITIES: Dict[str, Dict[str, Any]] = {
         "publisher": "multi_publisher",
         "interactor": "xiaohongshu",
         "cookie_source": "account_service",
-        "monitor": None,
+        "monitor": "domestic",
+        "monitor_platform": "xhs",
         "max_content": 1000,
-        "real_publish": True,             # 抖音已有 Playwright 真实发布实现
+        "real_publish": True,
     },
     "bilibili": {
         "name": "哔哩哔哩",
@@ -80,9 +82,10 @@ PLATFORM_CAPABILITIES: Dict[str, Dict[str, Any]] = {
         "publisher": "multi_publisher",
         "interactor": "bilibili",
         "cookie_source": "account_service",
-        "monitor": None,
+        "monitor": "domestic",
+        "monitor_platform": "bili",
         "max_content": 2000,
-        "real_publish": True,             # 小红书已有 Playwright 真实发布实现
+        "real_publish": True,
     },
     "weibo": {
         "name": "微博",
@@ -90,9 +93,10 @@ PLATFORM_CAPABILITIES: Dict[str, Dict[str, Any]] = {
         "publisher": "multi_publisher",
         "interactor": "weibo",
         "cookie_source": "account_service",
-        "monitor": None,
+        "monitor": "domestic",
+        "monitor_platform": "wb",
         "max_content": 2000,
-        "real_publish": True,             # 哔哩哔哩已有 Playwright 真实发布实现
+        "real_publish": True,
     },
     "zhihu": {
         "name": "知乎",
@@ -100,9 +104,9 @@ PLATFORM_CAPABILITIES: Dict[str, Dict[str, Any]] = {
         "publisher": "multi_publisher",
         "interactor": "zhihu",
         "cookie_source": "account_service",
-        "monitor": None,
+        "monitor": None,                  # 知乎暂无评论抓取实现
         "max_content": 10000,
-        "real_publish": True,             # 微博已有 Playwright 真实发布实现
+        "real_publish": True,
     },
     "kuaishou": {
         "name": "快手",
@@ -110,9 +114,10 @@ PLATFORM_CAPABILITIES: Dict[str, Dict[str, Any]] = {
         "publisher": "multi_publisher",
         "interactor": "kuaishou",
         "cookie_source": "account_service",
-        "monitor": None,
+        "monitor": "domestic",
+        "monitor_platform": "ks",
         "max_content": 2000,
-        "real_publish": True,             # 快手已有 Playwright 真实发布实现（kuaishou_publisher.py）
+        "real_publish": True,
     },
 }
 
@@ -120,6 +125,7 @@ SUPPORTED_PLATFORMS = list(PLATFORM_CAPABILITIES.keys())
 
 
 PIPELINE_TIMEOUT_TOTAL = 1800  # 30 分钟总超时
+STEP_AI_TIMEOUT = 180  # 单步 AI 调用超时（3 分钟），防止 AI hang 住导致整个流水线卡死
 
 
 class PipelineCancelledError(Exception):
@@ -173,7 +179,17 @@ async def start_pipeline(
 
     async def _run():
         try:
-            await run_pipeline(task_id, server_base_url)
+            await asyncio.wait_for(
+                run_pipeline(task_id, server_base_url),
+                timeout=PIPELINE_TIMEOUT_TOTAL,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"[pipeline] 任务总超时({PIPELINE_TIMEOUT_TOTAL}s), task_id={task_id}")
+            await store.update_task(
+                task_id, status="failed",
+                error_msg=f"流水线总超时({PIPELINE_TIMEOUT_TOTAL}秒),请重试",
+                step_detail="流水线超时,请重试",
+            )
         except asyncio.CancelledError:
             await store.update_task(task_id, status="failed", error_msg="任务被取消")
         except Exception as e:
@@ -409,14 +425,24 @@ async def run_pipeline(task_id: str, server_base_url: str = "http://localhost:80
             )
         else:
             try:
-                contents = await ai_agent_client.generate_platform_post_content(
-                    post, breakdown_text, platform, count=5,
+                contents = await asyncio.wait_for(
+                    ai_agent_client.generate_platform_post_content(
+                        post, breakdown_text, platform, count=5,
+                    ),
+                    timeout=STEP_AI_TIMEOUT,
                 )
                 await store.update_task(
                     task_id, candidate_contents=contents,
                     step_detail=f"已生成 {len(contents)} 条候选文案",
                 )
                 logger.info(f"[pipeline] Step 3 完成: 生成 {len(contents)} 条候选文案")
+            except asyncio.TimeoutError:
+                logger.warning(f"[pipeline] Step 3 文案生成超时({STEP_AI_TIMEOUT}s),使用原内容降级")
+                contents = [post.get("content", "")]
+                await store.update_task(
+                    task_id, candidate_contents=contents,
+                    step_detail=f"文案生成超时({STEP_AI_TIMEOUT}s),使用原内容降级",
+                )
             except Exception as e:
                 logger.warning(f"[pipeline] Step 3 文案生成失败: {e}")
                 contents = [post.get("content", "")]
@@ -432,12 +458,22 @@ async def run_pipeline(task_id: str, server_base_url: str = "http://localhost:80
             logger.info(f"[pipeline] Step 4: AI 自动选文案")
 
             try:
-                selected_content = await _ai_select_best_content(contents, platform)
+                selected_content = await asyncio.wait_for(
+                    _ai_select_best_content(contents, platform),
+                    timeout=STEP_AI_TIMEOUT,
+                )
                 await store.update_task(
                     task_id, selected_content=selected_content,
                     step_detail="已选择最佳文案",
                 )
                 logger.info(f"[pipeline] Step 4 完成: 选中文案长度={len(selected_content)}")
+            except asyncio.TimeoutError:
+                logger.warning(f"[pipeline] Step 4 AI 选文案超时({STEP_AI_TIMEOUT}s),使用第一条")
+                selected_content = contents[0] if contents else post.get("content", "")
+                await store.update_task(
+                    task_id, selected_content=selected_content,
+                    step_detail=f"AI选文案超时({STEP_AI_TIMEOUT}s),使用第一条候选",
+                )
             except Exception as e:
                 logger.warning(f"[pipeline] Step 4 AI 选文案失败: {e},使用第一条")
                 selected_content = contents[0] if contents else post.get("content", "")
@@ -544,6 +580,14 @@ async def run_pipeline(task_id: str, server_base_url: str = "http://localhost:80
                 f"{cap['name']} 发布失败: {fail_reason}"
             )
         else:
+            # 发布成功后立即把 published_post_id/url 写入任务表
+            # 防止后续 Step 7/8 失败时丢失发布结果（前端靠 published_post_url 判断是否 DRY-RUN）
+            await store.update_task(
+                task_id,
+                published_post_id=published_post_id,
+                published_post_url=published_post_url,
+                account_id=account_id,
+            )
             logger.info(
                 f"[pipeline] Step 6 完成: platform={platform} "
                 f"post_id={published_post_id} url={published_post_url}"
@@ -581,20 +625,37 @@ async def run_pipeline(task_id: str, server_base_url: str = "http://localhost:80
             )
             logger.info("[pipeline] Step 7: 已跳过(trigger_interaction=False)")
 
-        # ========== Step 8: 启动评论监控（仅 X） ==========
-        if auto_monitor and cap.get("monitor") == "x_native" and published_post_id:
+        # ========== Step 8: 启动评论监控 ==========
+        monitor_type = cap.get("monitor")
+        if auto_monitor and monitor_type and published_post_id:
             await store.update_task(
                 task_id, current_step=8,
                 step_detail="正在启动评论监控...",
             )
-            logger.info(f"[pipeline] Step 8: 启动 X 评论监控 post_id={published_post_id}")
+            logger.info(f"[pipeline] Step 8: 启动 {platform} 评论监控 post_id={published_post_id} type={monitor_type}")
 
             try:
-                monitor_ok = await _start_x_monitor(
-                    tweet_id=published_post_id,
-                    tweet_url=published_post_url,
-                    content=selected_content,
-                )
+                if monitor_type == "x_native":
+                    # X 平台：写入 XTwitterMonitoredPost 表
+                    monitor_ok = await _start_x_monitor(
+                        tweet_id=published_post_id,
+                        tweet_url=published_post_url,
+                        content=selected_content,
+                    )
+                elif monitor_type == "domestic":
+                    # 国内平台：通过 CommentMonitorService 创建 video 监控任务
+                    monitor_ok = await _start_domestic_monitor(
+                        platform=platform,
+                        monitor_platform=cap.get("monitor_platform", platform),
+                        post_id=published_post_id,
+                        post_url=published_post_url,
+                        content=selected_content,
+                        owner_user_id=str(owner_user_id) if owner_user_id else "",
+                    )
+                else:
+                    monitor_ok = False
+                    logger.warning(f"[pipeline] Step 8: 未知监控类型 {monitor_type}")
+
                 await store.update_task(
                     task_id, monitor_started=1 if monitor_ok else 0,
                     step_detail="监控已启动" if monitor_ok else "监控启动失败(不影响发布结果)",
@@ -616,6 +677,9 @@ async def run_pipeline(task_id: str, server_base_url: str = "http://localhost:80
         # ========== 完成 ==========
         await store.update_task(
             task_id, status="completed",
+            published_post_id=published_post_id,
+            published_post_url=published_post_url,
+            account_id=account_id,
             step_detail=(
                 f"完成! 发布到 {cap['name']} "
                 f"(post_id={published_post_id})"
@@ -812,13 +876,38 @@ async def _publish_to_multi_platform(
         )
         raise RuntimeError(f"{platform} 暂无发布实现（无 publisher 注册）")
 
+    # 远程视频 URL 需先下载到本地（发布器用 os.path.isfile 校验本地文件）
+    local_video_path = video_url
+    if video_url and video_url.startswith(("http://", "https://")):
+        import tempfile
+        import httpx
+        suffix = os.path.splitext(video_url.split("?")[0])[1] or ".mp4"
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+        os.close(tmp_fd)
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+                async with client.stream("GET", video_url) as resp:
+                    if resp.status_code != 200:
+                        raise RuntimeError(f"下载视频失败: HTTP {resp.status_code}")
+                    with open(tmp_path, "wb") as f:
+                        async for chunk in resp.aiter_bytes(8192):
+                            f.write(chunk)
+            logger.info(f"[pipeline] 视频已下载到本地: {tmp_path} ({os.path.getsize(tmp_path)} bytes)")
+            local_video_path = tmp_path
+        except Exception as e:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise RuntimeError(f"下载视频失败: {e}")
+
     # 构造发布任务
     try:
         result = await publisher.publish_to_single_platform(
             platform=platform,
             title=title,
             content=content,
-            video_path=video_url if video_url else None,
+            video_path=local_video_path if local_video_path else None,
             user_id=owner_user_id,
             # 流水线场景由 Step 6.1 统一写 publish_records，跳过避免重复
             skip_publish_record=True,
@@ -874,6 +963,13 @@ async def _publish_to_multi_platform(
             except Exception as ae:
                 logger.warning(f"[pipeline] 发送发布失败预警异常(非致命): {ae}")
         raise RuntimeError(f"{platform} 发布异常: {e}")
+    finally:
+        # 清理下载的临时视频文件
+        if local_video_path and local_video_path != video_url:
+            try:
+                os.unlink(local_video_path)
+            except OSError:
+                pass
 
 
 # ------------------------------------------------------------------------------
@@ -998,6 +1094,66 @@ async def _start_x_monitor(
         return True
     except Exception as e:
         logger.warning(f"[pipeline] 启动 X 监控失败: {e}")
+        return False
+
+
+async def _start_domestic_monitor(
+    *,
+    platform: str,
+    monitor_platform: str,
+    post_id: str,
+    post_url: str,
+    content: str,
+    owner_user_id: str = "",
+) -> bool:
+    """为国内平台发布的动态启动评论监控
+
+    通过 CommentMonitorService 创建 video 类型监控任务，
+    自动抓取该动态下的评论并做 AI 识别/自动回复。
+    """
+    if not post_id:
+        return False
+
+    try:
+        from api.services.comment_monitor.comment_monitor_service import CommentMonitorService
+
+        svc = CommentMonitorService()
+
+        # 先查是否已有同平台同 target 的监控任务，避免重复创建
+        existing_tasks = await svc.list_tasks(
+            platform=monitor_platform,
+            owner_user_id=owner_user_id,
+            page=1,
+            page_size=50,
+        )
+        for t in existing_tasks.get("items", []):
+            if t.get("target_id") == post_id and t.get("status") in ("running", "pending"):
+                logger.info(f"[pipeline] {platform} 动态 {post_id} 已有监控任务 {t['task_id']}, 跳过创建")
+                # 确保在运行
+                if t.get("status") != "running":
+                    await svc.start_task(t["task_id"], owner_user_id=owner_user_id)
+                return True
+
+        # 创建新的 video 类型监控任务
+        task = await svc.create_task(
+            platform=monitor_platform,
+            monitor_type="video",
+            target_id=post_id,
+            target_nickname="",
+            keywords="",
+            enable_auto_reply=False,
+            enable_lead_extract=True,
+            owner_user_id=owner_user_id,
+        )
+        task_id = task["task_id"]
+
+        # 启动监控任务（后台协程）
+        await svc.start_task(task_id, owner_user_id=owner_user_id)
+
+        logger.info(f"[pipeline] 已为 {platform} 动态 {post_id} 启动评论监控 (task_id={task_id})")
+        return True
+    except Exception as e:
+        logger.warning(f"[pipeline] 启动 {platform} 评论监控失败: {e}")
         return False
 
 

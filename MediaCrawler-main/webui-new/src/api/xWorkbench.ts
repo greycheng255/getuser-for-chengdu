@@ -506,6 +506,12 @@ export const xWorkbenchApi = {
   getExplainerVideoStatus: (task_id: string) =>
     request.get<any, ExplainerVideoStatusResp>(`/x-workbench/explainer-video/${encodeURIComponent(task_id)}`),
 
+  // 按 post_id 查询最新解说视频任务(用于恢复关闭页面前的生成进度,避免重复扣费)
+  getExplainerVideoByPost: (post_id: string) =>
+    request.get<any, ExplainerVideoStatusResp & { model_name?: string; created_ts?: number }>(
+      `/x-workbench/explainer-video/by-post/${encodeURIComponent(post_id)}`,
+    ),
+
   // 生成评论
   generateComments: (post_id: string, count = 3) =>
     request.post<any, GenerateCommentsResp>('/x-workbench/generate-comments', { post_id, count }),

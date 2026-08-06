@@ -1274,20 +1274,20 @@ async def start_task(task_id: str, current_user: dict = Depends(get_current_user
             except (ValueError, TypeError):
                 _owner_uid_int = None
 
-        success = await crawler_manager.start(config, task_id=task_id, owner_user_id=_owner_uid_int)
+        success, message = await crawler_manager.start(config, task_id=task_id, owner_user_id=_owner_uid_int)
         if success:
             task.status = "running"
             task.updated_ts = int(time.time() * 1000)
             await session.commit()
-            
+
             # 为该任务启动独立的日志同步
             if task_id in _log_sync_tasks and not _log_sync_tasks[task_id].done():
                 _log_sync_tasks[task_id].cancel()
             _log_sync_tasks[task_id] = asyncio.create_task(_sync_logs_to_task(task_id))
-            
-            return {"success": True, "message": "Crawler started"}
+
+            return {"success": True, "message": message}
         else:
-            return {"success": False, "message": "Crawler already running for this task"}
+            return {"success": False, "message": message}
     except HTTPException:
         raise
     except Exception as e:
@@ -1304,7 +1304,7 @@ async def pause_task(task_id: str, current_user: dict = Depends(get_current_user
 
     # 停止爬虫进程
     from ..services import crawler_manager
-    await crawler_manager.stop(task_id=task_id)
+    _, _ = await crawler_manager.stop(task_id=task_id)
 
     # 取消该任务的日志同步
     if task_id in _log_sync_tasks and not _log_sync_tasks[task_id].done():
@@ -2814,12 +2814,30 @@ async def get_task_leads_summary(task_id: str, current_user: dict = Depends(get_
         )
         low_count = low_result.scalar() or 0
 
+        # 角色分类统计(A1): supplier供方/consumer需求方/neutral中性
+        role_result = await session.execute(
+            select(CustomerLead.role_tag, func.count())
+            .where(CustomerLead.task_id == task_id)
+            .where(CustomerLead.owner_user_id == str(current_user["id"]))
+            .group_by(CustomerLead.role_tag)
+        )
+        role_counts = {"supplier": 0, "consumer": 0, "neutral": 0}
+        for row in role_result.all():
+            tag = row[0] or "neutral"
+            if tag in role_counts:
+                role_counts[tag] = row[1]
+            else:
+                role_counts["neutral"] += row[1]
+
         return {
             "task_id": task_id,
             "total": total,
             "high_count": high_count,
             "medium_count": medium_count,
             "low_count": low_count,
+            "supplier_count": role_counts["supplier"],
+            "consumer_count": role_counts["consumer"],
+            "neutral_count": role_counts["neutral"],
             "scanned": total > 0,
         }
     except HTTPException:

@@ -27,7 +27,7 @@ class AnalyticsService:
     """数据分析服务（异步，多源聚合）"""
 
     @staticmethod
-    def _get_engine():
+    async def _get_engine():
         """获取异步数据库引擎（公共方法，消除重复导入）"""
         try:
             from database.db_session import get_async_engine

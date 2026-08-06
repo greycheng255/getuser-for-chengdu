@@ -54,6 +54,9 @@ export const getTaskLeadsSummary = (taskId: string): Promise<{
   high_count: number;
   medium_count: number;
   low_count: number;
+  supplier_count: number;  // 合作厂家(供方)
+  consumer_count: number;  // 需求方
+  neutral_count: number;   // 中性
   scanned: boolean;
 }> => {
   return request.get(`/tasks/${taskId}/leads-summary`);

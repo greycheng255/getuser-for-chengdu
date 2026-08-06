@@ -19,6 +19,7 @@
 import asyncio
 import subprocess
 import signal
+import sys
 import os
 from typing import Optional, List, Dict
 from datetime import datetime
@@ -117,13 +118,11 @@ class CrawlerManager:
             return "debug"
         return "info"
 
-    async def start(self, config: CrawlerStartRequest, task_id: Optional[str] = None, owner_user_id: Optional[int] = None) -> bool:
+    async def start(self, config: CrawlerStartRequest, task_id: Optional[str] = None, owner_user_id: Optional[int] = None) -> tuple:
         """Start crawler process for a specific task
 
-        Args:
-            config: 爬虫启动配置
-            task_id: 任务ID
-            owner_user_id: 任务创建者用户ID(用于获取该用户的Cookie,实现用户隔离)
+        Returns:
+            (success: bool, message: str)
         """
         if task_id is None:
             task_id = "default"
@@ -131,7 +130,7 @@ class CrawlerManager:
         async with self._lock:
             # Check if this specific task is already running
             if task_id in self._processes and self._processes[task_id].poll() is None:
-                return False
+                return (False, "Crawler already running for this task")
 
             # Clear old logs and reset state for this task
             self._task_logs[task_id] = []
@@ -228,40 +227,50 @@ class CrawlerManager:
                 # Start log reading task for this process
                 self._read_tasks[task_id] = asyncio.create_task(self._read_output(task_id))
 
-                return True
+                return (True, "Crawler started")
             except Exception as e:
                 self._statuses[task_id] = "error"
-                entry = self._create_log_entry(task_id, f"Failed to start crawler: {str(e)}", "error")
+                error_msg = f"Failed to start crawler: {str(e)}"
+                entry = self._create_log_entry(task_id, error_msg, "error")
                 await self._push_log(task_id, entry)
-                return False
+                return (False, error_msg)
 
-    async def stop(self, task_id: Optional[str] = None) -> bool:
-        """Stop crawler process for a specific task"""
+    async def stop(self, task_id: Optional[str] = None) -> tuple:
+        """Stop crawler process for a specific task
+
+        Returns:
+            (success: bool, message: str)
+        """
         if task_id is None:
             task_id = "default"
 
         async with self._lock:
             if task_id not in self._processes or self._processes[task_id].poll() is not None:
-                return False
+                return (True, "No running process to stop")
 
             self._statuses[task_id] = "stopping"
             entry = self._create_log_entry(task_id, "Sending SIGTERM to crawler process...", "warning")
             await self._push_log(task_id, entry)
 
             try:
-                self._processes[task_id].send_signal(signal.SIGTERM)
+                if sys.platform == "win32":
+                    # Windows: use taskkill
+                    pid = self._processes[task_id].pid
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
+                else:
+                    self._processes[task_id].send_signal(signal.SIGTERM)
 
-                # Wait for graceful exit (up to 15 seconds)
-                for _ in range(30):
-                    if self._processes[task_id].poll() is not None:
-                        break
-                    await asyncio.sleep(0.5)
+                    # Wait for graceful exit (up to 15 seconds)
+                    for _ in range(30):
+                        if self._processes[task_id].poll() is not None:
+                            break
+                        await asyncio.sleep(0.5)
 
-                # If still not exited, force kill
-                if self._processes[task_id].poll() is None:
-                    entry = self._create_log_entry(task_id, "Process not responding, sending SIGKILL...", "warning")
-                    await self._push_log(task_id, entry)
-                    self._processes[task_id].kill()
+                    # If still not exited, force kill
+                    if self._processes[task_id].poll() is None:
+                        entry = self._create_log_entry(task_id, "Process not responding, sending SIGKILL...", "warning")
+                        await self._push_log(task_id, entry)
+                        self._processes[task_id].kill()
 
                 entry = self._create_log_entry(task_id, "Crawler process terminated", "info")
                 await self._push_log(task_id, entry)
@@ -278,7 +287,7 @@ class CrawlerManager:
                 self._read_tasks[task_id].cancel()
                 del self._read_tasks[task_id]
 
-            return True
+            return (True, "Crawler process terminated")
 
     def get_status(self, task_id: Optional[str] = None) -> dict:
         """Get current status for a specific task"""
@@ -308,7 +317,12 @@ class CrawlerManager:
 
     def _build_command(self, config: CrawlerStartRequest) -> list:
         """Build main.py command line arguments"""
-        cmd = ["uv", "run", "python", "main.py"]
+        import shutil
+        # 优先使用 uv，不可用时回退到系统 Python
+        if shutil.which("uv"):
+            cmd = ["uv", "run", "python", "main.py"]
+        else:
+            cmd = [sys.executable, "main.py"]
 
         cmd.extend(["--platform", config.platform.value])
         cmd.extend(["--lt", config.login_type.value])

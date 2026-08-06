@@ -468,8 +468,9 @@ async def _reply_to_comment_on_page(page, content: str, comment_id: str = "", ni
                         if box and box['y'] > 100:
                             # 检查这个回复按钮附近是否有目标昵称
                             if nickname:
+                                _escaped_selector = selector.replace("'", "\\'")
                                 parent_text = await page.evaluate(f"""() => {{
-                                    const btns = document.querySelectorAll('{selector.replace("'", "\\'")}');
+                                    const btns = document.querySelectorAll('{_escaped_selector}');
                                     if (btns[{i}]) {{
                                         let parent = btns[{i}].closest('[class*="commentItem"], [class*="CommentItem"], [class*="comment-item"]');
                                         return parent ? parent.innerText : '';
@@ -1396,11 +1397,19 @@ async def _inject_anti_detection(browser_context: BrowserContext):
     6. 自动化相关的 window 属性
     """
     anti_detection_js = """
-    // 1. 隐藏 webdriver 标志
-    Object.defineProperty(navigator, 'webdriver', {
-        get: () => false,
-        configurable: true
-    });
+    // 1. 隐藏 webdriver 标志（在 Navigator 原型级修改，避免实例/原型 descriptor 不一致被检测）
+    try {
+        const _navProto = Object.getPrototypeOf(navigator);
+        Object.defineProperty(_navProto, 'webdriver', {
+            get: () => false,
+            configurable: true,
+        });
+    } catch (e) {
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => false,
+            configurable: true,
+        });
+    }
     
     // 2. 添加 chrome.runtime（正常浏览器有此属性）
     if (!window.chrome) {
@@ -1412,6 +1421,32 @@ async def _inject_anti_detection(browser_context: BrowserContext):
             sendMessage: function() {},
             onMessage: { addListener: function() {} },
             id: undefined
+        };
+    }
+    // chrome.app（正常 Chrome 有此属性，自动化环境缺失，是常见检测点）
+    if (!window.chrome.app) {
+        window.chrome.app = {
+            isInstalled: false,
+            InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+            RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
+            getDetails: function() { return null; },
+            getIsInstalled: function() { return false; },
+        };
+    }
+    // chrome.csi / chrome.loadTimes（正常 Chrome 有这些方法）
+    if (!window.chrome.csi) {
+        window.chrome.csi = function() { return { startE: Date.now(), onloadT: Date.now(), pageT: 0, tran: 15 }; };
+    }
+    if (!window.chrome.loadTimes) {
+        window.chrome.loadTimes = function() {
+            const t = Date.now() / 1000;
+            return {
+                commitLoadTime: t - 10, connectionInfo: 'h2', finishDocumentLoadTime: t - 5,
+                finishLoadTime: t - 3, firstPaintAfterLoadTime: 0, firstPaintTime: t - 8,
+                navigationType: 'Other', npnNegotiatedProtocol: 'h2', requestTime: t - 12,
+                startLoadTime: t - 11, wasAlternateProtocolAvailable: false,
+                wasFetchedViaSpdy: true, wasNpnNegotiated: true,
+            };
         };
     }
     
@@ -1507,7 +1542,26 @@ async def _inject_anti_detection(browser_context: BrowserContext):
         }
         return originalToDataURL.apply(this, arguments);
     };
-    
+
+    // 8.5. 修复 WebGL 渲染器信息（自动化环境常返回 SwiftShader，被检测）
+    try {
+        const _webglGetParameter = WebGLRenderingContext.prototype.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function(parameter) {
+            // UNMASKED_VENDOR_WEBGL = 0x9245, UNMASKED_RENDERER_WEBGL = 0x9246
+            if (parameter === 0x9245) return 'Google Inc. (NVIDIA)';
+            if (parameter === 0x9246) return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+            return _webglGetParameter.call(this, parameter);
+        };
+        if (typeof WebGL2RenderingContext !== 'undefined') {
+            const _webgl2GetParameter = WebGL2RenderingContext.prototype.getParameter;
+            WebGL2RenderingContext.prototype.getParameter = function(parameter) {
+                if (parameter === 0x9245) return 'Google Inc. (NVIDIA)';
+                if (parameter === 0x9246) return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+                return _webgl2GetParameter.call(this, parameter);
+            };
+        }
+    } catch (e) {}
+
     // 9. 修复 navigator.languages
     Object.defineProperty(navigator, 'languages', {
         get: () => ['zh-CN', 'zh', 'en-US', 'en'],
@@ -1520,7 +1574,41 @@ async def _inject_anti_detection(browser_context: BrowserContext):
         get: () => originalUserAgent.replace('HeadlessChrome/', 'Chrome/'),
         configurable: true
     });
-    
+
+    // 11. 修复 window.outerWidth/outerHeight（CDP 模式下可能为 0，被检测）
+    try {
+        if (window.outerWidth === 0) {
+            Object.defineProperty(window, 'outerWidth', { get: () => window.innerWidth, configurable: true });
+        }
+        if (window.outerHeight === 0) {
+            Object.defineProperty(window, 'outerHeight', { get: () => window.innerHeight + 88, configurable: true });
+        }
+    } catch (e) {}
+
+    // 12. 伪造 navigator.deviceMemory（正常 Chrome 有，自动化常为 undefined）
+    try {
+        if (navigator.deviceMemory === undefined) {
+            Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true });
+        }
+    } catch (e) {}
+
+    // 13. 确保 navigator.hardwareConcurrency 有合理值
+    try {
+        if (navigator.hardwareConcurrency === undefined || navigator.hardwareConcurrency < 2) {
+            Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true });
+        }
+    } catch (e) {}
+
+    // 14. 防护 CDP console.debug 检测（CDP 启用 Runtime 后 console.debug 行为变化）
+    try {
+        const _nativeConsoleDebug = console.debug;
+        Object.defineProperty(console, 'debug', {
+            value: function() { _nativeConsoleDebug.apply(console, arguments); },
+            configurable: true,
+            writable: true,
+        });
+    } catch (e) {}
+
     console.log('[AntiDetection] All protections active');
     """
     
@@ -1541,7 +1629,16 @@ async def _close_cached_browser():
     if _cached_browser is None:
         return
     try:
+        cdp_manager = _cached_browser.get("cdp_manager")
         playwright = _cached_browser.get("playwright")
+        # 先通过 cdp_manager 强制清理浏览器进程，避免残留 Chrome 占用 user_data_dir
+        # 单例锁/端口，导致下次启动浏览器卡在 "Browser failed to start within 60 seconds"。
+        # 注意：连接已有浏览器(CDP_CONNECT_EXISTING)时 cleanup 会跳过进程清理，不会误杀。
+        if cdp_manager:
+            try:
+                await cdp_manager.cleanup(force=True)
+            except Exception as e:
+                utils.logger.warning(f"[OutreachAutomation] cdp_manager cleanup error: {e}")
         if playwright:
             await playwright.stop()
         utils.logger.info("[OutreachAutomation] Cached browser closed")
@@ -2479,6 +2576,34 @@ async def _xhs_fallback_pm_search(page: Page, user_id: str = "") -> bool:
         return False
 
 
+async def _check_im_opened(page: Page) -> bool:
+    """检查抖音私信面板是否已真正打开（IM容器可见 或 已出现聊天输入框）。
+
+    用于 _click_pm_button 各点击方法点击后验证：避免按钮点击未生效却误报成功，
+    导致后续 _wait_for_dialog 在 30s 内空等并报"私信对话框未出现"。
+    """
+    try:
+        return bool(await page.evaluate("""
+            () => {
+                // IM 容器宽度>50 视为面板已展开
+                const im = document.querySelector('.imContainer');
+                if (im) {
+                    const r = im.getBoundingClientRect();
+                    if (r.width > 50) return true;
+                }
+                // 兜底：已出现可见的聊天输入框也算打开
+                const editables = document.querySelectorAll('[contenteditable="true"]');
+                for (const e of editables) {
+                    const r = e.getBoundingClientRect();
+                    if (r.width > 100 && r.height > 0) return true;
+                }
+                return false;
+            }
+        """))
+    except Exception:
+        return False
+
+
 async def _click_pm_button(page: Page, platform: str, user_id: str = "") -> tuple[bool, str]:
     """点击私信按钮 - 支持抖音和小红书
     返回 (success, reason): success=True表示点击成功，reason为空或跳过原因
@@ -2594,9 +2719,79 @@ async def _click_pm_button(page: Page, platform: str, user_id: str = "") -> tupl
                 await page.mouse.click(btn_info['x'], btn_info['y'])
                 utils.logger.info(f"[OutreachAutomation] PM button clicked via mouse.move+click at ({btn_info['x']:.0f}, {btn_info['y']:.0f})")
                 await asyncio.sleep(5)
-                return (True, "")
+                if await _check_im_opened(page):
+                    return (True, "")
+                utils.logger.warning("[OutreachAutomation] IM container not opened after mouse click, trying CDP dispatchMouseEvent...")
             except Exception as e:
                 utils.logger.warning(f"[OutreachAutomation] Mouse click failed: {e}")
+
+            # 方法2.5: CDP Input.dispatchMouseEvent 原生点击（isTrusted=true，最接近真实用户点击）
+            try:
+                cdp_session = await page.context.new_cdp_session(page)
+                await cdp_session.send("Input.dispatchMouseEvent", {
+                    "type": "mouseMoved",
+                    "x": btn_info['x'],
+                    "y": btn_info['y'],
+                })
+                await asyncio.sleep(random.uniform(0.1, 0.3))
+                await cdp_session.send("Input.dispatchMouseEvent", {
+                    "type": "mousePressed",
+                    "x": btn_info['x'],
+                    "y": btn_info['y'],
+                    "button": "left",
+                    "clickCount": 1,
+                })
+                await asyncio.sleep(random.uniform(0.05, 0.15))
+                await cdp_session.send("Input.dispatchMouseEvent", {
+                    "type": "mouseReleased",
+                    "x": btn_info['x'],
+                    "y": btn_info['y'],
+                    "button": "left",
+                    "clickCount": 1,
+                })
+                utils.logger.info(f"[OutreachAutomation] PM button clicked via CDP Input.dispatchMouseEvent at ({btn_info['x']:.0f}, {btn_info['y']:.0f})")
+                await asyncio.sleep(5)
+                if await _check_im_opened(page):
+                    return (True, "")
+                utils.logger.warning("[OutreachAutomation] IM container not opened after CDP click, trying locator click...")
+            except Exception as e:
+                utils.logger.warning(f"[OutreachAutomation] CDP dispatchMouseEvent click failed: {e}")
+
+            # 方法4: pyautogui 屏幕级点击（操作系统级鼠标事件，完全绕过 CDP，浏览器无法识别为自动化）
+            try:
+                import pyautogui
+
+                # 获取视口在屏幕上的位置（CDP 读取 DOM 不被检测，只有输入事件被检测）
+                viewport_info = await page.evaluate("""
+                    () => ({
+                        screenX: window.screenX,
+                        screenY: window.screenY,
+                        outerHeight: window.outerHeight,
+                        innerHeight: window.innerHeight,
+                    })
+                """)
+                chrome_bar_h = viewport_info['outerHeight'] - viewport_info['innerHeight']
+                screen_x = viewport_info['screenX'] + btn_info['x']
+                screen_y = viewport_info['screenY'] + chrome_bar_h + btn_info['y']
+
+                utils.logger.info(f"[OutreachAutomation] pyautogui click target: screen=({screen_x:.0f}, {screen_y:.0f}), viewport_origin=({viewport_info['screenX']}, {viewport_info['screenY']}), chrome_bar_h={chrome_bar_h}, btn=({btn_info['x']:.0f}, {btn_info['y']:.0f})")
+
+                # 操作系统级鼠标点击（pyautogui 通过 SendInput 产生硬件级事件，isTrusted=true，不经 CDP）
+                pyautogui.moveTo(screen_x, screen_y, duration=0.3)
+                await asyncio.sleep(random.uniform(0.1, 0.3))
+                pyautogui.mouseDown(screen_x, screen_y, button='left')
+                await asyncio.sleep(random.uniform(0.05, 0.15))
+                pyautogui.mouseUp(screen_x, screen_y, button='left')
+
+                utils.logger.info(f"[OutreachAutomation] PM button clicked via pyautogui at screen ({screen_x:.0f}, {screen_y:.0f})")
+                await asyncio.sleep(5)
+                if await _check_im_opened(page):
+                    return (True, "")
+                utils.logger.warning("[OutreachAutomation] IM container not opened after pyautogui click, trying locator click...")
+            except ImportError:
+                utils.logger.warning("[OutreachAutomation] pyautogui not installed, skipping screen-level click")
+            except Exception as e:
+                utils.logger.warning(f"[OutreachAutomation] pyautogui click failed: {e}")
 
             # 方法3: Playwright locator click
             try:
@@ -2609,7 +2804,10 @@ async def _click_pm_button(page: Page, platform: str, user_id: str = "") -> tupl
                         await loc.click(force=True)
                         utils.logger.info(f"[OutreachAutomation] PM button clicked via locator at y={box['y']:.0f}")
                         await asyncio.sleep(5)
-                        return (True, "")
+                        if await _check_im_opened(page):
+                            return (True, "")
+                        utils.logger.warning("[OutreachAutomation] IM container not opened after locator click, trying nearby search...")
+                        break
             except Exception as e:
                 utils.logger.warning(f"[OutreachAutomation] Locator click failed: {e}")
 
@@ -2643,7 +2841,9 @@ async def _click_pm_button(page: Page, platform: str, user_id: str = "") -> tupl
             utils.logger.info("[OutreachAutomation] PM button clicked via nearby search")
             await page.mouse.click(clicked_nearby['x'], clicked_nearby['y'])
             await asyncio.sleep(5)
-            return (True, "")
+            if await _check_im_opened(page):
+                return (True, "")
+            utils.logger.warning("[OutreachAutomation] IM container not opened after nearby search click")
 
         # 调试：输出页面上所有按钮文本
         all_texts = await page.evaluate("""
@@ -2716,11 +2916,40 @@ async def _click_pm_button(page: Page, platform: str, user_id: str = "") -> tupl
             """)
             if btn_info_retry:
                 utils.logger.info(f"[OutreachAutomation] PM button found after refresh: {btn_info_retry}")
-                await page.mouse.move(btn_info_retry['x'], btn_info_retry['y'], steps=10)
-                await asyncio.sleep(random.uniform(0.1, 0.3))
-                await page.mouse.click(btn_info_retry['x'], btn_info_retry['y'])
+                # 优先用 CDP Input.dispatchMouseEvent 原生点击（isTrusted=true）
+                try:
+                    cdp_sess = await page.context.new_cdp_session(page)
+                    await cdp_sess.send("Input.dispatchMouseEvent", {
+                        "type": "mouseMoved",
+                        "x": btn_info_retry['x'],
+                        "y": btn_info_retry['y'],
+                    })
+                    await asyncio.sleep(random.uniform(0.1, 0.3))
+                    await cdp_sess.send("Input.dispatchMouseEvent", {
+                        "type": "mousePressed",
+                        "x": btn_info_retry['x'],
+                        "y": btn_info_retry['y'],
+                        "button": "left",
+                        "clickCount": 1,
+                    })
+                    await asyncio.sleep(random.uniform(0.05, 0.15))
+                    await cdp_sess.send("Input.dispatchMouseEvent", {
+                        "type": "mouseReleased",
+                        "x": btn_info_retry['x'],
+                        "y": btn_info_retry['y'],
+                        "button": "left",
+                        "clickCount": 1,
+                    })
+                    utils.logger.info(f"[OutreachAutomation] PM button clicked via CDP dispatchMouseEvent (refresh retry) at ({btn_info_retry['x']:.0f}, {btn_info_retry['y']:.0f})")
+                except Exception as cdp_err:
+                    utils.logger.warning(f"[OutreachAutomation] CDP click failed on refresh retry, fallback to mouse click: {cdp_err}")
+                    await page.mouse.move(btn_info_retry['x'], btn_info_retry['y'], steps=10)
+                    await asyncio.sleep(random.uniform(0.1, 0.3))
+                    await page.mouse.click(btn_info_retry['x'], btn_info_retry['y'])
                 await asyncio.sleep(5)
-                return (True, "")
+                if await _check_im_opened(page):
+                    return (True, "")
+                utils.logger.warning("[OutreachAutomation] IM container not opened after refresh retry click")
 
             # 刷新后再次检测用户是否关闭私信
             dm_disabled_retry = await page.evaluate("""
@@ -2769,6 +2998,171 @@ async def _click_pm_button(page: Page, platform: str, user_id: str = "") -> tupl
     except Exception as e:
         utils.logger.error(f"[OutreachAutomation] Click PM button failed: {e}")
         return (False, f"点击私信按钮异常: {str(e)}")
+
+
+async def _send_dm_via_douyin_chat_page(page, task) -> tuple[bool, str]:
+    """通过抖音私信页面发送消息（fallback：用户主页私信按钮被风控时的备用方案）
+
+    参考小红书私信页面模式：访问 /chat → 发起新对话 → 搜索用户 → 输入发送。
+    流程：
+    1. 访问 https://www.douyin.com/chat
+    2. 点击"发起聊天"/"+"按钮
+    3. 搜索目标用户（nickname）
+    4. 点击搜索结果
+    5. 输入消息并发送
+    """
+    try:
+        utils.logger.info("[OutreachAutomation] Trying DM via chat page (fallback)...")
+        _append_log(task, "尝试通过私信页面发送（备用方案）...")
+
+        # 1. 访问私信页面
+        await page.goto("https://www.douyin.com/chat", wait_until='domcontentloaded', timeout=30000)
+        try:
+            await page.wait_for_load_state('networkidle', timeout=10000)
+        except Exception:
+            pass
+        await asyncio.sleep(random.uniform(5, 8))
+
+        current_url = page.url
+        utils.logger.info(f"[OutreachAutomation] Chat page URL: {current_url}")
+        if 'chat' not in current_url and 'message' not in current_url:
+            utils.logger.warning(f"[OutreachAutomation] Chat page redirected to {current_url}")
+            return (False, f"私信页面被重定向: {current_url}")
+
+        # 2. 点击"发起聊天"/"+"按钮
+        new_chat_clicked = await page.evaluate("""
+            () => {
+                const btns = document.querySelectorAll('button, [role="button"], a, div, span');
+                const targetTexts = ['发起聊天', '新建对话', '发消息', '发私信', '新对话'];
+                for (const btn of btns) {
+                    const text = btn.textContent?.trim() || '';
+                    if (targetTexts.includes(text) || text.includes('发起聊天') || text.includes('新对话')) {
+                        const rect = btn.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0 && rect.width < 200) {
+                            btn.click();
+                            return {clicked: true, text: text};
+                        }
+                    }
+                }
+                const iconBtns = document.querySelectorAll('[class*="add"], [class*="create"], [class*="new"], [class*="plus"]');
+                for (const btn of iconBtns) {
+                    const rect = btn.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0 && rect.width < 80) {
+                        btn.click();
+                        return {clicked: true, text: 'icon'};
+                    }
+                }
+                return {clicked: false};
+            }
+        """)
+
+        if not new_chat_clicked or not new_chat_clicked.get('clicked'):
+            # 调试：打印页面上所有按钮文案
+            page_btns = await page.evaluate("""
+                () => {
+                    const btns = document.querySelectorAll('button, [role="button"], a, [class*="icon"], [class*="add"], [class*="create"], svg');
+                    return Array.from(btns).slice(0, 40).map(b => {
+                        const r = b.getBoundingClientRect();
+                        return {text: (b.textContent || '').trim().substring(0, 20), cls: (b.className || '').toString().substring(0, 50), w: Math.round(r.width), h: Math.round(r.height)};
+                    }).filter(x => x.w > 0 && x.h > 0);
+                }
+            """)
+            utils.logger.warning(f"[OutreachAutomation] New chat button not found on chat page. Page buttons: {page_btns}")
+            await _save_debug_screenshot(page, task.id, "chat_page_no_new_btn")
+            return (False, "私信页面未找到发起聊天按钮")
+
+        utils.logger.info(f"[OutreachAutomation] Clicked new chat button: {new_chat_clicked}")
+        await asyncio.sleep(random.uniform(2, 4))
+
+        # 3. 搜索目标用户
+        search_keyword = task.nickname or task.user_id or task.sec_uid
+        if not search_keyword:
+            return (False, "缺少用户信息无法搜索")
+
+        search_ok = await page.evaluate(f"""
+            () => {{
+                const inputs = document.querySelectorAll('input, textarea');
+                for (const input of inputs) {{
+                    const placeholder = input.placeholder || input.getAttribute('data-placeholder') || '';
+                    if (placeholder.includes('搜索') || placeholder.includes('用户') || placeholder.includes('昵称') || placeholder.includes('名字')) {{
+                        input.focus();
+                        input.value = '{search_keyword}';
+                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        return true;
+                    }}
+                }}
+                return false;
+            }}
+        """)
+
+        if not search_ok:
+            utils.logger.warning("[OutreachAutomation] Search input not found on chat page")
+            return (False, "私信页面未找到搜索框")
+
+        await asyncio.sleep(random.uniform(2, 4))
+
+        # 4. 点击搜索结果中的第一个用户
+        user_clicked = await page.evaluate("""
+            () => {
+                const items = document.querySelectorAll('[class*="search"], [class*="result"], [class*="user-item"], [class*="contact"], [class*="userItem"]');
+                for (const item of items) {
+                    const rect = item.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        item.click();
+                        return true;
+                    }
+                }
+                return false;
+            }
+        """)
+
+        if not user_clicked:
+            utils.logger.warning("[OutreachAutomation] Search result not found/clicked")
+            return (False, "搜索结果中未找到目标用户")
+
+        await asyncio.sleep(random.uniform(2, 4))
+
+        # 5. 输入消息并发送
+        msg_content = _randomize_content(task.content)
+        msg_content = _clean_content_for_risk(msg_content)
+
+        typed = await page.evaluate("""
+            () => {
+                const editables = document.querySelectorAll('[contenteditable="true"]');
+                for (const ed of editables) {
+                    const rect = ed.getBoundingClientRect();
+                    if (rect.width > 100) {
+                        ed.focus();
+                        return true;
+                    }
+                }
+                const inputs = document.querySelectorAll('textarea, input[type="text"]');
+                for (const inp of inputs) {
+                    const rect = inp.getBoundingClientRect();
+                    if (rect.width > 100) {
+                        inp.focus();
+                        return true;
+                    }
+                }
+                return false;
+            }
+        """)
+
+        if not typed:
+            return (False, "私信页面未找到输入框")
+
+        await asyncio.sleep(0.5)
+        await page.keyboard.type(msg_content, delay=random.randint(50, 150))
+        await asyncio.sleep(random.uniform(1, 2))
+        await page.keyboard.press('Enter')
+        await asyncio.sleep(random.uniform(2, 4))
+
+        utils.logger.info("[OutreachAutomation] DM sent via chat page!")
+        return (True, "")
+
+    except Exception as e:
+        utils.logger.warning(f"[OutreachAutomation] DM via chat page failed: {e}")
+        return (False, f"私信页面发送异常: {e}")
 
 
 async def _wait_for_dialog(page: Page, timeout: int = 30, platform: str = "dy") -> bool:
@@ -2851,6 +3245,19 @@ async def _wait_for_dialog(page: Page, timeout: int = 30, platform: str = "dy") 
         if dialog_state.get("inputFound"):
             utils.logger.info(f"[OutreachAutomation] Dialog input found after {(i+1)*2}s: {dialog_state['inputRect']}")
             return True
+
+        # 每10秒输出一次当前页面状态用于调试
+        if i == 5:
+            current_url = page.url
+            page_btns = await page.evaluate("""() => {
+                const btns = document.querySelectorAll('button, [role="button"]');
+                return Array.from(btns).map(b => ({
+                    text: b.textContent?.trim()?.substring(0, 30),
+                    visible: b.offsetParent !== null,
+                    y: Math.round(b.getBoundingClientRect().y)
+                })).filter(b => b.text && b.y > 50).slice(0, 15);
+            }""")
+            utils.logger.info(f"[OutreachAutomation] Dialog wait debug: url={current_url}, btns={page_btns}")
 
         # IM容器存在但尺寸为0，说明IM面板还没打开或被隐藏
         im_rect = dialog_state.get("imRect")
@@ -3600,6 +4007,11 @@ async def execute_outreach_automation(task_id: str) -> Dict[str, Any]:
                     _append_log(task, f"⚠️ 页面加载异常({page_error})，正在刷新重试...")
                     try:
                         await page.reload(wait_until='domcontentloaded', timeout=20000)
+                        # 等待 React/SPA 完成初始化（网络空闲），避免刷新后立即点击私信按钮导致点击无效
+                        try:
+                            await page.wait_for_load_state('networkidle', timeout=10000)
+                        except Exception:
+                            pass
                         await asyncio.sleep(random.uniform(5, 8))
                         await _simulate_human_browse(page, duration=random.uniform(3, 6))
                         await page.evaluate("() => { window.scrollTo(0, 0); }")
@@ -3608,6 +4020,29 @@ async def execute_outreach_automation(task_id: str) -> Dict[str, Any]:
                     except Exception as reload_err:
                         utils.logger.warning(f"[OutreachAutomation] Page reload failed: {reload_err}")
                         _append_log(task, f"⚠️ 页面刷新失败: {reload_err}")
+
+                # 刷新后校验 URL：抖音 SPA 刷新后可能重定向到首页，导致找不到私信按钮
+                expected_path = f"/user/{task.sec_uid}" if task.platform in ("dy", "douyin") else f"/user/profile/{task.user_id}"
+                if expected_path not in page.url:
+                    utils.logger.warning(f"[OutreachAutomation] Redirected away from user homepage after refresh: {page.url}, re-navigating...")
+                    _append_log(task, "⚠️ 刷新后页面跳转，正在重新访问用户主页...")
+                    try:
+                        if task.platform in ("dy", "douyin"):
+                            await page.goto(f"https://www.douyin.com/user/{task.sec_uid}", wait_until='domcontentloaded', timeout=30000)
+                        else:
+                            await page.goto(f"https://www.xiaohongshu.com/user/profile/{task.user_id}", wait_until='domcontentloaded', timeout=30000)
+                        try:
+                            await page.wait_for_load_state('networkidle', timeout=10000)
+                        except Exception:
+                            pass
+                        await asyncio.sleep(random.uniform(3, 5))
+                        await _simulate_human_browse(page, duration=random.uniform(3, 6))
+                        await page.evaluate("() => { window.scrollTo(0, 0); }")
+                        await asyncio.sleep(random.uniform(1, 2))
+                        _append_log(task, "✅ 已重新访问用户主页")
+                    except Exception as nav_err:
+                        utils.logger.warning(f"[OutreachAutomation] Re-navigate to user homepage failed: {nav_err}")
+                        _append_log(task, f"⚠️ 重新访问用户主页失败: {nav_err}")
 
                 _append_log(task, "✅ 用户主页加载完成")
                 _update_step(task, 2, "success", "已访问用户主页")
@@ -3619,6 +4054,33 @@ async def execute_outreach_automation(task_id: str) -> Dict[str, Any]:
                 # 保存截图用于调试
                 await _save_debug_screenshot(page, task.id, "before_pm_click")
 
+                # 先关注对方（抖音可能要求关注后才能私信，否则点击私信会跳首页）
+                try:
+                    follow_clicked = await page.evaluate("""
+                        () => {
+                            const btns = document.querySelectorAll('button, [role="button"]');
+                            for (const btn of btns) {
+                                const text = btn.textContent?.trim() || '';
+                                if (text === '关注' || text === '回关') {
+                                    const rect = btn.getBoundingClientRect();
+                                    if (rect.width > 0 && rect.height > 0) {
+                                        btn.click();
+                                        return {clicked: true, text: text};
+                                    }
+                                }
+                            }
+                            return {clicked: false};
+                        }
+                    """)
+                    if follow_clicked and follow_clicked.get('clicked'):
+                        utils.logger.info(f"[OutreachAutomation] Followed user before DM: {follow_clicked}")
+                        _append_log(task, "已关注对方，准备私信...")
+                        await asyncio.sleep(random.uniform(2, 4))
+                    else:
+                        utils.logger.info("[OutreachAutomation] No follow button found (already followed or not available)")
+                except Exception as e:
+                    utils.logger.warning(f"[OutreachAutomation] Follow attempt failed: {e}")
+
                 pm_ok, pm_reason = await _click_pm_button(page, task.platform, user_id=task.user_id)
                 if not pm_ok:
                     # 区分"用户未开启私信"和"未找到按钮"
@@ -3629,6 +4091,14 @@ async def execute_outreach_automation(task_id: str) -> Dict[str, Any]:
                         await _sync_task_to_db(task)
                         return {"success": False, "error": "用户未开启私信", "skip_retry": True}
                     else:
+                        # Fallback: 尝试通过私信页面发送（用户主页私信按钮被风控时的备用方案）
+                        chat_ok, chat_err = await _send_dm_via_douyin_chat_page(page, task)
+                        if chat_ok:
+                            _append_log(task, "✅ 通过私信页面发送成功")
+                            _update_step(task, 3, "success", "已通过私信页面发送")
+                            _record_send()
+                            await _sync_task_to_db(task)
+                            return {"success": True}
                         _update_step(task, 3, "failed", pm_reason or "未找到私信按钮")
                         task.status = OutreachStatus.FAILED
                         task.error_message = pm_reason or "未找到私信按钮"
@@ -3644,12 +4114,38 @@ async def execute_outreach_automation(task_id: str) -> Dict[str, Any]:
                     # 保存截图和页面URL用于调试
                     debug_ss = await _save_debug_screenshot(page, task.id, "no_dialog")
                     current_url = page.url
-                    utils.logger.warning(f"[OutreachAutomation] Dialog not found. URL: {current_url}")
+                    # 采集失败时的 DOM 状态，便于诊断对话框未出现的具体原因
+                    dom_state = await page.evaluate("""
+                        () => {
+                            const im = document.querySelector('.imContainer');
+                            const imSize = im ? (() => {
+                                const r = im.getBoundingClientRect();
+                                return Math.round(r.width) + 'x' + Math.round(r.height);
+                            })() : 'absent';
+                            const editables = Array.from(document.querySelectorAll('[contenteditable="true"]'))
+                                .map(e => {
+                                    const r = e.getBoundingClientRect();
+                                    return {placeholder: e.getAttribute('data-placeholder') || '', w: Math.round(r.width)};
+                                })
+                                .filter(x => x.w > 0).slice(0, 3);
+                            return {im: imSize, editables: editables};
+                        }
+                    """)
+                    utils.logger.warning(f"[OutreachAutomation] Dialog not found. URL: {current_url}, DOM: {dom_state}")
+                    err_detail = f"私信对话框未出现 (im={dom_state.get('im')}, editables={dom_state.get('editables')})"
+                    # Fallback: 尝试通过私信页面发送
+                    chat_ok, chat_err = await _send_dm_via_douyin_chat_page(page, task)
+                    if chat_ok:
+                        _append_log(task, "✅ 通过私信页面发送成功")
+                        _update_step(task, 3, "success", "已通过私信页面发送")
+                        _record_send()
+                        await _sync_task_to_db(task)
+                        return {"success": True}
                     _update_step(task, 3, "failed", "私信对话框未出现", debug_ss)
                     task.status = OutreachStatus.FAILED
-                    task.error_message = "私信对话框未出现"
+                    task.error_message = err_detail
                     await _sync_task_to_db(task)
-                    return {"success": False, "error": "私信对话框未出现"}
+                    return {"success": False, "error": err_detail}
 
                 # 模拟真人：打开对话框后先浏览对话，再输入消息
                 await asyncio.sleep(random.uniform(3, 8))
@@ -3710,11 +4206,15 @@ async def execute_outreach_automation(task_id: str) -> Dict[str, Any]:
             return {"success": True, "task_id": task_id, "status": "success", "message": "私信发送成功"}
 
         except Exception as e:
-            utils.logger.error(f"[OutreachAutomation] Task {task_id} failed: {e}")
+            import traceback as _tb
+            _full_tb = _tb.format_exc()
+            utils.logger.error(f"[OutreachAutomation] Task {task_id} failed: {e}\n{_full_tb}")
             _append_log(task, f"❌ 执行异常: {e}")
+            if not str(e):
+                _append_log(task, f"  详细错误: {_full_tb[-300:]}")
             task.status = OutreachStatus.FAILED
-            task.error_message = str(e)
-            await _save_outreach_record(task, "failed", error_message=str(e))
+            task.error_message = str(e) or _full_tb[-200:]
+            await _save_outreach_record(task, "failed", error_message=task.error_message)
             await _sync_task_to_db(task)
             # 如果是浏览器相关异常，关闭缓存实例以便下次重新创建
             if any(kw in str(e).lower() for kw in ['browser', 'context', 'page', 'timeout', 'connect', 'target']):

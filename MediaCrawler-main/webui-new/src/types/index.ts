@@ -41,6 +41,24 @@ export interface Lead {
   contact_wechat?: string;  // 采集到的微信号
   contact_status?: string;  // 联系方式采集状态: none/pending/found/not_found
   dup_count?: number;       // 重复命中次数(相似内容累加)
+  bio_text?: string;         // 用户主页简介(联系方式提取来源)
+  reply_monitor_ts?: number; // 上次回复监控扫描时间戳
+}
+
+/** 评论回复监测记录 */
+export interface LeadReply {
+  id: number;
+  comment_id: string;
+  parent_comment_id: string;
+  user_id: string;
+  nickname: string;
+  avatar: string;
+  content: string;
+  like_count: string;
+  create_time: number;
+  is_from_lead: number;
+  is_read: number;
+  add_ts: number;
 }
 
 export interface LeadListResponse {

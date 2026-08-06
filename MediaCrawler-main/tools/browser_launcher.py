@@ -187,21 +187,28 @@ class BrowserLauncher:
         utils.logger.info(f"[BrowserLauncher] Headless mode: {headless}")
 
         try:
-            # Fix: build a minimal clean environment to avoid IDE sandbox (Trae/VSCode)
-            # injecting variables that cause Chrome GPU process to crash
-            # (e.g. TRAE_SANDBOX_*, ICUBE_*, VSCODE_*, PYDEVD_*, etc.)
-            clean_env = {
-                "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-                "HOME": "/tmp",
-                "DISPLAY": os.environ.get("DISPLAY", ":0"),
-                "LD_LIBRARY_PATH": "/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu",
-                "LANG": os.environ.get("LANG", "en_US.UTF-8"),
-                "TERM": os.environ.get("TERM", "xterm-256color"),
-            }
-            # Preserve DBUS_SESSION_BUS_ADDRESS if set (needed for some Chrome features)
-            if "DBUS_SESSION_BUS_ADDRESS" in os.environ:
-                clean_env["DBUS_SESSION_BUS_ADDRESS"] = os.environ["DBUS_SESSION_BUS_ADDRESS"]
-            utils.logger.info(f"[BrowserLauncher] Using minimal env ({len(clean_env)} vars) to avoid IDE sandbox pollution")
+            # 构建浏览器启动环境变量
+            # Windows: 使用完整系统环境（过滤 IDE 沙箱污染变量）
+            # Linux: 使用最小化环境避免 Trae/VSCode 注入变量导致 Chrome GPU 进程崩溃
+            if self.system == "Windows":
+                clean_env = os.environ.copy()
+                # 过滤掉可能干扰浏览器启动的 IDE 环境变量
+                for key in list(clean_env.keys()):
+                    if any(prefix in key.upper() for prefix in ('TRAE_', 'ICUBE_', 'PYDEVD_', 'VSCODE_', 'NODE_OPTIONS', 'ELECTRON_')):
+                        del clean_env[key]
+                utils.logger.info(f"[BrowserLauncher] Using filtered system env ({len(clean_env)} vars)")
+            else:
+                clean_env = {
+                    "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                    "HOME": "/tmp",
+                    "DISPLAY": os.environ.get("DISPLAY", ":0"),
+                    "LD_LIBRARY_PATH": "/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu",
+                    "LANG": os.environ.get("LANG", "en_US.UTF-8"),
+                    "TERM": os.environ.get("TERM", "xterm-256color"),
+                }
+                if "DBUS_SESSION_BUS_ADDRESS" in os.environ:
+                    clean_env["DBUS_SESSION_BUS_ADDRESS"] = os.environ["DBUS_SESSION_BUS_ADDRESS"]
+                utils.logger.info(f"[BrowserLauncher] Using minimal env ({len(clean_env)} vars) to avoid IDE sandbox pollution")
 
             # On Windows, use CREATE_NEW_PROCESS_GROUP to prevent Ctrl+C from affecting subprocess
             if self.system == "Windows":

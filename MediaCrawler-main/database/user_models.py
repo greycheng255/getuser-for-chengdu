@@ -139,3 +139,18 @@ class SysRolePermissionModel(Base):
     __table_args__ = (
         UniqueConstraint('role', 'permission_id', name='uq_role_permission'),
     )
+
+
+class BusinessProfileRuleModel(Base):
+    """可复用的、按用户隔离的获客画像规则"""
+    __tablename__ = 'business_profile_rule'
+    id = Column(String(64), primary_key=True)
+    owner_user_id = Column(String(64), index=True, nullable=False)
+    name = Column(String(128), nullable=False)
+    business_intent = Column(Text, default='')
+    business_keywords = Column(Text, default='[]')
+    intent_keywords = Column(Text, default='[]')
+    exclude_keywords = Column(Text, default='[]')
+    enabled = Column(Integer, default=1)
+    created_ts = Column(BigInteger, nullable=False)
+    updated_ts = Column(BigInteger, nullable=False)

@@ -63,6 +63,8 @@ def classify_publish_error(error: object) -> PublishErrorCode:
         (PublishErrorCode.UPLOAD_FAILED, ("上传失败", "上传入口", "upload failed")),
         (PublishErrorCode.SELECTOR_CHANGED, ("未找到", "selector", "选择器", "元素")),
         (PublishErrorCode.TIMEOUT, ("超时", "timeout", "timed out")),
+        (PublishErrorCode.NO_AVAILABLE_ACCOUNT, ("无可用账号", "全部冷却", "配额耗尽", "no available account")),
+        (PublishErrorCode.QUOTA_EXCEEDED, ("quota_exceeded", "配额超限", "超出配额")),
     )
     for code, keywords in rules:
         if any(keyword in text for keyword in keywords):
@@ -71,10 +73,12 @@ def classify_publish_error(error: object) -> PublishErrorCode:
 
 
 def is_error_code_retryable(error_code: PublishErrorCode) -> bool:
+    """判断错误码是否可重试。不可重试的错误需要换账号或人工介入。"""
     return error_code in {
-        PublishErrorCode.RATE_LIMITED,
-        PublishErrorCode.UPLOAD_FAILED,
-        PublishErrorCode.TIMEOUT,
+        PublishErrorCode.RATE_LIMITED,       # 限流后可等待后重试
+        PublishErrorCode.UPLOAD_FAILED,      # 上传失败可重试
+        PublishErrorCode.TIMEOUT,            # 超时可重试
+        PublishErrorCode.SELECTOR_CHANGED,   # 选择器变化可换策略重试
     }
 
 
@@ -370,7 +374,8 @@ class BasePublisher(ABC):
         支持：
         1. JSON 字符串（[{"name": ..., "value": ..., "domain": ...}, ...]）
         2. Python list 对象
-        3. 单个 cookie 值（子类可覆盖 _build_cookies_from_simple 处理）
+        3. HTTP cookie header 格式（"name1=value1; name2=value2; ..."）
+        4. 单个 cookie 值（子类可覆盖 _build_cookies_from_simple 处理）
         """
         if not self.cookies_raw:
             return []
@@ -380,10 +385,50 @@ class BasePublisher(ABC):
             cl = json.loads(self.cookies_raw)
             if isinstance(cl, list):
                 return cl
+            # 支持 {"cookies": "name=value; ..."} dict 格式
+            if isinstance(cl, dict):
+                inner = cl.get("cookies") or cl.get("cookie") or ""
+                if inner:
+                    return self._parse_cookie_header(inner)
         except Exception:
             pass
+        # HTTP cookie header 格式：name=value; name2=value2
+        if '=' in self.cookies_raw and ';' in self.cookies_raw:
+            return self._parse_cookie_header(self.cookies_raw)
         # 单值模式：交给子类处理
         return self._build_cookies_from_simple(self.cookies_raw)
+
+    def _get_cookie_domain(self) -> str:
+        """获取本平台 cookie 域名（子类可覆盖）
+
+        默认通过 _build_cookies_from_simple 探测子类定义的域名。
+        """
+        try:
+            sample = self._build_cookies_from_simple("__probe__")
+            if sample:
+                return sample[0].get("domain", "")
+        except Exception:
+            pass
+        return ""
+
+    def _parse_cookie_header(self, header: str) -> list:
+        """解析 HTTP cookie header 格式 'name=value; name2=value2' 为 Playwright cookie 列表"""
+        domain = self._get_cookie_domain()
+        cookies = []
+        for part in header.split(';'):
+            part = part.strip()
+            if not part or '=' not in part:
+                continue
+            name, _, value = part.partition('=')
+            name = name.strip()
+            value = value.strip()
+            if not name:
+                continue
+            cookie = {"name": name, "value": value, "path": "/"}
+            if domain:
+                cookie["domain"] = domain
+            cookies.append(cookie)
+        return cookies
 
     def _build_cookies_from_simple(self, cookie_value: str) -> list:
         """单值 cookie 转 Playwright cookie 列表

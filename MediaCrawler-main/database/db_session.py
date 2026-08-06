@@ -39,13 +39,33 @@ async def create_database_if_not_exists(db_type: str):
             await conn.execute(text(f"CREATE DATABASE IF NOT EXISTS {mysql_db_config['db_name']}"))
         await engine.dispose()
     elif db_type == "postgres":
-        # Connect to the default 'postgres' database
+        # 远程托管环境下，数据库用户通常无权访问默认 'postgres' 库，
+        # 直接连接 postgres 库会长时间挂起。改为先尝试连接目标库：
+        # 连得上说明库已存在，直接返回；连不上再回退到原逻辑（连 postgres 库创建）。
+        target_url = f"postgresql+asyncpg://{postgres_db_config['user']}:{postgres_db_config['password']}@{postgres_db_config['host']}:{postgres_db_config['port']}/{postgres_db_config['db_name']}"
+        print(f"[init_db] Probing target database: {postgres_db_config['db_name']}", flush=True)
+        probe_engine = create_async_engine(target_url, echo=False, connect_args={"timeout": 10})
+        try:
+            async with probe_engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            await probe_engine.dispose()
+            print(f"[init_db] 目标库 {postgres_db_config['db_name']} 已存在，跳过 CREATE DATABASE 检查", flush=True)
+            return
+        except Exception as probe_err:
+            print(f"[init_db] 目标库探测失败({probe_err})，回退到 postgres 默认库检查", flush=True)
+            try:
+                await probe_engine.dispose()
+            except Exception:
+                pass
+
+        # 回退：连接默认 'postgres' 数据库检查/创建目标库
         server_url = f"postgresql+asyncpg://{postgres_db_config['user']}:{postgres_db_config['password']}@{postgres_db_config['host']}:{postgres_db_config['port']}/postgres"
-        print(f"[init_db] Connecting to Postgres: host={postgres_db_config['host']}, port={postgres_db_config['port']}, user={postgres_db_config['user']}, dbname=postgres")
-        # Isolation level AUTOCOMMIT is required for CREATE DATABASE
-        engine = create_async_engine(server_url, echo=False, isolation_level="AUTOCOMMIT")
+        print(f"[init_db] Connecting to Postgres: host={postgres_db_config['host']}, port={postgres_db_config['port']}, user={postgres_db_config['user']}, dbname=postgres", flush=True)
+        engine = create_async_engine(
+            server_url, echo=False, isolation_level="AUTOCOMMIT",
+            connect_args={"timeout": 10},
+        )
         async with engine.connect() as conn:
-            # Check if database exists
             result = await conn.execute(text(f"SELECT 1 FROM pg_database WHERE datname = '{postgres_db_config['db_name']}'"))
             if not result.scalar():
                 await conn.execute(text(f"CREATE DATABASE {postgres_db_config['db_name']}"))
@@ -79,7 +99,16 @@ def get_async_engine(db_type: str = None):
 async def create_tables(db_type: str = None):
     if db_type is None:
         db_type = config.SAVE_DATA_OPTION
-    await create_database_if_not_exists(db_type)
+    # create_database_if_not_exists 连接到默认 postgres 数据库检查/创建目标库，
+    # 远程托管环境下用户可能无权访问 postgres 库导致长时间挂起。
+    # 此处加 15s 超时保护：超时则跳过（目标库通常已存在，后续 get_async_engine 能连上即证明）。
+    import asyncio as _asyncio
+    try:
+        await _asyncio.wait_for(create_database_if_not_exists(db_type), timeout=15)
+    except _asyncio.TimeoutError:
+        print(f"[init_db] create_database_if_not_exists 超时(15s)，跳过（目标库可能已存在）")
+    except Exception as e:
+        print(f"[init_db] create_database_if_not_exists 失败(非致命): {e}")
     engine = get_async_engine(db_type)
     if engine:
         async with engine.begin() as conn:

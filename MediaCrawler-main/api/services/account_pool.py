@@ -100,6 +100,8 @@ class Account:
     platform: str = "dy"
     cookie: str = ""
     cookie_alias: str = ""
+    phone: str = ""
+    email: str = ""
     proxy_ip: str = ""
     proxy_port: int = 0
     proxy_user: str = ""
@@ -379,6 +381,8 @@ class AccountPool:
         self,
         cookie: str,
         cookie_alias: str = "",
+        phone: str = "",
+        email: str = "",
         proxy_ip: str = "",
         proxy_port: int = 0,
         proxy_user: str = "",
@@ -392,6 +396,8 @@ class AccountPool:
             for acc in self.accounts:
                 if acc.cookie == cookie:
                     acc.cookie_alias = cookie_alias or acc.cookie_alias
+                    acc.phone = phone or acc.phone
+                    acc.email = email or acc.email
                     acc.proxy_ip = proxy_ip or acc.proxy_ip
                     acc.proxy_port = proxy_port or acc.proxy_port
                     acc.proxy_user = proxy_user or acc.proxy_user
@@ -413,6 +419,8 @@ class AccountPool:
                 platform=self.platform,
                 cookie=cookie,
                 cookie_alias=cookie_alias or f"账号{len(self.accounts)+1}",
+                phone=phone,
+                email=email,
                 proxy_ip=proxy_ip,
                 proxy_port=proxy_port,
                 proxy_user=proxy_user,
@@ -814,12 +822,76 @@ class AccountPool:
             return "expired"
         return "valid"
 
-    async def check_all_health(self) -> Dict:
-        """主动执行真实健康检测：检查所有Cookie格式 + 所有IP是否被block
+    # 各平台登录态检测特征
+    _LOGIN_CHECK = {
+        "dy": {"url": "https://www.douyin.com", "title_keywords": ["抖音"], "title_exclude": ["登录", "验证", "安全"]},
+        "douyin": {"url": "https://www.douyin.com", "title_keywords": ["抖音"], "title_exclude": ["登录", "验证", "安全"]},
+        "xhs": {"url": "https://www.xiaohongshu.com", "title_keywords": ["小红书"], "title_exclude": ["登录"]},
+        "xiaohongshu": {"url": "https://www.xiaohongshu.com", "title_keywords": ["小红书"], "title_exclude": ["登录"]},
+        "bili": {"url": "https://www.bilibili.com", "title_keywords": ["哔哩哔哩", "bilibili"], "title_exclude": ["登录"]},
+        "bilibili": {"url": "https://www.bilibili.com", "title_keywords": ["哔哩哔哩", "bilibili"], "title_exclude": ["登录"]},
+        "wb": {"url": "https://weibo.com", "title_keywords": ["微博"], "title_exclude": ["登录", "注册"]},
+        "weibo": {"url": "https://weibo.com", "title_keywords": ["微博"], "title_exclude": ["登录", "注册"]},
+    }
 
-        这是"真实展示"的核心：不只依赖被动失败记录，而是主动检测当前状态。
-        - Cookie: 检查格式是否包含必需登录态字段（快速）
-        - IP: 通过访问平台首页检查IP是否被风控（网络请求）
+    async def _check_cookie_login(self, cookie_str: str, platform: str) -> dict:
+        """用 Playwright 携带 Cookie 静默访问平台，检测 Cookie 是否有效。
+
+        注入 Cookie → 访问首页 → 检查是否仍在登录态（不跳登录/扫码页）
+        Returns: {valid: bool, status: str, detail: str, page_title: str}
+        """
+        check_cfg = self._LOGIN_CHECK.get(platform, self._LOGIN_CHECK.get("dy"))
+        try:
+            from playwright.async_api import async_playwright
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context()
+                page = await context.new_page()
+
+                # 注入 Cookie
+                cookie_dict = {}
+                for item in cookie_str.split(";"):
+                    item = item.strip()
+                    if "=" in item:
+                        k, v = item.split("=", 1)
+                        cookie_dict[k.strip()] = v.strip()
+                cookies_to_set = [
+                    {"name": k, "value": v, "domain": check_cfg["url"].split("//")[1].split("/")[0].lstrip("www."),
+                     "path": "/"} for k, v in cookie_dict.items() if v
+                ]
+                await context.add_cookies(cookies_to_set)
+
+                # 访问首页
+                resp = await page.goto(check_cfg["url"], wait_until="domcontentloaded", timeout=15000)
+                await asyncio.sleep(2)
+                title = await page.title()
+                content_len = len(await page.content())
+                url = page.url
+
+                await browser.close()
+
+                # 判定登录态
+                is_login_page = any(kw in title for kw in check_cfg["title_exclude"])
+                has_expected = any(kw in title for kw in check_cfg["title_keywords"])
+                is_empty = content_len < 3000
+                is_redirected = "login" in url.lower() or "passport" in url.lower()
+
+                if is_login_page or is_redirected:
+                    return {"valid": False, "status": "expired", "detail": f"Cookie已过期，页面标题: {title}", "page_title": title}
+                if is_empty:
+                    return {"valid": False, "status": "blocked", "detail": f"可能被风控，页面内容过短({content_len}字符)", "page_title": title}
+                if not has_expected:
+                    return {"valid": False, "status": "unknown", "detail": f"页面状态异常，标题: {title}", "page_title": title}
+                return {"valid": True, "status": "valid", "detail": f"Cookie有效，页面标题: {title}", "page_title": title}
+        except Exception as e:
+            return {"valid": False, "status": "error", "detail": f"检测失败: {str(e)[:100]}", "page_title": ""}
+
+    async def check_all_health(self) -> Dict:
+        """主动执行真实健康检测：Cookie格式 + Cookie登录态 + IP风控
+
+        - Cookie格式: 检查必需字段（本地，快速）
+        - Cookie登录态: 携带Cookie访问平台验证有效性（Playwright，较慢）
+        - IP: 访问平台首页检查IP是否被风控（网络请求）
 
         Returns:
             {accounts_checked, ips_checked, cookie_results, ip_results, summary}
@@ -827,12 +899,13 @@ class AccountPool:
         now = time.time()
         self._cleanup_expired_bad_ips()
 
-        # 1. 检查所有Cookie格式
+        # 1. 检查所有Cookie：格式 + 登录态（并行加速）
         cookie_results = []
+        login_check_tasks = []
         for acc in self.accounts:
             fmt = self._check_cookie_format(acc.cookie)
             cookie_status = self._get_cookie_status(acc)
-            cookie_results.append({
+            result = {
                 "account_id": acc.account_id,
                 "alias": acc.cookie_alias,
                 "cookie_status": cookie_status,
@@ -842,7 +915,32 @@ class AccountPool:
                 "runtime_status": acc.status,
                 "health_score": acc.health_score,
                 "fail_count": acc.fail_count,
-            })
+                "login_check": None,  # 待填充
+            }
+            cookie_results.append(result)
+            # 只对有Cookie的账号执行真实登录检测
+            if acc.cookie and fmt["valid"]:
+                login_check_tasks.append((acc.platform, acc.cookie, len(cookie_results) - 1))
+
+        # 并行执行登录检测（限制并发数为2，避免资源耗尽）
+        if login_check_tasks:
+            sem = asyncio.Semaphore(2)
+            async def _check_with_sem(platform, cookie, idx):
+                async with sem:
+                    return idx, await self._check_cookie_login(cookie, platform)
+            login_results = await asyncio.gather(
+                *[_check_with_sem(plat, ck, idx) for plat, ck, idx in login_check_tasks],
+                return_exceptions=True
+            )
+            for item in login_results:
+                if isinstance(item, Exception):
+                    continue
+                idx, check = item
+                cookie_results[idx]["login_check"] = check
+                # 用真实检测结果覆盖 cookie_status
+                if check and not check["valid"] and check["status"] == "expired":
+                    cookie_results[idx]["cookie_status"] = "expired"
+                    cookie_results[idx]["runtime_status"] = "dead"
 
         # 2. 检查所有IP健康状态（并行检测所有网卡）
         ip_results = {}
@@ -988,6 +1086,8 @@ class AccountPool:
                     "status": a.status,
                     "cookie_status": self._get_cookie_status(a),
                     "cookie_missing_fields": self._check_cookie_format(a.cookie)["missing_fields"],
+                    "phone": a.phone,
+                    "email": a.email,
                     "health_score": a.health_score,
                     "fail_count": a.fail_count,
                     "success_count": a.success_count,

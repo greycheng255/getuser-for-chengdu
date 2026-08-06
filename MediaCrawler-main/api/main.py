@@ -3,6 +3,13 @@
 #
 # This file is part of MediaCrawler project.
 # Repository: https://github.com/NanmiCoder/MediaCrawler/blob/main/api/main.py
+
+# Windows: 使用 SelectorEventLoop 替代 ProactorEventLoop
+# ProactorEventLoop 不支持 create_subprocess_exec()，导致 Playwright/CDP 浏览器启动失败
+import sys as _sys
+if _sys.platform == "win32":
+    import asyncio as _asyncio
+    _asyncio.set_event_loop_policy(_asyncio.WindowsSelectorEventLoopPolicy())
 # GitHub: https://github.com/NanmiCoder
 # Licensed under NON-COMMERCIAL LEARNING LICENSE 1.1
 #
@@ -39,7 +46,7 @@ from .services.cookie_manager import _ensure_env_loaded
 _ensure_env_loaded()
 print("[main] Loaded .env via cookie_manager")
 
-from .routers import crawler_router, data_router, websocket_router, customer_lead_router, tasks_router, cookies_router, auth_router, business_router, agent_router, external_api_router, config_router, notifications_router, plan_router, x_twitter_router, x_twitter_workbench_router, x_workbench_crawl_router, x_workbench_templates_router, x_workbench_analytics_router, x_workbench_export_router, x_workbench_notifications_router, x_workbench_auto_mode_router, x_workbench_advanced_router, x_workbench_ws_router, x_workbench_auto_pipeline_router, hotpoint_router, opennotebook_integration_router, publish_router, accounts_router, interact_router, moderation_router, scheduling_router, marketing_router, analytics_router, risk_control_router, dm_router, content_router, ai_router, workflow_router, monitoring_router, brand_router, competitor_router, keyword_router, audit_log_router, system_config_router, comment_monitor_router, local_life_router, customer_dispatch_router, ai_customer_service_router
+from .routers import crawler_router, data_router, websocket_router, customer_lead_router, tasks_router, cookies_router, auth_router, business_router, agent_router, external_api_router, config_router, notifications_router, plan_router, x_twitter_router, x_twitter_workbench_router, x_workbench_crawl_router, x_workbench_templates_router, x_workbench_analytics_router, x_workbench_export_router, x_workbench_notifications_router, x_workbench_auto_mode_router, x_workbench_advanced_router, x_workbench_ws_router, x_workbench_auto_pipeline_router, hotpoint_router, opennotebook_integration_router, publish_router, accounts_router, interact_router, moderation_router, scheduling_router, marketing_router, analytics_router, risk_control_router, dm_router, content_router, ai_router, workflow_router, monitoring_router, brand_router, competitor_router, keyword_router, audit_log_router, system_config_router, comment_monitor_router, local_life_router, customer_dispatch_router, ai_customer_service_router, business_profiles_router
 # Phase 1-3 新增路由
 from .routers.ai_pilot import router as ai_pilot_router
 from .routers.task_pool import router as task_pool_router
@@ -351,18 +358,30 @@ async def startup_event():
     # account_pool 加载（5 平台循环，可能涉及网络验证 → 后台执行）
     async def _bg_account_pool():
         from .services.account_pool import get_account_pool, _detect_network_interfaces
-        from .services.cookie_manager import get_cookie_pool
+        from .services.cookie_manager import get_cookie_pool, get_user_cookie_pool
         await _detect_network_interfaces()
         for platform in ("dy", "xhs", "ks", "bili", "wb"):
-            cookie_list = get_cookie_pool(platform)
-            if not cookie_list:
-                continue
             pool = get_account_pool(platform)
             pool.accounts.clear()
             pool.current_account = None
-            for i, cookie_str in enumerate(cookie_list):
-                await pool.add_account(cookie=cookie_str, cookie_alias=f"账号{i+1}")
-            print(f"[startup] Loaded {len(pool.accounts)} accounts into {platform} account_pool")
+            # 优先从数据库读取（有别名），回退到环境变量
+            db_cookies = await get_user_cookie_pool(1, platform)  # admin user_id=1
+            if db_cookies:
+                for c in db_cookies:
+                    await pool.add_account(
+                        cookie=c["cookie"],
+                        cookie_alias=c.get("alias", ""),
+                        phone=c.get("phone", ""),
+                        email=c.get("email", ""),
+                    )
+            else:
+                cookie_list = get_cookie_pool(platform)
+                if not cookie_list:
+                    continue
+                for i, cookie_str in enumerate(cookie_list):
+                    await pool.add_account(cookie=cookie_str, cookie_alias=f"账号{i+1}")
+            if pool.accounts:
+                print(f"[startup] Loaded {len(pool.accounts)} accounts into {platform} account_pool")
     asyncio.create_task(_delayed("account_pool", _bg_account_pool()))
 
     # 任务调度器（daily/weekly 支持）
@@ -848,6 +867,8 @@ app.include_router(seo_router, prefix="/api")
 app.include_router(wechat_router, prefix="/api")
 app.include_router(compute_router, prefix="/api")
 app.include_router(device_router, prefix="/api")
+# 业务画像路由(获客配置复用)
+app.include_router(business_profiles_router, prefix="/api")
 
 # 添加 /api/dashboard 别名（从数据库获取数据）
 @app.get("/api/dashboard")

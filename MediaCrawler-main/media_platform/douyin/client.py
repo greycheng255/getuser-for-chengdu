@@ -95,11 +95,15 @@ class DouYinClient(AbstractApiClient, ProxyRefreshMixin):
                 pass
         
         if not xmst:
-            # 生成随机 msToken（抖音的 msToken 是 base64 编码的随机字符串）
-            import base64
-            xmst = base64.b64encode(os.urandom(96)).decode('utf-8')
+            # getuser-canrun 经验 4: 假 msToken 比没有更糟 — 随机生成的 msToken 会被抖音立即识别无效
+            # 触发 verify_check / 2483 / 验证码风控。宁可不带 msToken（或空）让其重新生成，也绝不造假
             if "search" in uri:
-                utils.logger.info(f"[DouYinClient.__process_req_params] Generated random msToken, length={len(xmst)}")
+                utils.logger.warning(
+                    "[DouYinClient.__process_req_params] msToken missing from localStorage/cookie, "
+                    "will continue WITHOUT fake msToken (per getuser-canrun: fake token > no token). "
+                    "Expect occasional 2483/verify_check; caller should trigger page reload to refresh token."
+                )
+            xmst = ""
         
         common_params = {
             "device_platform": "webapp",

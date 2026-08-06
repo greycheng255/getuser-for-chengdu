@@ -911,6 +911,47 @@ async def generate_explainer_video(
         return _explainer_task_response(completed)
 
 
+@router.get("/explainer-video/by-post/{post_id}")
+async def get_explainer_video_by_post(
+    post_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """按 post_id 查询当前用户最新的解说视频任务。
+
+    用于页面关闭后重新进入时恢复已生成/生成中的视频,避免重复扣费生成。
+    返回最新一条任务记录;若无任何记录返回 404。
+    """
+    owner_user_id = str(current_user["id"])
+    async with get_session() as session:
+        result = await session.execute(
+            select(XTwitterExplainerVideoTask)
+            .where(
+                XTwitterExplainerVideoTask.owner_user_id == owner_user_id,
+                XTwitterExplainerVideoTask.post_id == post_id,
+            )
+            .order_by(desc(XTwitterExplainerVideoTask.created_ts))
+            .limit(1)
+        )
+        task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(404, "该内容暂无视频任务记录")
+
+    is_final = task.status in {"done", "error", "submission_unknown"}
+    return {
+        "task_id": task.local_task_id,
+        "status": task.status or "submitting",
+        "is_final": is_final,
+        "progress": task.progress or 0,
+        "current_step": task.status or "submitting",
+        "result_url": task.result_url or "",
+        "error": task.error or "",
+        "cost": task.cost or 0,
+        "model_name": task.model_name or "",
+        "created_ts": task.created_ts or 0,
+    }
+
+
 @router.get("/explainer-video/{task_id}")
 async def explainer_video_status(
     task_id: str,
@@ -1415,8 +1456,13 @@ async def update_monitoring(req: UpdateMonitoringRequest):
 @router.post("/monitor/check-now")
 async def check_now():
     """立即触发一次回复检查（不等定时任务）"""
-    from api.services.comment_reply_monitor import _check_all_sent_comments
-    await _check_all_sent_comments()
+    from api.services.comment_reply_monitor import _check_all_sent_comments, _check_all_monitored_posts
+    import asyncio
+    # 并行执行两个检查（与 _monitor_loop 保持一致）
+    await asyncio.gather(
+        _check_all_sent_comments(),
+        _check_all_monitored_posts(),
+    )
     return {"success": True, "message": "已触发一次回复检查"}
 
 
@@ -2156,7 +2202,7 @@ async def _do_publish_to_x(cookies_str: str, content: str, video_url: str = None
         except Exception as e:
             logger.warning(f"[publish_to_x] JS 搜索 queryId 失败: {e}")
 
-        # 方法2: UI 拦截
+        # 方法2: UI 拦截 — 只填入文本触发 GraphQL 请求拦截，不点击发送按钮（避免误发 "test" 推文）
         if not query_id:
             captured_url = {"value": None}
             async def _capture_route(route):
@@ -2178,10 +2224,19 @@ async def _do_publish_to_x(cookies_str: str, content: str, video_url: str = None
                     await textarea.click()
                     await textarea.fill("test")
                     await asyncio.sleep(1)
-                    send_btn = await page.query_selector('[data-testid="tweetButton"]')
-                    if send_btn:
-                        await page.evaluate('(btn) => btn.click()', send_btn)
-                        await asyncio.sleep(5)
+                    # 不再点击发送按钮！只填入文本，X 会预加载 CreateTweet GraphQL 端点
+                    # 通过 page.route 拦截请求 URL 即可获取 queryId
+                    # 等待 X 前端发起 CreateTweet 请求（输入文本后前端会 prefetch/validate）
+                    await asyncio.sleep(3)
+                    if not captured_url["value"]:
+                        # 如果仅填写未触发，尝试通过 JS 监听 fetch 拦截
+                        captured_url["value"] = await page.evaluate("""() => {
+                            const entries = performance.getEntriesByType('resource');
+                            for (const e of entries) {
+                                if (e.name.includes('CreateTweet')) return e.name;
+                            }
+                            return null;
+                        }""")
                 if captured_url["value"]:
                     m = re.search(r'/graphql/([^/]+)/CreateTweet', captured_url["value"])
                     if m:
@@ -2202,6 +2257,22 @@ async def _do_publish_to_x(cookies_str: str, content: str, video_url: str = None
 
         # ========== 4. GraphQL CreateTweet 发布推文 ==========
         logger.info(f"[publish_to_x] 通过 GraphQL 发布推文 (media_id={media_id})...")
+
+        # 发布前记录用户主页已有推文 ID 快照，用于后续对比识别新增推文
+        pre_tweet_ids: list = []
+        try:
+            username = os.getenv("X_TWITTER_MY_USERNAME", "GreyCheng90328")
+            await page.goto(f"https://x.com/{username}", wait_until="domcontentloaded", timeout=30000)
+            await asyncio.sleep(3)
+            pre_links = await page.query_selector_all('article[data-testid="tweet"] a[href*="/status/"]')
+            for link in pre_links:
+                href = await link.get_attribute("href")
+                if href and "/status/" in href:
+                    tid = href.split("/status/")[1].split("/")[0].split("?")[0]
+                    pre_tweet_ids.append(tid)
+            logger.info(f"[publish_to_x] 发布前快照: 主页已有 {len(pre_tweet_ids)} 条推文")
+        except Exception as e:
+            logger.warning(f"[publish_to_x] 获取发布前快照失败(不影响发布): {e}")
 
         create_result = await page.evaluate("""async (params) => {
             const features = {
@@ -2295,9 +2366,15 @@ async def _do_publish_to_x(cookies_str: str, content: str, video_url: str = None
             if not new_tweet_id and isinstance(tweet, dict):
                 new_tweet_id = tweet.get("legacy", {}).get("id_str", "")
 
-            # 路径3: data.create_tweet.tweet_results.result.core.id_str
+            # 路径3: data.create_tweet.tweet_results.result.core.user_results.result.rest_id
+            # (core 下是用户对象,不能直接取 core.id_str — 那是用户 ID 不是推文 ID)
             if not new_tweet_id and isinstance(tweet, dict):
-                new_tweet_id = tweet.get("core", {}).get("id_str", "")
+                core = tweet.get("core", {})
+                user_results = core.get("user_results", {}) if isinstance(core, dict) else {}
+                user = user_results.get("result", {}) if isinstance(user_results, dict) else {}
+                # 注意: 这是用户 ID,不是推文 ID — 仅作为最后手段,正常不会走到这里
+                # 留空,不取用户 ID 冒充推文 ID
+                pass
 
             # 路径4: 深度搜索 — 在整个响应中查找第一个 tweet ID (19位数字)
             if not new_tweet_id:
@@ -2315,7 +2392,7 @@ async def _do_publish_to_x(cookies_str: str, content: str, video_url: str = None
 
         # 如果响应中没有 tweet_id，导航到用户主页获取最新推文
         if not new_tweet_id:
-            logger.info("[publish_to_x] 响应中无 tweet_id，检查用户主页...")
+            logger.warning("[publish_to_x] 响应中无 tweet_id，CreateTweet 可能失败。检查用户主页找新增推文...")
             try:
                 username = os.getenv("X_TWITTER_MY_USERNAME", "GreyCheng90328")
                 await page.goto(f"https://x.com/{username}", wait_until="domcontentloaded", timeout=30000)
@@ -2333,13 +2410,25 @@ async def _do_publish_to_x(cookies_str: str, content: str, video_url: str = None
                             seen_ids.add(tid)
                             candidate_ids.append((tid, href))
 
-                # 第一个出现的推文 ID 就是最新发布的推文
-                if candidate_ids:
-                    new_tweet_id, href = candidate_ids[0]
+                # 对比发布前快照，只接受新增的推文 ID（避免抓到旧推文）
+                pre_existing_ids = set(pre_tweet_ids) if pre_tweet_ids else set()
+                new_candidates = [(tid, href) for tid, href in candidate_ids if tid not in pre_existing_ids]
+
+                if new_candidates:
+                    new_tweet_id, href = new_candidates[0]
                     new_tweet_url = f"https://x.com{href}" if href.startswith("/") else href
-                    logger.info(f"[publish_to_x] 从主页获取最新 tweet_id={new_tweet_id} (共 {len(candidate_ids)} 条候选)")
+                    logger.info(f"[publish_to_x] 从主页获取新增 tweet_id={new_tweet_id} (共 {len(candidate_ids)} 条, 新增 {len(new_candidates)} 条)")
                 else:
-                    logger.warning("[publish_to_x] 主页未找到推文链接")
+                    logger.error(
+                        f"[publish_to_x] 主页无新增推文！共 {len(candidate_ids)} 条全部是旧推文。"
+                        f"CreateTweet 实际失败但响应未报错。pre_ids={list(pre_existing_ids)[:5]}"
+                    )
+                    # 不返回旧推文 ID，明确标记失败
+                    raise RuntimeError(
+                        "CreateTweet 发布失败: 响应无 tweet_id 且主页无新增推文，可能是 X API 静默拒绝"
+                    )
+            except RuntimeError:
+                raise
             except Exception as e:
                 logger.warning(f"[publish_to_x] 检查主页失败: {e}")
 
