@@ -474,7 +474,7 @@ async def _fetch_x(force_crawl: bool = False) -> List[Dict[str, Any]]:
     """
     try:
         import config
-        engine = self._get_engine()
+        engine = _get_engine()
         from database.models import XTwitterPost, XTwitterTrendingPost
         from sqlalchemy import select, desc
         from sqlalchemy.ext.asyncio import AsyncSession

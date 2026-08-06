@@ -84,7 +84,7 @@ export const getCookiePool = (platform?: string): Promise<CookiePoolStatus | Rec
   return request.get('/cookies/pool', { params: platform ? { platform } : {} });
 };
 
-export const addCookieToPool = (platform: string, cookie: string, alias?: string): Promise<{
+export const addCookieToPool = (platform: string, cookie: string, alias?: string, phone?: string, email?: string): Promise<{
   success: boolean;
   message: string;
   pool_size?: number;
@@ -92,7 +92,7 @@ export const addCookieToPool = (platform: string, cookie: string, alias?: string
   missing_fields?: string[];
   hint?: string;
 }> => {
-  return request.post('/cookies/pool/add', null, { params: { platform, cookie, alias: alias || '' } });
+  return request.post('/cookies/pool/add', null, { params: { platform, cookie, alias: alias || '', phone: phone || '', email: email || '' } });
 };
 
 export const removeCookieFromPool = (platform: string, cookie: string, cookieId?: number): Promise<{ success: boolean; message: string; pool_size: number }> => {
@@ -174,6 +174,7 @@ export interface HealthCheckResult {
     runtime_status: string;
     health_score: number;
     fail_count: number;
+    login_check?: { valid: boolean; status: string; detail: string; page_title: string } | null;
   }>;
   ip_results: Record<string, {
     ip: string;

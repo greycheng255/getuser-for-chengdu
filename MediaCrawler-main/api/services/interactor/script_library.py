@@ -29,6 +29,11 @@ class ScriptScene:
     DIRECT_MESSAGE = "direct_message"       # 私信
     ENGAGEMENT_BOOST = "engagement_boost"   # 互动引导
     CONVERSION = "conversion"               # 转化引导
+    PUBLISH_POST = "publish_post"           # 发布文案
+    PUBLISH_TITLE = "publish_title"         # 发布标题
+    # 兼容旧场景名映射
+    _DM_SCENES = {DIRECT_MESSAGE, CONVERSION, "dm_reply"}
+    _PUBLISH_SCENES = {PUBLISH_POST, PUBLISH_TITLE, "publish_content"}
 
 
 class ScriptType:
@@ -39,8 +44,11 @@ class ScriptType:
 
 
 def infer_script_type(scene: str) -> str:
-    if scene in {ScriptScene.DIRECT_MESSAGE, ScriptScene.CONVERSION, "dm_reply"}:
+    """根据场景推断话术一级类型。"""
+    if scene in ScriptScene._DM_SCENES:
         return ScriptType.DIRECT_MESSAGE
+    if scene in ScriptScene._PUBLISH_SCENES:
+        return ScriptType.PUBLISH
     return ScriptType.COMMENT
 
 

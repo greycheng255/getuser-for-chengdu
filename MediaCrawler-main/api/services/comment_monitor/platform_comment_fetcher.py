@@ -135,7 +135,7 @@ class PlatformCommentFetcher:
                 task_id=f"cmt_monitor_{self.PLATFORM}_{int(time.time())}",
             )
             task_id = f"cmt_{self.PLATFORM}_{int(time.time())}"
-            ok = await crawler_manager.start(
+            ok, _ = await crawler_manager.start(
                 req, task_id=task_id, owner_user_id=self.owner_user_id
             )
             if not ok:

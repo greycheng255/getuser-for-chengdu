@@ -63,6 +63,8 @@ def classify_publish_error(error: object) -> PublishErrorCode:
         (PublishErrorCode.UPLOAD_FAILED, ("上传失败", "上传入口", "upload failed")),
         (PublishErrorCode.SELECTOR_CHANGED, ("未找到", "selector", "选择器", "元素")),
         (PublishErrorCode.TIMEOUT, ("超时", "timeout", "timed out")),
+        (PublishErrorCode.NO_AVAILABLE_ACCOUNT, ("无可用账号", "全部冷却", "配额耗尽", "no available account")),
+        (PublishErrorCode.QUOTA_EXCEEDED, ("quota_exceeded", "配额超限", "超出配额")),
     )
     for code, keywords in rules:
         if any(keyword in text for keyword in keywords):
@@ -71,10 +73,12 @@ def classify_publish_error(error: object) -> PublishErrorCode:
 
 
 def is_error_code_retryable(error_code: PublishErrorCode) -> bool:
+    """判断错误码是否可重试。不可重试的错误需要换账号或人工介入。"""
     return error_code in {
-        PublishErrorCode.RATE_LIMITED,
-        PublishErrorCode.UPLOAD_FAILED,
-        PublishErrorCode.TIMEOUT,
+        PublishErrorCode.RATE_LIMITED,       # 限流后可等待后重试
+        PublishErrorCode.UPLOAD_FAILED,      # 上传失败可重试
+        PublishErrorCode.TIMEOUT,            # 超时可重试
+        PublishErrorCode.SELECTOR_CHANGED,   # 选择器变化可换策略重试
     }
 
 

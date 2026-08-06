@@ -236,14 +236,20 @@ def clamp_max_notes(user: dict, requested_max_notes: int) -> Tuple[int, str]:
     Returns:
         (adjusted_max_notes, message)
     """
+    # API 层硬限制 10000（来自 api/schemas/crawler.py:MAX_API_LIMIT_COUNT）
+    # 这是单次 API 调用安全上限，所有套餐（含管理员）均不可突破
+    API_MAX = 10000
+
     if is_admin_plan_unlimited(user):
-        return max(requested_max_notes, 50000), "管理员模式"
+        return min(requested_max_notes, API_MAX), "管理员模式"
 
     plan_type = _effective_plan_type(user)
     plan = get_plan_config(plan_type)
 
-    if requested_max_notes > plan.max_notes_per_task:
-        return plan.max_notes_per_task, f"已根据套餐({plan.display_name})调整 max_notes 为 {plan.max_notes_per_task}"
+    # 取套餐限制和 API 硬限制的最小值
+    effective_max = min(plan.max_notes_per_task, API_MAX)
+    if requested_max_notes > effective_max:
+        return effective_max, f"已根据套餐({plan.display_name})调整 max_notes 为 {effective_max}"
 
     return requested_max_notes, ""
 

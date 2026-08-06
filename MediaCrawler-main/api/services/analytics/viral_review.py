@@ -329,7 +329,7 @@ class ViralReviewService:
             async with engine.connect() as conn:
                 sql = (
                     "SELECT * FROM viral_review_reports "
-                    "WHERE created_at >= CURRENT_DATE - :days"
+                    "WHERE created_at >= CURRENT_TIMESTAMP - (:days * INTERVAL '1 day')"
                 )
                 params: Dict[str, Any] = {"days": days, "limit": limit}
                 if platform:

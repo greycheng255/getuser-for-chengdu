@@ -351,18 +351,30 @@ async def startup_event():
     # account_pool 加载（5 平台循环，可能涉及网络验证 → 后台执行）
     async def _bg_account_pool():
         from .services.account_pool import get_account_pool, _detect_network_interfaces
-        from .services.cookie_manager import get_cookie_pool
+        from .services.cookie_manager import get_cookie_pool, get_user_cookie_pool
         await _detect_network_interfaces()
         for platform in ("dy", "xhs", "ks", "bili", "wb"):
-            cookie_list = get_cookie_pool(platform)
-            if not cookie_list:
-                continue
             pool = get_account_pool(platform)
             pool.accounts.clear()
             pool.current_account = None
-            for i, cookie_str in enumerate(cookie_list):
-                await pool.add_account(cookie=cookie_str, cookie_alias=f"账号{i+1}")
-            print(f"[startup] Loaded {len(pool.accounts)} accounts into {platform} account_pool")
+            # 优先从数据库读取（有别名），回退到环境变量
+            db_cookies = await get_user_cookie_pool(1, platform)  # admin user_id=1
+            if db_cookies:
+                for c in db_cookies:
+                    await pool.add_account(
+                        cookie=c["cookie"],
+                        cookie_alias=c.get("alias", ""),
+                        phone=c.get("phone", ""),
+                        email=c.get("email", ""),
+                    )
+            else:
+                cookie_list = get_cookie_pool(platform)
+                if not cookie_list:
+                    continue
+                for i, cookie_str in enumerate(cookie_list):
+                    await pool.add_account(cookie=cookie_str, cookie_alias=f"账号{i+1}")
+            if pool.accounts:
+                print(f"[startup] Loaded {len(pool.accounts)} accounts into {platform} account_pool")
     asyncio.create_task(_delayed("account_pool", _bg_account_pool()))
 
     # 任务调度器（daily/weekly 支持）

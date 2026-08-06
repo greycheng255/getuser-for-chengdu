@@ -637,7 +637,7 @@ async def set_user_cookie(user_id: int, platform: str, cookie_str: str, alias: s
         return False
 
 
-async def add_user_cookie_to_pool(user_id: int, platform: str, cookie_str: str, alias: str = "") -> bool:
+async def add_user_cookie_to_pool(user_id: int, platform: str, cookie_str: str, alias: str = "", phone: str = "", email: str = "") -> bool:
     """添加 Cookie 到用户的 Cookie 池"""
     factory = await _get_user_cookie_session()
     if not factory:
@@ -651,6 +651,8 @@ async def add_user_cookie_to_pool(user_id: int, platform: str, cookie_str: str, 
                 platform=platform,
                 cookie_str=cookie_str,
                 alias=alias or f"{platform}_cookie_{int(time.time())}",
+                phone=phone,
+                email=email,
                 status="active",
                 created_ts=int(time.time() * 1000),
             )

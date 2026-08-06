@@ -468,8 +468,9 @@ async def _reply_to_comment_on_page(page, content: str, comment_id: str = "", ni
                         if box and box['y'] > 100:
                             # 检查这个回复按钮附近是否有目标昵称
                             if nickname:
+                                _escaped_selector = selector.replace("'", "\\'")
                                 parent_text = await page.evaluate(f"""() => {{
-                                    const btns = document.querySelectorAll('{selector.replace("'", "\\'")}');
+                                    const btns = document.querySelectorAll('{_escaped_selector}');
                                     if (btns[{i}]) {{
                                         let parent = btns[{i}].closest('[class*="commentItem"], [class*="CommentItem"], [class*="comment-item"]');
                                         return parent ? parent.innerText : '';

@@ -615,6 +615,8 @@ async def get_pool(platform: Optional[str] = None, current_user: dict = Depends(
                     "has_session": _cookie_has_session(platform, c["cookie"]),
                     "is_valid": _cookie_has_session(platform, c["cookie"]),
                     "alias": c.get("alias", ""),
+                    "phone": c.get("phone", ""),
+                    "email": c.get("email", ""),
                     "created_ts": c.get("created_ts", 0),
                 }
                 for i, c in enumerate(pool)
@@ -637,6 +639,8 @@ async def get_pool(platform: Optional[str] = None, current_user: dict = Depends(
                         "has_session": _cookie_has_session(plat, c["cookie"]),
                         "is_valid": _cookie_has_session(plat, c["cookie"]),
                         "alias": c.get("alias", ""),
+                        "phone": c.get("phone", ""),
+                        "email": c.get("email", ""),
                         "created_ts": c.get("created_ts", 0),
                     }
                     for i, c in enumerate(pool)
@@ -667,6 +671,8 @@ async def add_to_pool(
     platform: str,
     cookie: str,
     alias: str = "",
+    phone: str = "",
+    email: str = "",
     current_user: dict = Depends(get_current_user)
 ):
     """添加Cookie到Cookie池(按用户隔离,自动解析非标准格式)"""
@@ -708,7 +714,7 @@ async def add_to_pool(
         }
 
     user_id = current_user["id"]
-    success = await add_user_cookie_to_pool(user_id, platform, parsed_cookie)
+    success = await add_user_cookie_to_pool(user_id, platform, parsed_cookie, alias=alias, phone=phone, email=email)
     if success:
         pool = await get_user_cookie_pool(user_id, platform)
         return {
@@ -808,11 +814,10 @@ async def refresh_accounts(
     platform: str = "dy",
     current_user: dict = Depends(require_admin)
 ):
-    """手动刷新账号池：从Cookie池重新加载"""
+    """手动刷新账号池：从数据库Cookie池加载（带真实别名）"""
     from ..services.account_pool import get_available_interfaces, _detect_network_interfaces
-    from ..services.cookie_manager import get_cookie_pool
+    from ..services.cookie_manager import get_user_cookie_pool, get_cookie_pool
     pool = get_account_pool(platform)
-    cookie_list = get_cookie_pool(platform)
 
     await _detect_network_interfaces()
     interfaces = get_available_interfaces()
@@ -820,18 +825,30 @@ async def refresh_accounts(
     pool.accounts.clear()
     pool.current_account = None
 
-    for i, cookie_str in enumerate(cookie_list):
-        await pool.add_account(
-            cookie=cookie_str,
-            cookie_alias=f"账号{i+1}",
-        )
+    # 优先从数据库读取（有别名），回退到环境变量
+    db_cookies = await get_user_cookie_pool(current_user["id"], platform)
+    if db_cookies:
+        for c in db_cookies:
+            await pool.add_account(
+                cookie=c["cookie"],
+                cookie_alias=c.get("alias", ""),
+            )
+    else:
+        # 回退：从环境变量读取（无别名）
+        cookie_str_list = get_cookie_pool(platform)
+        for i, cookie_str in enumerate(cookie_str_list):
+            await pool.add_account(
+                cookie=cookie_str,
+                cookie_alias=f"账号{i+1}",
+            )
 
+    total = len(pool.accounts)
     return {
         "success": True,
-        "message": f"已刷新账号池，共{len(cookie_list)}个账号，{len(interfaces)}个IP动态随机组合",
-        "total": len(pool.accounts),
+        "message": f"已刷新账号池，共{total}个账号，{len(interfaces)}个IP动态随机组合",
+        "total": total,
         "network_interfaces": interfaces,
-        "combination_count": len(cookie_list) * max(len(interfaces), 1),
+        "combination_count": total * max(len(interfaces), 1),
     }
 
 

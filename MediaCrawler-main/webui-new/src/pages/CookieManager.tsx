@@ -31,20 +31,46 @@ const platformIcons: Record<string, string> = {
 };
 
 export default function CookieManager() {
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [addPlatform, setAddPlatform] = useState('dy');
+  const [addCookie, setAddCookie] = useState('');
+  const [addAlias, setAddAlias] = useState('');
+  const [addPhone, setAddPhone] = useState('');
+  const [addEmail, setAddEmail] = useState('');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const triggerRefresh = () => setRefreshTrigger(t => t + 1);
+
   return (
     <div style={{ padding: 24 }}>
+      {/* 统一的"添加账号"弹窗 — 两个Tab共享 */}
+      <AddAccountModal
+        visible={addModalVisible}
+        platform={addPlatform}
+        cookie={addCookie}
+        alias={addAlias}
+        phone={addPhone}
+        email={addEmail}
+        onPlatformChange={setAddPlatform}
+        onCookieChange={setAddCookie}
+        onAliasChange={setAddAlias}
+        onPhoneChange={setAddPhone}
+        onEmailChange={setAddEmail}
+        onClose={() => { setAddModalVisible(false); setAddCookie(''); setAddAlias(''); setAddPhone(''); setAddEmail(''); }}
+        onSuccess={() => { setAddModalVisible(false); setAddCookie(''); setAddAlias(''); setAddPhone(''); setAddEmail(''); triggerRefresh(); }}
+      />
       <Tabs
         defaultActiveKey="pool"
         items={[
           {
             key: 'pool',
-            label: 'Cookie池管理',
-            children: <CookiePoolTab />,
+            label: '账号凭证库',
+            children: <CookiePoolTab refreshTrigger={refreshTrigger} onAddAccount={() => setAddModalVisible(true)} />,
           },
           {
             key: 'accounts',
-            label: '账号池监控',
-            children: <AccountPoolTab />,
+            label: '运行时监控',
+            children: <AccountPoolTab refreshTrigger={refreshTrigger} onAddAccount={() => setAddModalVisible(true)} />,
           },
         ]}
       />
@@ -53,14 +79,63 @@ export default function CookieManager() {
 }
 
 // ============================================================
-// Cookie池管理 Tab
 // ============================================================
-function CookiePoolTab() {
+// 统一的"添加账号"弹窗（两个Tab共享）
+// ============================================================
+function AddAccountModal({
+  visible, platform, cookie, alias, phone, email,
+  onPlatformChange, onCookieChange, onAliasChange, onPhoneChange, onEmailChange,
+  onClose, onSuccess,
+}: {
+  visible: boolean; platform: string; cookie: string; alias: string; phone: string; email: string;
+  onPlatformChange: (v: string) => void; onCookieChange: (v: string) => void;
+  onAliasChange: (v: string) => void; onPhoneChange: (v: string) => void; onEmailChange: (v: string) => void;
+  onClose: () => void; onSuccess: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const handleAdd = async () => {
+    if (!cookie.trim() || cookie.trim().length < 50) { message.warning('Cookie内容过短，请检查'); return; }
+    setAdding(true);
+    try {
+      const res = await addCookieToPool(platform, cookie.trim(), alias.trim(), phone.trim(), email.trim());
+      if (res.success) { message.success(res.message); onSuccess(); }
+      else { message.error({ content: res.message, duration: 8 }); }
+    } catch (err: any) { message.error(`添加失败：${err?.response?.data?.detail || err?.message || '未知错误'}`); }
+    finally { setAdding(false); }
+  };
+  return (
+    <Modal title="添加账号" open={visible} onOk={handleAdd} confirmLoading={adding}
+      onCancel={onClose} width={720} okText="添加" cancelText="取消">
+      <div style={{ marginBottom: 12, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div>
+          <Text strong>平台: </Text>
+          <select value={platform} onChange={(e) => onPlatformChange(e.target.value)}
+            style={{ marginLeft: 4, padding: '4px 8px', borderRadius: 4, border: '1px solid #d9d9d9' }}>
+            <option value="dy">🎵 抖音</option>
+            <option value="xhs">📕 小红书</option>
+            <option value="ks">📱 快手</option>
+            <option value="bili">📺 B站</option>
+            <option value="wb">🌐 微博</option>
+            <option value="x_twitter">🐦 X/Twitter</option>
+          </select>
+        </div>
+        <Input placeholder="账号别名（如: 抖音主号）" value={alias} onChange={(e) => onAliasChange(e.target.value)} style={{ width: 160 }} allowClear />
+        <Input placeholder="手机号" value={phone} onChange={(e) => onPhoneChange(e.target.value)} style={{ width: 130 }} allowClear />
+        <Input placeholder="邮箱" value={email} onChange={(e) => onEmailChange(e.target.value)} style={{ width: 180 }} allowClear />
+      </div>
+      <TextArea value={cookie} onChange={(e) => onCookieChange(e.target.value)}
+        placeholder="粘贴完整的Cookie字符串（F12 → Application → Cookies → 全选复制）..."
+        rows={8} style={{ fontFamily: 'monospace', fontSize: 12 }} />
+    </Modal>
+  );
+}
+
+// ============================================================
+// 账号凭证库 Tab
+// ============================================================
+function CookiePoolTab({ refreshTrigger, onAddAccount }: { refreshTrigger: number; onAddAccount: () => void }) {
   const [poolData, setPoolData] = useState<Record<string, CookiePoolStatus>>({});
   const [loading, setLoading] = useState(false);
-  const [addModalVisible, setAddModalVisible] = useState(false);
-  const [addPlatform, setAddPlatform] = useState('dy');
-  const [addCookie, setAddCookie] = useState('');
 
   const fetchPool = async () => {
     setLoading(true);
@@ -68,7 +143,7 @@ function CookiePoolTab() {
       const data = await getCookiePool();
       setPoolData(data as Record<string, CookiePoolStatus>);
     } catch {
-      message.error('获取Cookie池失败');
+      message.error('获取账号凭证失败');
     } finally {
       setLoading(false);
     }
@@ -76,50 +151,7 @@ function CookiePoolTab() {
 
   useEffect(() => {
     fetchPool();
-  }, []);
-
-  const handleAdd = async () => {
-    if (!addCookie.trim() || addCookie.trim().length < 50) {
-      message.warning('Cookie内容过短，请检查');
-      return;
-    }
-    try {
-      const res = await addCookieToPool(addPlatform, addCookie.trim());
-      if (res.success) {
-        message.success(res.message);
-        setAddCookie('');
-        setAddModalVisible(false);
-        fetchPool();
-      } else {
-        // 后端返回了详细的失败原因（如缺少sessionid）
-        message.error({
-          content: res.message,
-          duration: 8,
-        });
-        if (res.missing_fields && res.missing_fields.length > 0) {
-          Modal.warning({
-            title: 'Cookie不完整',
-            content: (
-              <div>
-                <p>该Cookie缺少关键登录态字段：</p>
-                <ul style={{ color: '#ff4d4f', paddingLeft: 20 }}>
-                  {res.missing_fields.map((f: string, i: number) => (
-                    <li key={i}>{f}</li>
-                  ))}
-                </ul>
-                <p style={{ color: '#faad14', marginTop: 12 }}>
-                  {res.hint || '请重新从浏览器获取完整Cookie'}
-                </p>
-              </div>
-            ),
-          });
-        }
-      }
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail || err?.message || '未知错误';
-      message.error(`添加失败：${detail}`);
-    }
-  };
+  }, [refreshTrigger]);
 
   const handleRemove = async (platform: string, cookie: string, cookieId?: number) => {
     try {
@@ -174,12 +206,12 @@ function CookiePoolTab() {
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <Title level={4}>Cookie 池管理</Title>
-          <Text type="secondary">配置多个Cookie，系统会自动轮换使用，检测到风控时自动切换</Text>
+          <Title level={4}>账号凭证库</Title>
+          <Text type="secondary">管理各平台账号的Cookie凭证、手机号、邮箱。系统运行时会自动轮换使用</Text>
         </div>
         <Space>
-          <Button icon={<PlusOutlined />} type="primary" onClick={() => setAddModalVisible(true)}>
-            添加Cookie
+          <Button icon={<PlusOutlined />} type="primary" onClick={onAddAccount}>
+            添加账号
           </Button>
           <Button icon={<ReloadOutlined />} onClick={fetchPool} loading={loading}>
             刷新
@@ -215,7 +247,7 @@ function CookiePoolTab() {
               }
             >
               {data.pool_size === 0 ? (
-                <Text type="secondary">暂无Cookie，点击"添加Cookie"按钮添加</Text>
+                <Text type="secondary">暂无账号凭证，点击"添加账号"录入</Text>
               ) : (
                 <div style={{ maxHeight: 300, overflowY: 'auto' }}>
                   {(data.valid_count !== undefined || data.invalid_count !== undefined) && (
@@ -239,15 +271,20 @@ function CookiePoolTab() {
                       alignItems: 'center',
                     }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <Space>
+                        <Space wrap>
+                          <Text strong style={{ fontSize: 13 }}>{item.alias || '未命名'}</Text>
                           <Tag color={item.is_valid === false ? 'red' : (item.has_session ? 'green' : 'orange')}>
-                            {item.is_valid === false ? '无效（缺登录态）' : (item.has_session ? '有session' : '无session')}
+                            {item.is_valid === false ? '无效（缺登录态）' : (item.has_session ? '有效' : '无session')}
                           </Tag>
-                          <Text style={{ fontSize: 12, color: '#999' }}>长度: {item.cookie_length}</Text>
+                          {item.phone && <Text style={{ fontSize: 11, color: '#666' }}>📱 {item.phone}</Text>}
+                          {item.email && <Text style={{ fontSize: 11, color: '#666' }}>📧 {item.email}</Text>}
+                          <Text style={{ fontSize: 11, color: '#999' }}>
+                            {item.created_ts ? new Date(item.created_ts).toLocaleDateString() : ''}
+                          </Text>
                         </Space>
                         <div style={{
                           fontSize: 11,
-                          color: '#999',
+                          color: '#bbb',
                           fontFamily: 'monospace',
                           marginTop: 4,
                           overflow: 'hidden',
@@ -273,38 +310,6 @@ function CookiePoolTab() {
         </div>
       </Spin>
 
-      <Modal
-        title="添加Cookie到池"
-        open={addModalVisible}
-        onOk={handleAdd}
-        onCancel={() => { setAddModalVisible(false); setAddCookie(''); }}
-        width={700}
-        okText="添加"
-        cancelText="取消"
-      >
-        <div style={{ marginBottom: 12 }}>
-          <Text strong>选择平台: </Text>
-          <select
-            value={addPlatform}
-            onChange={(e) => setAddPlatform(e.target.value)}
-            style={{ marginLeft: 8, padding: '4px 8px', borderRadius: 4, border: '1px solid #d9d9d9' }}
-          >
-            <option value="dy">dy</option>
-            <option value="xhs">xhs</option>
-            <option value="ks">ks</option>
-            <option value="bili">bili</option>
-            <option value="wb">wb</option>
-            <option value="x_twitter">x_twitter</option>
-          </select>
-        </div>
-        <TextArea
-          value={addCookie}
-          onChange={(e) => setAddCookie(e.target.value)}
-          placeholder="粘贴完整的Cookie字符串..."
-          rows={8}
-          style={{ fontFamily: 'monospace', fontSize: 12 }}
-        />
-      </Modal>
     </div>
   );
 }
@@ -322,7 +327,7 @@ const cookieStatusMap: Record<string, { color: string; text: string; icon: React
   unknown:  { color: 'default', text: '未知',         icon: <WarningOutlined /> },
 };
 
-function AccountPoolTab() {
+function AccountPoolTab({ refreshTrigger, onAddAccount }: { refreshTrigger: number; onAddAccount: () => void }) {
   const [accountData, setAccountData] = useState<AccountPoolStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [platform, setPlatform] = useState('dy');
@@ -390,10 +395,10 @@ function AccountPoolTab() {
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <Title level={4}>账号池监控</Title>
+          <Title level={4}>运行时监控</Title>
           <Text type="secondary">
-            实时监控Cookie+IP组合的健康状态，风控时自动切换。
-            IP动态随机分配，{accountData?.accounts?.length || 0}个Cookie × {accountData?.network_interfaces ? Object.keys(accountData.network_interfaces).length : 0}个IP
+            实时监控账号+IP组合的健康状态，风控时自动切换。
+            {accountData?.accounts?.length || 0}个账号 × {accountData?.network_interfaces ? Object.keys(accountData.network_interfaces).length : 0}个IP
             {accountData?.accounts?.length && accountData?.network_interfaces && (
               <Tag color="purple" style={{ marginLeft: 8 }}>
                 共 {(accountData.accounts.length) * Object.keys(accountData.network_interfaces).length} 种组合
@@ -402,6 +407,7 @@ function AccountPoolTab() {
           </Text>
         </div>
         <Space wrap>
+          <Button icon={<PlusOutlined />} type="primary" onClick={onAddAccount}>添加账号</Button>
           <select
             value={platform}
             onChange={(e) => setPlatform(e.target.value)}
@@ -440,7 +446,7 @@ function AccountPoolTab() {
           type={healthResult.summary.ip_blocked > 0 || healthResult.summary.cookie_invalid > 0 ? 'warning' : 'success'}
           showIcon
           icon={<HeartOutlined />}
-          message={`健康检测完成 (检测时间: ${new Date(healthResult.checked_at * 1000).toLocaleTimeString()})`}
+          message={`健康检测完成 (${new Date(healthResult.checked_at * 1000).toLocaleTimeString()}) — 已用真实浏览器验证Cookie登录态`}
           description={
             <Space size="large" wrap>
               <span>
@@ -452,6 +458,11 @@ function AccountPoolTab() {
                 IP: <Text type="success">{healthResult.summary.ip_healthy} 健康</Text>
                 {healthResult.summary.ip_blocked > 0 && <Text type="danger"> / {healthResult.summary.ip_blocked} 被封</Text>}
               </span>
+              {healthResult.summary.cookie_invalid > 0 || healthResult.summary.cookie_expired > 0 ? (
+                <span style={{ fontSize: 12, color: '#ff4d4f' }}>
+                  ⚠️ 有失效Cookie，建议更新后重新添加
+                </span>
+              ) : null}
             </Space>
           }
           style={{ marginBottom: 16 }}
@@ -591,7 +602,7 @@ function AccountPoolTab() {
             }
           >
             {accountData.accounts.length === 0 ? (
-              <Text type="secondary">暂无账号，请在"Cookie池管理"中添加Cookie</Text>
+              <Text type="secondary">暂无运行中的账号，请点击"添加账号"录入凭证后刷新</Text>
             ) : (
               <div style={{ maxHeight: 500, overflowY: 'auto' }}>
                 {accountData.accounts.map((acc) => {
@@ -622,7 +633,18 @@ function AccountPoolTab() {
                           }>
                             <Tag color={cs.color} icon={cs.icon}>{cs.text}</Tag>
                           </Tooltip>
+                          {/* 健康检测的真实登录结果 */}
+                          {healthResult?.cookie_results?.find((r: any) => r.account_id === acc.account_id)?.login_check?.valid === false && (
+                            <Tooltip title={healthResult.cookie_results.find((r: any) => r.account_id === acc.account_id)?.login_check?.detail || ''}>
+                              <Tag color="red" style={{ fontSize: 11 }}>⚠️ 登录已过期</Tag>
+                            </Tooltip>
+                          )}
+                          {healthResult?.cookie_results?.find((r: any) => r.account_id === acc.account_id)?.login_check?.valid === true && (
+                            <Tag color="success" style={{ fontSize: 11 }}>✅ 登录有效</Tag>
+                          )}
                           <Text strong>{acc.alias}</Text>
+                          {acc.phone && <Text style={{ fontSize: 12, color: '#666' }}>📱 {acc.phone}</Text>}
+                          {acc.email && <Text style={{ fontSize: 12, color: '#666' }}>📧 {acc.email}</Text>}
                           {/* IP状态标签 */}
                           {acc.network_interface && (
                             <Tag

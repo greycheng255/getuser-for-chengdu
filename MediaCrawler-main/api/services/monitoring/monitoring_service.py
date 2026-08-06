@@ -160,7 +160,7 @@ class MonitoringService:
     # ---------------- 数据库基础设施 ----------------
 
     @staticmethod
-    def _get_engine():
+    async def _get_engine():
         """获取异步数据库引擎（公共方法，消除重复导入）"""
         from database.db_session import get_async_engine
         import config

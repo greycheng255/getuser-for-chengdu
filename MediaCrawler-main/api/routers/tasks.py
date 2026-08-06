@@ -1274,20 +1274,20 @@ async def start_task(task_id: str, current_user: dict = Depends(get_current_user
             except (ValueError, TypeError):
                 _owner_uid_int = None
 
-        success = await crawler_manager.start(config, task_id=task_id, owner_user_id=_owner_uid_int)
+        success, message = await crawler_manager.start(config, task_id=task_id, owner_user_id=_owner_uid_int)
         if success:
             task.status = "running"
             task.updated_ts = int(time.time() * 1000)
             await session.commit()
-            
+
             # 为该任务启动独立的日志同步
             if task_id in _log_sync_tasks and not _log_sync_tasks[task_id].done():
                 _log_sync_tasks[task_id].cancel()
             _log_sync_tasks[task_id] = asyncio.create_task(_sync_logs_to_task(task_id))
-            
-            return {"success": True, "message": "Crawler started"}
+
+            return {"success": True, "message": message}
         else:
-            return {"success": False, "message": "Crawler already running for this task"}
+            return {"success": False, "message": message}
     except HTTPException:
         raise
     except Exception as e:
@@ -1304,7 +1304,7 @@ async def pause_task(task_id: str, current_user: dict = Depends(get_current_user
 
     # 停止爬虫进程
     from ..services import crawler_manager
-    await crawler_manager.stop(task_id=task_id)
+    _, _ = await crawler_manager.stop(task_id=task_id)
 
     # 取消该任务的日志同步
     if task_id in _log_sync_tasks and not _log_sync_tasks[task_id].done():
