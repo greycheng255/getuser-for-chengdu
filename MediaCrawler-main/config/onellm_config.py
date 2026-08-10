@@ -54,7 +54,7 @@ def load_onellm_config() -> OneLLMConfig:
         base_url=_normalize_base_url(
             os.getenv("ONELLM_BASE_URL", DEFAULT_ONELLM_BASE_URL)
         ),
-        chat_model=os.getenv("ONELLM_CHAT_MODEL", "gpt-5.5").strip() or "gpt-5.5",
+        chat_model=os.getenv("ONELLM_CHAT_MODEL", "deepseek-v4-flash").strip() or "deepseek-v4-flash",
         video_model=os.getenv("ONELLM_VIDEO_MODEL", "kwvideo-v2").strip()
         or "kwvideo-v2",
         reference_video_model=os.getenv(
